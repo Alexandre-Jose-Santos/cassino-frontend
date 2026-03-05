@@ -2325,9 +2325,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
               </div>
             )}
 
-            {/* OVERLAY de rematch — aparece por cima quando jogo acaba */}
+            {/* OVERLAY de rematch — aparece inline quando jogo acaba */}
             {myRoom.started&&gameOver&&(
-              <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(10,15,10,.97)",borderTop:"2px solid rgba(46,204,113,.3)",padding:"16px 16px 80px",zIndex:9999,boxShadow:"0 -8px 32px rgba(0,0,0,.8)"}}>
+              <div style={{margin:"12px 0",background:"rgba(10,15,10,.97)",border:"2px solid rgba(46,204,113,.3)",borderRadius:14,padding:"16px",boxShadow:"0 4px 24px rgba(0,0,0,.6)"}}>
                 {rematchMsg?(
                   <div style={{textAlign:"center",padding:"14px",background:"rgba(241,196,15,.08)",border:"1px solid rgba(241,196,15,.2)",borderRadius:10,color:"#f1c40f",fontSize:13,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>
                     {rematchMsg}
