@@ -1967,7 +1967,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setRematchMsg('🚀 Iniciando nova partida...');
       setTimeout(()=>{
         setMyRoom(r=>r?({...r,started:false,status:'waiting',players:r.players.map(p=>({...p,ready:false}))}):r);
-        setRematchMsg('');setGameOver(false);setRematchTimer(null);
+        setRematchMsg('');setGameOver(false);setRematchTimer(null);setMatchKey(k=>k+1);
       },1000);
     });
     socket.on('rematch_player',({name,count,total})=>{
@@ -2031,6 +2031,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [rematchMsg,setRematchMsg]=useState('');
   const [gameOver,setGameOver]=useState(false);
   const [rematchTimer,setRematchTimer]=useState(null);
+  const [matchKey,setMatchKey]=useState(0); // força remontagem dos jogos no rematch
   const chatEndRef=React.useRef(null);
 
   const criarSala=()=>{
@@ -2286,9 +2287,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
             </div>
 
             {/* Dados online — área de jogo */}
-            {myRoom.game==='dados'&&<DadosOnline socket={socket} room={myRoom} userData={userData}/>}
-            {myRoom.game==='pife'&&<PifeOnline socket={socket} room={myRoom} userData={userData}/>}
-            {myRoom.game==='domino'&&<DominoOnline socket={socket} room={myRoom} userData={userData}/>}
+            {myRoom.game==='dados'&&<DadosOnline key={`dados-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
+            {myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
+            {myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
             {(myRoom.game!=='dados'&&myRoom.game!=='pife'&&myRoom.game!=='domino')&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
