@@ -1956,23 +1956,40 @@ function OnlineLobby({socket,chips,userData,onChange}){
       } else {
         setMsg('Partida encerrada.');
       }
-      setTimeout(()=>setGameOver(false), 500); // reseta para mostrar botão
+      // Inicia contagem de 10s para voltar à tela de pronto
+      setGameOver(true);
+      setRematchCountdown(10);
+      const iv = setInterval(()=>{
+        setRematchCountdown(n=>{
+          if(n<=1){
+            clearInterval(iv);
+            // Volta para tela de sala (waiting) após 10s
+            setMyRoom(r=>r?({...r,started:false,status:'waiting',players:r.players.map(p=>({...p,ready:false}))}):r);
+            setGameOver(false);
+            setRematchCountdown(null);
+            setMatchKey(k=>k+1);
+            return null;
+          }
+          return n-1;
+        });
+      },1000);
       // Não fecha automaticamente — jogadores decidem
     });
     socket.on('bet_proposal',({newBet,proposedBy})=>{
       setBetProposal({newBet,proposedBy});
     });
     socket.on('rematch_start',()=>{
-      // Backend vai emitir game_start logo em seguida
-      // Só reseta estados visuais aqui
-      setRematchMsg('');
+      setRematchMsg('🚀 Iniciando...');
       setGameOver(false);
-      setRematchTimer(null);
+      setRematchCountdown(null);
       setMatchKey(k=>k+1);
     });
     socket.on('rematch_player',({name,count,total})=>{
       setGameOver(true);
       setRematchMsg(`✅ ${name} quer jogar de novo! (${count}/${total})`);
+    });
+    socket.on('rematch_countdown',({remaining})=>{
+      setRematchCountdown(remaining);
     });
     socket.on('bet_changed',({newBet})=>{
       setMyRoom(r=>r?({...r,betAmount:newBet}):r);
@@ -2015,6 +2032,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('bet_proposal');
       socket.off('rematch_start');
       socket.off('rematch_player');
+      socket.off('rematch_countdown');
       socket.off('bet_changed');
       socket.off('bet_rejected');
       socket.off('chat_message');
@@ -2028,10 +2046,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [showBetMenu,setShowBetMenu]=useState(false);
   const [chatMsgs,setChatMsgs]=useState([]);
   const [chatInput,setChatInput]=useState('');
-  const [rematchMsg,setRematchMsg]=useState('');
   const [gameOver,setGameOver]=useState(false);
-  const [rematchTimer,setRematchTimer]=useState(null);
-  const [matchKey,setMatchKey]=useState(0); // força remontagem dos jogos no rematch
+  const [rematchCountdown,setRematchCountdown]=useState(null);
+  const [rematchMsg,setRematchMsg]=useState('');
+  const [matchKey,setMatchKey]=useState(0);
   const chatEndRef=React.useRef(null);
 
   const criarSala=()=>{
@@ -2083,18 +2101,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
     setBetProposal(null);
   };
 
-  const jogarDeNovo=()=>{
-    socket?.emit('rematch_join',{roomId:myRoom?.id});
-    setRematchMsg('✅ Você quer jogar de novo! Aguardando...');
-    setGameOver(true);
-    // Inicia contagem regressiva local de 10s
-    let t=10;
-    setRematchTimer(t);
-    const iv=setInterval(()=>{
-      t--;
-      setRematchTimer(t);
-      if(t<=0) clearInterval(iv);
-    },1000);
+  const sairAposPartida=()=>{
+    socket?.emit('leave_room',{roomId:myRoom?.id});
+    setMyRoom(null);
+    localStorage.removeItem('cassino_my_room');
+    setGameOver(false);setRematchMsg('');setRematchCountdown(null);
   };
 
   const enviarMsg=()=>{
@@ -2335,23 +2346,14 @@ function OnlineLobby({socket,chips,userData,onChange}){
               </div>
             )}
 
-            {/* BOTÃO JOGAR DE NOVO — aparece após fim de jogo */}
-            {myRoom.started&&(
-              <div style={{margin:"12px 0"}}>
-                {!gameOver?(
-                  <Btn full onClick={jogarDeNovo} c="#2ecc71" tc="#000">🔄 JOGAR DE NOVO</Btn>
-                ):(
-                  <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:12,padding:"14px",textAlign:"center"}}>
-                    {rematchTimer!==null&&rematchTimer>0&&(
-                      <div style={{color:"#f1c40f",fontWeight:900,fontSize:22,fontFamily:"'Cinzel',Georgia,serif",marginBottom:6}}>
-                        {rematchTimer}s
-                      </div>
-                    )}
-                    <div style={{color:"rgba(255,255,255,.5)",fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-                      {rematchMsg||'Aguardando jogadores...'}
-                    </div>
-                  </div>
-                )}
+            {/* PÓS-PARTIDA — contagem regressiva automática */}
+            {myRoom.started&&gameOver&&(
+              <div style={{margin:"12px 0",background:"rgba(0,0,0,.4)",border:"1px solid rgba(241,196,15,.15)",borderRadius:12,padding:"16px",textAlign:"center"}}>
+                <div style={{color:"rgba(255,255,255,.4)",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>PRÓXIMA PARTIDA EM</div>
+                <div style={{color:"#f1c40f",fontWeight:900,fontSize:40,fontFamily:"'Cinzel',Georgia,serif",lineHeight:1}}>
+                  {rematchCountdown??10}
+                </div>
+                <div style={{color:"rgba(255,255,255,.3)",fontSize:10,marginTop:4}}>segundos</div>
               </div>
             )}
           </div>
