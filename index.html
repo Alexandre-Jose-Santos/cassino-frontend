@@ -1962,13 +1962,17 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.on('bet_proposal',({newBet,proposedBy})=>{
       setBetProposal({newBet,proposedBy});
     });
-    socket.on('rematch_start',()=>{
+    socket.on('rematch_start',({roomId})=>{
       // Todos prontos ou tempo esgotado — reinicia sala
       setRematchMsg('🚀 Iniciando nova partida...');
       setTimeout(()=>{
         setMyRoom(r=>r?({...r,started:false,status:'waiting',players:r.players.map(p=>({...p,ready:false}))}):r);
         setRematchMsg('');setGameOver(false);setRematchTimer(null);setMatchKey(k=>k+1);
-      },1000);
+        // Emite player_ready automaticamente para reiniciar o jogo
+        setTimeout(()=>{
+          socket.emit('player_ready',{roomId});
+        },300);
+      },800);
     });
     socket.on('rematch_player',({name,count,total})=>{
       setGameOver(true);
