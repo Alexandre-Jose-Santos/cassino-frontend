@@ -1684,7 +1684,7 @@ function PifeOnline({socket,room,userData}){
   },[socket]);
 
   const comprarMonte=()=>{
-    if(phase!=='draw')return;
+    if(phase!=='draw'||deck<=0)return;
     socket.emit('game_action',{roomId:room.id,action:'pife_draw',data:{source:'deck'}});
   };
   const comprarDescarte=()=>{
@@ -1807,7 +1807,7 @@ function PifeOnline({socket,room,userData}){
       <div style={{display:'flex',justifyContent:'center',gap:14,margin:'8px 0 10px'}}>
         <div style={{textAlign:'center'}}>
           <div onClick={comprarMonte}
-            style={{width:54,height:78,background:phase==='draw'?'linear-gradient(135deg,#1e3c78,#0d1f3c)':'rgba(255,255,255,.03)',border:`2px solid ${phase==='draw'?'#f1c40f':'#2a4a8b'}`,borderRadius:9,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:phase==='draw'?'#f1c40f':'#444',fontSize:18,fontWeight:900,cursor:phase==='draw'?'pointer':'default',transition:'all .2s',boxShadow:phase==='draw'?'0 0 12px rgba(241,196,15,.2)':'none'}}>
+            style={{width:54,height:78,background:phase==='draw'&&deck>0?'linear-gradient(135deg,#1e3c78,#0d1f3c)':'rgba(255,255,255,.03)',border:`2px solid ${phase==='draw'&&deck>0?'#f1c40f':'#2a4a8b'}`,borderRadius:9,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:phase==='draw'&&deck>0?'#f1c40f':'#444',fontSize:18,fontWeight:900,cursor:phase==='draw'&&deck>0?'pointer':'default',transition:'all .2s',boxShadow:phase==='draw'&&deck>0?'0 0 12px rgba(241,196,15,.2)':'none',opacity:deck===0?.4:1}}>
             <span style={{fontSize:11,opacity:.6}}>🂠</span>
             <span>{deck}</span>
           </div>
@@ -1869,12 +1869,26 @@ function PifeOnline({socket,room,userData}){
           🗑️ DESCARTAR {rankDisplay(hand[selected]?.rank)}{hand[selected]?.suit}
         </button>
       )}
-      {phase==='discard'&&(
-        <button onClick={declarar}
-          style={{width:'100%',padding:'11px',background:temPife(hand.length===10&&selected!==null?hand.filter((_,i)=>i!==selected):hand)?'rgba(46,204,113,.15)':'rgba(255,255,255,.03)',border:`2px solid ${temPife(hand.length===10&&selected!==null?hand.filter((_,i)=>i!==selected):hand)?'rgba(46,204,113,.4)':'rgba(255,255,255,.06)'}`,borderRadius:10,color:temPife(hand.length===10&&selected!==null?hand.filter((_,i)=>i!==selected):hand)?'#2ecc71':'#333',fontSize:13,fontWeight:900,cursor:temPife(hand.length===10&&selected!==null?hand.filter((_,i)=>i!==selected):hand)?'pointer':'not-allowed',fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1}}>
-          🃏 {temPife(hand.length===10&&selected!==null?hand.filter((_,i)=>i!==selected):hand)?'DECLARAR PIFE!':'Sem pife ainda...'}
-        </button>
-      )}
+      {phase==='discard'&&(()=>{
+        // Mão que ficaria após descartar a selecionada (ou mão atual se 9 cartas)
+        const handAfter = hand.length===10&&selected!==null
+          ? hand.filter((_,i)=>i!==selected)
+          : hand.length===9 ? hand : [];
+        const hasPife = handAfter.length===9 && temPife(handAfter);
+        return(
+          <button onClick={hasPife?declarar:undefined}
+            style={{width:'100%',padding:'11px',
+              background:hasPife?'rgba(46,204,113,.15)':'rgba(255,255,255,.03)',
+              border:`2px solid ${hasPife?'rgba(46,204,113,.4)':'rgba(255,255,255,.06)'}`,
+              borderRadius:10,color:hasPife?'#2ecc71':'#444',
+              fontSize:13,fontWeight:900,
+              cursor:hasPife?'pointer':'not-allowed',
+              fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1,
+              opacity:hasPife?1:.5}}>
+            🃏 {hasPife?'DECLARAR PIFE!':'Sem pife ainda...'}
+          </button>
+        );
+      })()}
     </div>
   );
 }
