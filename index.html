@@ -1963,8 +1963,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
         setRematchCountdown(n=>{
           if(n<=1){
             clearInterval(iv);
-            // Volta para tela de sala (waiting) após 10s
-            setMyRoom(r=>r?({...r,started:false,status:'waiting',players:r.players.map(p=>({...p,ready:false}))}):r);
+            // Avisa o servidor para resetar a sala
+            socket?.emit('reset_room',{roomId:myRoom?.id});
             setGameOver(false);
             setRematchCountdown(null);
             setMatchKey(k=>k+1);
