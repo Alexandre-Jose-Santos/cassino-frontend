@@ -1963,8 +1963,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
         setRematchCountdown(n=>{
           if(n<=1){
             clearInterval(iv);
-            // Avisa o servidor para resetar a sala
-            socket?.emit('reset_room',{roomId:myRoom?.id});
+            // Servidor vai mandar room_update automaticamente — só limpa visual
             setGameOver(false);
             setRematchCountdown(null);
             setMatchKey(k=>k+1);
