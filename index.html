@@ -1950,11 +1950,12 @@ function OnlineLobby({socket,chips,userData,onChange}){
     });
     socket.on('rematch_vote',({uid:vUid,name,accept,votes,total})=>{
       setRematchVotes(votes);
+      setGameOver(true); // garante que os botões aparecem ao receber voto do adversário
       if(accept){
         setRematchMsg(`✅ ${name} quer jogar de novo! (${Object.values(votes).filter(Boolean).length}/${total})`);
       } else {
         setRematchMsg(`❌ ${name} não quer continuar.`);
-        setTimeout(()=>{setMyRoom(null);localStorage.removeItem('cassino_my_room');setRematchVotes({});setRematchMsg('');},3000);
+        setTimeout(()=>{setMyRoom(null);localStorage.removeItem('cassino_my_room');setRematchVotes({});setRematchMsg('');setGameOver(false);},3000);
       }
     });
     socket.on('rematch_ok',()=>{
@@ -1967,7 +1968,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.on('rematch_blocked',({message})=>{
       setRematchMsg(message);
       setRematchVotes({});
-      // Mantém na tela para eles lerem — não fecha automaticamente
+      setGameOver(true);
     });
     socket.on('bet_changed',({newBet})=>{
       setMyRoom(r=>r?({...r,betAmount:newBet}):r);
