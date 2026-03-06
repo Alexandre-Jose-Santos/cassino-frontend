@@ -2341,17 +2341,23 @@ function DamaOnline({socket,room,userData,onGameOver}){
   const [status,setStatus]=useState('Aguardando...');
   const [result,setResult]=useState(null);
   const [captureChain,setCaptureChain]=useState(null);
+  const initSent=useRef(false);
 
   useEffect(()=>{
-    // Ambos emitem — backend responde com a cor correta para cada um
-    socket.emit('game_action',{roomId:room.id,action:'dama_init',data:{}});
+    // Emite uma única vez para receber a cor
+    if(!initSent.current){
+      initSent.current=true;
+      socket.emit('game_action',{roomId:room.id,action:'dama_init',data:{}});
+    }
 
     const handler=({action,data})=>{
       if(action==='dama_init'){
+        // data.color é a cor DESTE jogador (cada um recebe a sua)
         myColorRef.current=data.color;
         setMyColor(data.color);
         setBoard(initCheckers()); setTurn('w');
-        setStatus(data.color==='w'?'Sua vez (brancas ⬜)':'Vez do adversário (brancas ⬜)');
+        // Brancas começam — status depende da cor
+        setStatus(data.color==='w'?'Sua vez ⬜':'Vez do adversário ⬜');
       }
       if(action==='dama_update'){
         setBoard(data.board); setTurn(data.turn);
@@ -2364,7 +2370,7 @@ function DamaOnline({socket,room,userData,onGameOver}){
     };
     socket.on('game_action',handler);
     return()=>socket.off('game_action',handler);
-  },[socket,room.id]);
+  },[]);
 
   const getFollowUpCaps=(nb,r,c)=>{
     const p=nb[r][c]; if(!p)return[];
@@ -2380,9 +2386,9 @@ function DamaOnline({socket,room,userData,onGameOver}){
   };
 
   const emitMove=(nb)=>{
-    socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:myColorRef.current==='w'?'b':'w'}});
-    setTurn(myColorRef.current==='w'?'b':'w');
-    setStatus('Vez do adversário');
+    const nt=myColorRef.current==='w'?'b':'w';
+    socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
+    setTurn(nt); setStatus('Vez do adversário');
   };
 
   const handleCell=(r,c)=>{
@@ -2393,7 +2399,7 @@ function DamaOnline({socket,room,userData,onGameOver}){
       if(mv){
         const nb=applyMove(board,mv); setBoard(nb);
         const fu=getFollowUpCaps(nb,r,c);
-        if(fu.length>0){setSel([r,c]);setMoves(fu);setCaptureChain([r,c]);setStatus('⚡ Continue capturando!');}
+        if(fu.length){setSel([r,c]);setMoves(fu);setCaptureChain([r,c]);setStatus('⚡ Continue capturando!');}
         else{setCaptureChain(null);setSel(null);setMoves([]);emitMove(nb);}
       }
       return;
@@ -2402,13 +2408,13 @@ function DamaOnline({socket,room,userData,onGameOver}){
       const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
       if(mv){
         const nb=applyMove(board,mv); setBoard(nb);
-        if(mv.caps.length>0){const fu=getFollowUpCaps(nb,r,c);if(fu.length>0){setSel([r,c]);setMoves(fu);setCaptureChain([r,c]);setStatus('⚡ Continue capturando!');return;}}
+        if(mv.caps.length){const fu=getFollowUpCaps(nb,r,c);if(fu.length){setSel([r,c]);setMoves(fu);setCaptureChain([r,c]);setStatus('⚡ Continue capturando!');return;}}
         setSel(null);setMoves([]);emitMove(nb); return;
       }
     }
     if(p?.color===myColorRef.current){
       const allCaps=getAllMoves(board,myColorRef.current).filter(m=>m.caps.length>0);
-      const myMoves=allCaps.length>0?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c):getCheckersMoves(board,r,c);
+      const myMoves=allCaps.length?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c):getCheckersMoves(board,r,c);
       setSel([r,c]); setMoves(myMoves);
     } else {setSel(null);setMoves([]);}
   };
@@ -2425,16 +2431,33 @@ function DamaOnline({socket,room,userData,onGameOver}){
     </div>
   );
 
-  const renderRows=myColor==='b'?[...board].reverse().map(r=>[...r].reverse()):board;
+  // Pretas veem o tabuleiro espelhado — suas peças ficam embaixo
+  const renderRows=myColor==='b'
+    ?[...board].reverse().map(r=>[...r].reverse())
+    :board;
 
   return(
     <div style={{padding:'8px 4px'}}>
-      <div style={{textAlign:'center',marginBottom:8,fontSize:12,minHeight:16,
-        color:turn===myColor?'#2ecc71':'#aaa',fontWeight:turn===myColor?700:400}}>{status}</div>
+      {/* Indicador do adversário (em cima) */}
+      <div style={{display:'flex',justifyContent:'space-between',padding:'0 4px',marginBottom:6,fontSize:11}}>
+        <span style={{color:'#888'}}>
+          {myColor==='w'?'⬛ Adversário (pretas)':'⬜ Adversário (brancas)'}
+        </span>
+        <span style={{color:turn!==myColor&&myColor?'#e74c3c':'#555'}}>
+          {turn!==myColor&&myColor?'● VEZ DELE':''}
+        </span>
+      </div>
+
+      <div style={{textAlign:'center',marginBottom:6,fontSize:12,minHeight:16,
+        color:turn===myColor&&myColor?'#2ecc71':'#aaa',fontWeight:turn===myColor&&myColor?700:400}}>
+        {status}
+      </div>
+
       <div style={{display:'flex',justifyContent:'center'}}>
         <div style={{display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`,
           border:'3px solid #5d4037',boxShadow:'0 8px 32px rgba(0,0,0,.7)'}}>
           {renderRows.map((row,ri)=>row.map((cell,ci)=>{
+            // Coordenada real no board lógico
             const br=myColor==='b'?7-ri:ri;
             const bc=myColor==='b'?7-ci:ci;
             const dark=(br+bc)%2===1;
@@ -2471,15 +2494,18 @@ function DamaOnline({socket,room,userData,onGameOver}){
           }))}
         </div>
       </div>
+
+      {/* Indicador do jogador (embaixo) */}
       <div style={{display:'flex',justifyContent:'space-between',marginTop:6,padding:'0 4px',fontSize:11}}>
-        <span style={{color:myColor==='w'?'#e8e0d0':'#4a3a2a',fontWeight:700}}>
-          {myColor==='w'?'⬜ Você (brancas)':'⬛ Você (pretas)'}
+        <span style={{color:myColor==='w'?'rgba(232,224,208,.9)':'rgba(74,58,42,.9)',fontWeight:700,
+          textShadow:myColor==='w'?'0 0 8px rgba(255,255,255,.3)':'none'}}>
+          {myColor==='w'?'⬜ Você (brancas)':myColor==='b'?'⬛ Você (pretas)':'...'}
         </span>
-        <span style={{color:turn===myColor?'#2ecc71':'#555'}}>
-          {turn===myColor?'● SUA VEZ':'○ Adversário'}
+        <span style={{color:turn===myColor&&myColor?'#2ecc71':'#555',fontWeight:700}}>
+          {turn===myColor&&myColor?'● SUA VEZ':''}
         </span>
       </div>
-      {captureChain&&<div style={{textAlign:'center',marginTop:4,color:'#f1c40f',fontSize:11}}>⚡ CAPTURA MÚLTIPLA — continue</div>}
+      {captureChain&&<div style={{textAlign:'center',marginTop:4,color:'#f1c40f',fontSize:11}}>⚡ CAPTURA MÚLTIPLA</div>}
     </div>
   );
 }
