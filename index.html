@@ -3076,9 +3076,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogo:</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
             {Object.entries(GAMES_INFO).map(([k,g])=>(
-              <button key={k} onClick={()=>{setNewGame(k);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:`1px solid ${newGame===k?g.c:"rgba(255,255,255,.1)"}`,borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
+              <button key={k} onClick={()=>{setNewGame(k);if(['dama','xadrez'].includes(k))setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:`1px solid ${newGame===k?g.c:"rgba(255,255,255,.1)"}`,borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
             ))}
           </div>
+          {!['dama','xadrez'].includes(newGame)&&<>
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Número de jogadores:</div>
           <div style={{display:"flex",gap:6,marginBottom:8}}>
             {[2,3,4].map(n=>(
@@ -3087,6 +3088,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
               </button>
             ))}
           </div>
+          </>}
+          {['dama','xadrez'].includes(newGame)&&<div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>⚔️ Sempre 1 vs 1</div>}
           
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -3896,7 +3899,6 @@ function App(){
   if(!authUser)return <LoginScreen/>;
 
   const GAMES={
-    dados:<Dados chips={displayChips} onChange={onChange} log={log}/>,
     pife:<Pife chips={displayChips} onChange={onChange} log={log}/>,
     domino:<Dominoes chips={displayChips} onChange={onChange} log={log}/>,
     dama:<Dama chips={displayChips} onChange={onChange} log={log}/>,
@@ -4003,12 +4005,12 @@ function App(){
             {/* Grid de jogos */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
               {[
-                {k:"dados",i:"🎲",n:"Dados",d:"Alto · Baixo · Exato",c:"#c0392b",gc:"#2a0808"},
-                {k:"lobby",i:"🌐",n:"Online",d:"vs Jogadores Reais",c:"#2ecc71",gc:"#082a15"},
                 {k:"pife",i:"🃏",n:"Pife",d:"1 ou 2 baralhos",c:"#2471a3",gc:"#060f1a"},
                 {k:"domino",i:"🁣",n:"Dominó",d:"2 a 4 jogadores",c:"#d4ac0d",gc:"#1a1400"},
-                {k:"truco",i:"⚡",n:"Truco",d:"Em breve",c:"#ca6f1e",gc:"#1a0e05",disabled:true},
-                {k:"poker",i:"♦",n:"Poker",d:"Em breve",c:"#8e44ad",gc:"#12071a",disabled:true},
+                {k:"dama",i:"♟",n:"Dama",d:"vs IA • Estratégia",c:"#ca6f1e",gc:"#1a0e05"},
+                {k:"xadrez",i:"♔",n:"Xadrez",d:"vs IA • Clássico",c:"#8e44ad",gc:"#12071a"},
+                {k:"lobby",i:"🌐",n:"Online",d:"vs Jogadores Reais",c:"#2ecc71",gc:"#082a15"},
+                {k:"poker",i:"♠",n:"Poker",d:"Em breve",c:"#c0392b",gc:"#2a0808",disabled:true},
               ].map(g=>(
                 <div key={g.k} onClick={()=>!g.disabled&&setScreen(g.k)}
                   style={{background:`linear-gradient(145deg,${g.gc} 0%,#050505 100%)`,border:`1px solid ${g.disabled?"rgba(255,255,255,.05)":`${g.c}25`}`,borderRadius:16,padding:"16px 14px",cursor:g.disabled?"not-allowed":"pointer",opacity:g.disabled?.4:1,transition:"all .25s",position:"relative",overflow:"hidden"}}
