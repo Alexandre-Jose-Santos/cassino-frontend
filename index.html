@@ -2012,10 +2012,26 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setBetProposal({newBet,proposedBy});
     });
     socket.on('rematch_start',()=>{
-      setRematchMsg('🚀 Iniciando...');
+      setRematchMsg('');
       setGameOver(false);
       setRematchCountdown(null);
       setMatchKey(k=>k+1);
+    });
+    socket.on('rematch_countdown_start',()=>{
+      // Alguém clicou reiniciar — todos iniciam contagem de 10s
+      setRematchCountdown(10);
+      const iv=setInterval(()=>{
+        setRematchCountdown(n=>{
+          if(n<=1){
+            clearInterval(iv);
+            setGameOver(false);
+            setRematchCountdown(null);
+            setMatchKey(k=>k+1);
+            return null;
+          }
+          return n-1;
+        });
+      },1000);
     });
     socket.on('rematch_player',({name,count,total})=>{
       setGameOver(true);
@@ -2066,6 +2082,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('rematch_start');
       socket.off('rematch_player');
       socket.off('rematch_countdown');
+      socket.off('rematch_countdown_start');
       socket.off('bet_changed');
       socket.off('bet_rejected');
       socket.off('chat_message');
@@ -2113,21 +2130,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
     localStorage.removeItem('cassino_my_room');
   };
   const reiniciarJogo=()=>{
-    // Inicia contagem de 10s — ao acabar o servidor reseta a sala
-    setRematchCountdown(10);
+    // Servidor vai avisar todos via rematch_countdown_start
     socket?.emit('schedule_reset',{roomId:myRoom?.id});
-    const iv=setInterval(()=>{
-      setRematchCountdown(n=>{
-        if(n<=1){
-          clearInterval(iv);
-          setGameOver(false);
-          setRematchCountdown(null);
-          setMatchKey(k=>k+1);
-          return null;
-        }
-        return n-1;
-      });
-    },1000);
   };
 
   const ficouPronto=()=>{
