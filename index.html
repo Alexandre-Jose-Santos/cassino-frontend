@@ -2340,6 +2340,18 @@ function DamaOnline({socket,room,userData,onGameOver}){
   const [legal,setLegal]=useState([]);
   const [status,setStatus]=useState('Conectando...');
   const [result,setResult]=useState(null);
+  const [chain,setChain]=useState(false); // em cadeia de captura
+
+  // Refs para evitar stale closure
+  const boardRef=useRef(null);
+  const legalRef=useRef([]);
+  const selRef=useRef(null);
+  const chainRef=useRef(false);
+
+  const syncBoard=(b)=>{boardRef.current=b;setBoard(b);};
+  const syncSel=(v)=>{selRef.current=v;setSel(v);};
+  const syncLegal=(v)=>{legalRef.current=v;setLegal(v);};
+  const syncChain=(v)=>{chainRef.current=v;setChain(v);};
 
   useEffect(()=>{
     socket.emit('game_action',{roomId:room.id,action:'dama_init',data:{}});
@@ -2349,13 +2361,14 @@ function DamaOnline({socket,room,userData,onGameOver}){
         if(!col)return;
         myColorRef.current=col;
         setMyColor(col);
-        setBoard(initCheckers());
+        const b=initCheckers();
+        syncBoard(b); syncSel(null); syncLegal([]); syncChain(false);
         setTurn('w');
         setStatus(col==='w'?'Sua vez':'Vez do adversário');
       }
       if(action==='dama_update'){
-        setBoard(data.board); setTurn(data.turn);
-        setSel(null); setLegal([]);
+        syncBoard(data.board); syncSel(null); syncLegal([]); syncChain(false);
+        setTurn(data.turn);
         setStatus(data.turn===myColorRef.current?'Sua vez':'Vez do adversário');
       }
       if(action==='dama_win'){
@@ -2366,39 +2379,74 @@ function DamaOnline({socket,room,userData,onGameOver}){
     return()=>socket.off('game_action',h);
   },[]);
 
+  const emitMove=(nb)=>{
+    const nt=myColorRef.current==='w'?'b':'w';
+    setTurn(nt); setStatus('Vez do adversário');
+    socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
+  };
+
   const handleCell=(r,c)=>{
     const mc=myColorRef.current;
     if(result||turn!==mc)return;
-    const p=board[r][c];
+    const b=boardRef.current||board;
+    const curLegal=legalRef.current;
+    const curSel=selRef.current;
+    const inChain=chainRef.current;
+    const p=b[r][c];
 
-    if(sel){
-      const mv=legal.find(m=>m.to[0]===r&&m.to[1]===c);
-      if(mv){
-        const nb=applyMove(board,mv);
-        setBoard(nb); setSel(null); setLegal([]);
-        const nt=mc==='w'?'b':'w';
-        setTurn(nt); setStatus('Vez do adversário');
-        socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
-        return;
+    // Em cadeia: só aceita destinos válidos da peça encadeada
+    if(inChain){
+      const mv=curLegal.find(m=>m.to[0]===r&&m.to[1]===c);
+      if(!mv)return;
+      const nb=applyMove(b,mv);
+      syncBoard(nb);
+      const fu=getCapsFrom(nb,r,c);
+      if(fu.length){
+        syncSel([r,c]); syncLegal(fu); // continua cadeia
+        setStatus('⚡ Continue capturando!');
+      } else {
+        syncSel(null); syncLegal([]); syncChain(false);
+        emitMove(nb);
       }
-      // Re-seleciona outra peça própria
-      if(p?.color===mc){
-        const mvs=getLegalMovesFor(board,r,c);
-        if(mvs.length){setSel([r,c]);setLegal(mvs);}
-        else setSel(null);
-        return;
-      }
-      setSel(null); setLegal([]); return;
+      return;
     }
 
+    // Peça selecionada — tenta mover
+    if(curSel){
+      const mv=curLegal.find(m=>m.to[0]===r&&m.to[1]===c);
+      if(mv){
+        const nb=applyMove(b,mv);
+        syncBoard(nb);
+        if(mv.caps.length>0){
+          const fu=getCapsFrom(nb,r,c);
+          if(fu.length){
+            syncSel([r,c]); syncLegal(fu); syncChain(true);
+            setStatus('⚡ Continue capturando!');
+            return;
+          }
+        }
+        syncSel(null); syncLegal([]);
+        emitMove(nb);
+        return;
+      }
+      if(p?.color===mc){
+        const mvs=getLegalMovesFor(b,r,c);
+        if(mvs.length){syncSel([r,c]);syncLegal(mvs);}
+        else syncSel(null);
+        return;
+      }
+      syncSel(null); syncLegal([]); return;
+    }
+
+    // Seleciona peça
     if(p?.color===mc){
-      const mvs=getLegalMovesFor(board,r,c);
-      if(mvs.length){setSel([r,c]);setLegal(mvs);}
+      const mvs=getLegalMovesFor(b,r,c);
+      if(mvs.length){syncSel([r,c]);syncLegal(mvs);}
     }
   };
 
   const CELL=42;
-  const destSet=new Set(legal.map(m=>m.to[0]*8+m.to[1]));
+  const destSet=new Set(legalRef.current.map(m=>m.to[0]*8+m.to[1]));
   const rows=myColor==='b'?[...board].reverse().map(r=>[...r].reverse()):board;
 
   if(result)return(
@@ -2428,13 +2476,14 @@ function DamaOnline({socket,room,userData,onGameOver}){
             const isSel=sel&&sel[0]===br&&sel[1]===bc;
             const isDest=destSet.has(br*8+bc);
             const isCap=isDest&&legal.find(m=>m.to[0]===br&&m.to[1]===bc)?.caps.length>0;
-            const bg=dark?(isSel?'#a07820':'#3d2b12'):(isSel?'#f5e090':'#c8b884');
+            const isChain=chain&&sel&&sel[0]===br&&sel[1]===bc;
+            const bg=dark?(isSel||isChain?'#a07820':'#3d2b12'):(isSel?'#f5e090':'#c8b884');
             return(
               <div key={ri+'-'+ci} onClick={()=>handleCell(br,bc)}
                 style={{width:CELL,height:CELL,background:bg,
                   display:'flex',alignItems:'center',justifyContent:'center',
                   cursor:turn===myColor?'pointer':'default',position:'relative',
-                  boxShadow:isSel?'inset 0 0 0 3px rgba(241,196,15,1)':
+                  boxShadow:isSel||isChain?'inset 0 0 0 3px rgba(241,196,15,1)':
                     isDest?`inset 0 0 0 3px ${isCap?'rgba(231,76,60,.8)':'rgba(46,204,113,.8)'}`:
                     'none',transition:'background .1s'}}>
                 {isDest&&!cell&&<div style={{width:14,height:14,borderRadius:'50%',
@@ -2459,6 +2508,7 @@ function DamaOnline({socket,room,userData,onGameOver}){
         {myColor==='w'?'⬜ Você — brancas':myColor==='b'?'⬛ Você — pretas':'Aguardando...'}
         {turn===myColor&&myColor?<span style={{color:'#2ecc71',marginLeft:6,fontWeight:700}}>● sua vez</span>:null}
       </div>
+      {chain&&<div style={{textAlign:'center',marginTop:4,color:'#f1c40f',fontSize:11,fontWeight:700}}>⚡ Continue capturando!</div>}
     </div>
   );
 }
