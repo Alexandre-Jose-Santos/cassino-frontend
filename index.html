@@ -180,6 +180,84 @@ select option{background:#111;color:#fff;}
   0%,100%{box-shadow:0 0 8px rgba(231,76,60,.4);}
   50%{box-shadow:0 0 18px rgba(231,76,60,.7),0 0 30px rgba(231,76,60,.3);}
 }
+
+
+/* ── Tabuleiros 3D ───────────────────────────── */
+.board3d-wrap{
+  perspective:900px;
+  display:flex;justify-content:center;
+}
+.board3d{
+  transform-style:preserve-3d;
+  transform:rotateX(22deg) rotateZ(-1deg);
+  transition:transform .3s ease;
+  border-radius:4px;
+  box-shadow:0 40px 80px rgba(0,0,0,.8),0 20px 40px rgba(0,0,0,.5);
+}
+.board3d:hover{transform:rotateX(18deg) rotateZ(0deg);}
+.board3d-border{
+  padding:12px;
+  background:radial-gradient(ellipse at 30% 20%,#4a3320 0%,#2a1a0c 50%,#1a0e06 100%);
+  border:2px solid #6a4a2a;
+  border-radius:6px;
+  box-shadow:inset 0 0 0 1px rgba(255,220,120,.1),inset 0 2px 4px rgba(255,255,255,.05);
+}
+.board3d-labels{
+  display:grid;grid-template-columns:repeat(8,1fr);
+  padding:0 2px;margin-bottom:2px;
+}
+.board3d-label{
+  text-align:center;font-size:9px;color:rgba(255,220,120,.4);
+  font-family:'Georgia',serif;font-weight:700;line-height:1.4;
+}
+.board3d-rank{
+  font-size:9px;color:rgba(255,220,120,.4);
+  font-family:'Georgia',serif;font-weight:700;
+  writing-mode:vertical-rl;text-orientation:mixed;
+  display:flex;align-items:center;justify-content:space-around;
+  padding:2px 0;
+}
+/* Peças de Dama 3D */
+.checker-piece{
+  border-radius:50%;
+  position:relative;
+  cursor:pointer;
+  transition:transform .15s,box-shadow .15s;
+}
+.checker-piece:hover{transform:translateY(-3px) scale(1.08);}
+.checker-w{
+  background:radial-gradient(circle at 35% 30%,#ffffff 0%,#e8e0d0 40%,#c8bca8 80%,#a89880 100%);
+  border:2px solid rgba(200,180,140,.8);
+  box-shadow:0 4px 12px rgba(0,0,0,.5),inset 0 2px 4px rgba(255,255,255,.8),inset 0 -2px 4px rgba(0,0,0,.2);
+}
+.checker-b{
+  background:radial-gradient(circle at 35% 30%,#4a3a2a 0%,#2a1e14 40%,#1a1008 80%,#0a0804 100%);
+  border:2px solid rgba(80,60,40,.8);
+  box-shadow:0 4px 12px rgba(0,0,0,.6),inset 0 2px 4px rgba(255,255,255,.15),inset 0 -2px 4px rgba(0,0,0,.4);
+}
+.checker-king::after{
+  content:'♔';
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:14px;line-height:1;
+}
+.checker-w.checker-king::after{color:#8B6914;}
+.checker-b.checker-king::after{color:#f1c40f;}
+/* Peças de Xadrez 3D */
+.chess-piece{
+  font-size:28px;
+  line-height:1;
+  cursor:pointer;
+  user-select:none;
+  transition:transform .15s,filter .15s;
+  filter:drop-shadow(0 3px 4px rgba(0,0,0,.6));
+  display:flex;align-items:center;justify-content:center;
+  position:relative;z-index:2;
+}
+.chess-piece:hover{transform:translateY(-4px) scale(1.12);filter:drop-shadow(0 6px 8px rgba(0,0,0,.7));}
+.chess-piece-w{filter:drop-shadow(0 3px 4px rgba(0,0,0,.6)) drop-shadow(0 0 2px rgba(255,255,255,.4));}
+.chess-piece-b{filter:drop-shadow(0 3px 4px rgba(0,0,0,.8));}
+
+
 </style>
 </head>
 <body>
@@ -3236,45 +3314,367 @@ function bestCheckerMove(board,color){
   return bestMv;
 }
 
+
+// ══════════════════════════════════════════════════════
+// DAMA — Offline vs IA + Online
+// ══════════════════════════════════════════════════════
+function initCheckers(){
+  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
+  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'b',king:false};
+  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'w',king:false};
+  return b;
+}
+function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
+function getCheckersMoves(board,r,c,mustCapture=false){
+  const p=board[r][c]; if(!p)return[];
+  const dirs=[];
+  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
+  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
+  const moves=[]; const caps=[];
+  for(const [dr,dc] of dirs){
+    const nr=r+dr,nc=c+dc;
+    if(nr<0||nr>7||nc<0||nc>7)continue;
+    if(!board[nr][nc]){
+      if(!mustCapture) moves.push({from:[r,c],to:[nr,nc],caps:[]});
+    } else if(board[nr][nc].color!==p.color){
+      const jr=r+2*dr,jc=c+2*dc;
+      if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!board[jr][jc]){
+        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
+      }
+    }
+  }
+  return caps.length>0?caps:mustCapture?[]:moves;
+}
+function getAllMoves(board,color){
+  const caps=[]; const moves=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    if(board[r][c]?.color===color){
+      const m=getCheckersMoves(board,r,c);
+      for(const mv of m){
+        if(mv.caps.length>0) caps.push(mv); else moves.push(mv);
+      }
+    }
+  }
+  return caps.length>0?caps:moves;
+}
+function applyMove(board,mv){
+  const nb=cloneBoard(board);
+  const p=nb[mv.from[0]][mv.from[1]];
+  nb[mv.from[0]][mv.from[1]]=null;
+  for(const [cr,cc] of mv.caps) nb[cr][cc]=null;
+  nb[mv.to[0]][mv.to[1]]=p;
+  if((p.color==='w'&&mv.to[0]===0)||(p.color==='b'&&mv.to[0]===7)) nb[mv.to[0]][mv.to[1]].king=true;
+  return nb;
+}
+function evalCheckers(board){
+  let s=0;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p)continue;
+    const v=p.king?3:1; s+=p.color==='w'?v:-v;
+  }
+  return s;
+}
+function minimaxCheckers(board,depth,alpha,beta,maximizing){
+  const color=maximizing?'w':'b';
+  const moves=getAllMoves(board,color);
+  if(depth===0||moves.length===0) return evalCheckers(board);
+  if(maximizing){
+    let best=-Infinity;
+    for(const mv of moves){
+      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
+      alpha=Math.max(alpha,best); if(beta<=alpha)break;
+    }
+    return best;
+  } else {
+    let best=Infinity;
+    for(const mv of moves){
+      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
+      beta=Math.min(beta,best); if(beta<=alpha)break;
+    }
+    return best;
+  }
+}
+function bestCheckerMove(board,color){
+  const moves=getAllMoves(board,color);
+  if(!moves.length)return null;
+  let best=color==='w'?-Infinity:Infinity;
+  let bestMv=moves[0];
+  for(const mv of moves){
+    const s=minimaxCheckers(applyMove(board,mv),4,-Infinity,Infinity,color==='b');
+    if(color==='w'?s>best:s<best){best=s;bestMv=mv;}
+  }
+  return bestMv;
+}
+
+
+// ══════════════════════════════════════════════════════
+// DAMA — Offline vs IA + Online
+// ══════════════════════════════════════════════════════
+function initCheckers(){
+  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
+  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'b',king:false};
+  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'w',king:false};
+  return b;
+}
+function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
+function getCheckersMoves(board,r,c,mustCapture=false){
+  const p=board[r][c]; if(!p)return[];
+  const dirs=[];
+  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
+  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
+  const moves=[]; const caps=[];
+  for(const [dr,dc] of dirs){
+    const nr=r+dr,nc=c+dc;
+    if(nr<0||nr>7||nc<0||nc>7)continue;
+    if(!board[nr][nc]){
+      if(!mustCapture) moves.push({from:[r,c],to:[nr,nc],caps:[]});
+    } else if(board[nr][nc].color!==p.color){
+      const jr=r+2*dr,jc=c+2*dc;
+      if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!board[jr][jc]){
+        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
+      }
+    }
+  }
+  return caps.length>0?caps:mustCapture?[]:moves;
+}
+function getAllMoves(board,color){
+  const caps=[]; const moves=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    if(board[r][c]?.color===color){
+      const m=getCheckersMoves(board,r,c);
+      for(const mv of m){
+        if(mv.caps.length>0) caps.push(mv); else moves.push(mv);
+      }
+    }
+  }
+  return caps.length>0?caps:moves;
+}
+function applyMove(board,mv){
+  const nb=cloneBoard(board);
+  const p=nb[mv.from[0]][mv.from[1]];
+  nb[mv.from[0]][mv.from[1]]=null;
+  for(const [cr,cc] of mv.caps) nb[cr][cc]=null;
+  nb[mv.to[0]][mv.to[1]]=p;
+  if((p.color==='w'&&mv.to[0]===0)||(p.color==='b'&&mv.to[0]===7)) nb[mv.to[0]][mv.to[1]].king=true;
+  return nb;
+}
+function evalCheckers(board){
+  let s=0;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p)continue;
+    const v=p.king?3:1; s+=p.color==='w'?v:-v;
+  }
+  return s;
+}
+function minimaxCheckers(board,depth,alpha,beta,maximizing){
+  const color=maximizing?'w':'b';
+  const moves=getAllMoves(board,color);
+  if(depth===0||moves.length===0) return evalCheckers(board);
+  if(maximizing){
+    let best=-Infinity;
+    for(const mv of moves){
+      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
+      alpha=Math.max(alpha,best); if(beta<=alpha)break;
+    }
+    return best;
+  } else {
+    let best=Infinity;
+    for(const mv of moves){
+      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
+      beta=Math.min(beta,best); if(beta<=alpha)break;
+    }
+    return best;
+  }
+}
+function bestCheckerMove(board,color){
+  const moves=getAllMoves(board,color);
+  if(!moves.length)return null;
+  let best=color==='w'?-Infinity:Infinity;
+  let bestMv=moves[0];
+  for(const mv of moves){
+    const s=minimaxCheckers(applyMove(board,mv),4,-Infinity,Infinity,color==='b');
+    if(color==='w'?s>best:s<best){best=s;bestMv=mv;}
+  }
+  return bestMv;
+}
+
+
+// ══════════════════════════════════════════════════════
+// DAMA — Offline vs IA + Online
+// ══════════════════════════════════════════════════════
+function initCheckers(){
+  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
+  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'b',king:false};
+  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'w',king:false};
+  return b;
+}
+function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
+function getCheckersMoves(board,r,c,mustCapture=false){
+  const p=board[r][c]; if(!p)return[];
+  const dirs=[];
+  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
+  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
+  const moves=[]; const caps=[];
+  for(const [dr,dc] of dirs){
+    const nr=r+dr,nc=c+dc;
+    if(nr<0||nr>7||nc<0||nc>7)continue;
+    if(!board[nr][nc]){
+      if(!mustCapture) moves.push({from:[r,c],to:[nr,nc],caps:[]});
+    } else if(board[nr][nc].color!==p.color){
+      const jr=r+2*dr,jc=c+2*dc;
+      if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!board[jr][jc]){
+        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
+      }
+    }
+  }
+  return caps.length>0?caps:mustCapture?[]:moves;
+}
+function getAllMoves(board,color){
+  const caps=[]; const moves=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    if(board[r][c]?.color===color){
+      const m=getCheckersMoves(board,r,c);
+      for(const mv of m){
+        if(mv.caps.length>0) caps.push(mv); else moves.push(mv);
+      }
+    }
+  }
+  return caps.length>0?caps:moves;
+}
+function applyMove(board,mv){
+  const nb=cloneBoard(board);
+  const p=nb[mv.from[0]][mv.from[1]];
+  nb[mv.from[0]][mv.from[1]]=null;
+  for(const [cr,cc] of mv.caps) nb[cr][cc]=null;
+  nb[mv.to[0]][mv.to[1]]=p;
+  if((p.color==='w'&&mv.to[0]===0)||(p.color==='b'&&mv.to[0]===7)) nb[mv.to[0]][mv.to[1]].king=true;
+  return nb;
+}
+function evalCheckers(board){
+  let s=0;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p)continue;
+    const v=p.king?3:1; s+=p.color==='w'?v:-v;
+  }
+  return s;
+}
+function minimaxCheckers(board,depth,alpha,beta,maximizing){
+  const color=maximizing?'w':'b';
+  const moves=getAllMoves(board,color);
+  if(depth===0||moves.length===0) return evalCheckers(board);
+  if(maximizing){
+    let best=-Infinity;
+    for(const mv of moves){
+      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
+      alpha=Math.max(alpha,best); if(beta<=alpha)break;
+    }
+    return best;
+  } else {
+    let best=Infinity;
+    for(const mv of moves){
+      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
+      beta=Math.min(beta,best); if(beta<=alpha)break;
+    }
+    return best;
+  }
+}
+function bestCheckerMove(board,color){
+  const moves=getAllMoves(board,color);
+  if(!moves.length)return null;
+  let best=color==='w'?-Infinity:Infinity;
+  let bestMv=moves[0];
+  for(const mv of moves){
+    const s=minimaxCheckers(applyMove(board,mv),4,-Infinity,Infinity,color==='b');
+    if(color==='w'?s>best:s<best){best=s;bestMv=mv;}
+  }
+  return bestMv;
+}
+
+
+// ══════════════════════════════════════════════════════
+// DAMA — Offline vs IA (com capturas múltiplas e 3D)
+// ══════════════════════════════════════════════════════
 function Dama({chips,onChange,log}){
   const [board,setBoard]=useState(()=>initCheckers());
   const [sel,setSel]=useState(null);
   const [turn,setTurn]=useState('w');
   const [moves,setMoves]=useState([]);
-  const [status,setStatus]=useState('Sua vez (brancas)');
+  const [status,setStatus]=useState('Sua vez (brancas ⬜)');
   const [over,setOver]=useState(false);
   const [aiThinking,setAiThinking]=useState(false);
   const [bet,setBet]=useState(5);
   const [gameStarted,setGameStarted]=useState(false);
+  const [lastMove,setLastMove]=useState(null);
+  const [captureChain,setCaptureChain]=useState(null); // captura múltipla em andamento
 
-  const allW=getAllMoves(board,'w'); const allB=getAllMoves(board,'b');
+  const CELL=42;
 
   const startGame=()=>{
-    if(chips<bet){setStatus('Fichas insuficientes!');return;}
-    onChange(-bet); log(`🎯 Dama: apostou ${bet} fichas`);
-    setBoard(initCheckers()); setSel(null); setTurn('w');
-    setStatus('Sua vez (brancas)'); setOver(false); setGameStarted(true);
+    if(chips<bet){alert('Fichas insuficientes!');return;}
+    onChange(-bet); log(`♟ Dama: apostou ${bet} fichas`);
+    setBoard(initCheckers()); setSel(null); setTurn('w'); setMoves([]);
+    setStatus('Sua vez (brancas ⬜)'); setOver(false); setGameStarted(true);
+    setLastMove(null); setCaptureChain(null);
+  };
+
+  // Capturas múltiplas: após capturar, verifica se pode capturar de novo
+  const getFollowUpCaps=(nb,r,c)=>{
+    const p=nb[r][c]; if(!p)return[];
+    const dirs=[];
+    if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
+    if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
+    const caps=[];
+    for(const [dr,dc] of dirs){
+      const mr=r+dr,mc=c+dc,jr=r+2*dr,jc=c+2*dc;
+      if(mr>=0&&mr<=7&&mc>=0&&mc<=7&&jr>=0&&jr<=7&&jc>=0&&jc<=7){
+        if(nb[mr][mc]&&nb[mr][mc].color!==p.color&&!nb[jr][jc]){
+          caps.push({from:[r,c],to:[jr,jc],caps:[[mr,mc]]});
+        }
+      }
+    }
+    return caps;
   };
 
   const handleCell=(r,c)=>{
-    if(over||turn!=='w'||aiThinking||!gameStarted)return;
+    if(over||!gameStarted)return;
+    // Captura múltipla em andamento
+    if(captureChain){
+      if(turn!=='w')return;
+      const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
+      if(mv){
+        const nb=applyMove(board,mv);
+        setBoard(nb); setLastMove(mv);
+        const followUp=getFollowUpCaps(nb,r,c);
+        if(followUp.length>0){
+          // Pode capturar mais! Mantém vez do jogador
+          setSel([r,c]); setMoves(followUp); setCaptureChain([r,c]);
+          setStatus('⚡ Captura múltipla! Continue capturando');
+          return;
+        }
+        // Fim da cadeia
+        setCaptureChain(null); setSel(null); setMoves([]);
+        finishPlayerMove(nb,r,c);
+      }
+      return;
+    }
+    if(turn!=='w'||aiThinking)return;
     const p=board[r][c];
     if(sel){
       const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
       if(mv){
-        const nb=applyMove(board,mv); setBoard(nb); setSel(null); setMoves([]);
-        const bMoves=getAllMoves(nb,'b');
-        if(!bMoves.length){setStatus('🏆 Você ganhou!');setOver(true);onChange(bet*2);log(`🏆 Dama: ganhou ${bet*2} fichas`);return;}
-        setTurn('b'); setStatus('IA pensando...');
-        setAiThinking(true);
-        setTimeout(()=>{
-          const aiMv=bestCheckerMove(nb,'b');
-          if(!aiMv){setStatus('🏆 Você ganhou!');setOver(true);setAiThinking(false);onChange(bet*2);log(`🏆 Dama: ganhou ${bet*2} fichas`);return;}
-          const nb2=applyMove(nb,aiMv); setBoard(nb2);
-          const wMoves=getAllMoves(nb2,'w');
-          if(!wMoves.length){setStatus('😔 IA ganhou!');setOver(true);setAiThinking(false);log(`😔 Dama: perdeu ${bet} fichas`);return;}
-          setTurn('w'); setStatus('Sua vez (brancas)'); setAiThinking(false);
-        },400);
+        const nb=applyMove(board,mv);
+        setBoard(nb); setLastMove(mv);
+        // Verifica captura múltipla
+        if(mv.caps.length>0){
+          const followUp=getFollowUpCaps(nb,r,c);
+          if(followUp.length>0){
+            setSel([r,c]); setMoves(followUp); setCaptureChain([r,c]);
+            setStatus('⚡ Captura múltipla! Continue capturando');
+            return;
+          }
+        }
+        setSel(null); setMoves([]);
+        finishPlayerMove(nb,r,c);
         return;
       }
     }
@@ -3284,87 +3684,153 @@ function Dama({chips,onChange,log}){
         ?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c)
         :getCheckersMoves(board,r,c);
       setSel([r,c]); setMoves(myMoves);
-    } else { setSel(null); setMoves([]); }
+    } else {setSel(null);setMoves([]);}
   };
 
-  const CELL=44;
+  const finishPlayerMove=(nb,fr,fc)=>{
+    const bMoves=getAllMoves(nb,'b');
+    if(!bMoves.length){
+      setStatus('🏆 Você ganhou!'); setOver(true);
+      onChange(bet*2); log(`🏆 Dama: ganhou ${bet*2} fichas`); return;
+    }
+    setTurn('b'); setStatus('⏳ IA pensando...');
+    setAiThinking(true);
+    setTimeout(()=>{
+      const aiMv=bestCheckerMove(nb,'b');
+      if(!aiMv){setStatus('🏆 Você ganhou!');setOver(true);setAiThinking(false);onChange(bet*2);log(`🏆 Dama: ganhou ${bet*2} fichas`);return;}
+      const nb2=applyMove(nb,aiMv);
+      setBoard(nb2); setLastMove(aiMv);
+      // IA: capturas múltiplas automáticas
+      let curr=nb2; let currMv=aiMv;
+      let followUp=getFollowUpCaps(curr,aiMv.to[0],aiMv.to[1]);
+      while(followUp.length>0){
+        const next=followUp[0];
+        curr=applyMove(curr,next); currMv=next;
+        followUp=getFollowUpCaps(curr,next.to[0],next.to[1]);
+      }
+      if(curr!==nb2)setBoard(curr);
+      const wMoves=getAllMoves(curr,'w');
+      if(!wMoves.length){setStatus('😔 IA ganhou!');setOver(true);setAiThinking(false);log(`😔 Dama: perdeu ${bet} fichas`);return;}
+      setTurn('w'); setStatus('Sua vez (brancas ⬜)'); setAiThinking(false);
+    },500);
+  };
+
   const validDests=moves.map(m=>m.to);
 
   return(
-    <div style={{padding:'12px 8px',maxWidth:500,margin:'0 auto'}}>
+    <div style={{padding:'12px 8px',maxWidth:480,margin:'0 auto'}}>
+      {/* Header */}
       <div style={{textAlign:'center',marginBottom:10}}>
-        <div style={{fontSize:24,fontWeight:900,color:'#f1c40f',fontFamily:"'Cinzel',serif"}}>♟ DAMA</div>
-        <div style={{color:'#aaa',fontSize:12,marginTop:2}}>{status}</div>
+        <div style={{fontSize:22,fontWeight:900,color:'#f1c40f',fontFamily:"'Cinzel',serif",letterSpacing:2}}>♟ DAMA</div>
+        <div style={{color:over?(status.includes('ganhou')?'#2ecc71':'#e74c3c'):'#aaa',fontSize:12,marginTop:3,fontWeight:over?700:400,minHeight:18}}>{status}</div>
       </div>
+
       {!gameStarted?(
-        <div style={{background:'rgba(0,0,0,.4)',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:20,textAlign:'center'}}>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:16}}>Jogue contra a IA</div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:16}}>
-            <span style={{color:'#aaa',fontSize:13}}>Aposta:</span>
+        <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(20,14,6,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
+          <div style={{fontSize:48,marginBottom:8}}>♟</div>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:20,lineHeight:1.5}}>Jogue contra a IA<br/><span style={{fontSize:11,color:'#555'}}>Capturas múltiplas • Rei • Regras oficiais</span></div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
+            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
             <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
-              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:14,textAlign:'center',outline:'none'}}/>
-            <span style={{color:'#666',fontSize:12}}>fichas</span>
+              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none',fontFamily:"'Cinzel',serif"}}/>
+            <span style={{color:'#555',fontSize:11}}>fichas</span>
           </div>
-          <button onClick={startGame} style={{padding:'12px 32px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:12,color:'#2ecc71',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>
-            INICIAR PARTIDA
+          <button onClick={startGame}
+            style={{padding:'13px 36px',background:'linear-gradient(135deg,#2a5a1a,#1a3a0d)',border:'1px solid rgba(46,204,113,.5)',borderRadius:12,color:'#2ecc71',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1,boxShadow:'0 4px 16px rgba(46,204,113,.2)'}}>
+            ▶ INICIAR PARTIDA
           </button>
         </div>
       ):(
         <>
-          <div style={{display:'flex',justifyContent:'center',marginBottom:8}}>
-            <div style={{
-              display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`,
-              border:'3px solid #5d4037',
-              boxShadow:'0 8px 32px rgba(0,0,0,.6),inset 0 0 0 2px #3a2a18',
-            }}>
-              {board.map((row,r)=>row.map((cell,c)=>{
-                const dark=(r+c)%2===1;
-                const isSel=sel&&sel[0]===r&&sel[1]===c;
-                const isDest=validDests.some(([dr,dc])=>dr===r&&dc===c);
-                const isLastCap=moves.find(m=>m.to[0]===r&&m.to[1]===c)?.caps.length>0;
-                return(
-                  <div key={`${r}${c}`} onClick={()=>handleCell(r,c)}
-                    style={{
-                      width:CELL,height:CELL,
-                      background:isSel?'rgba(241,196,15,.45)':isDest?'rgba(46,204,113,.35)':dark?'#4a3728':'#e8dcc8',
-                      display:'flex',alignItems:'center',justifyContent:'center',
-                      cursor:dark?'pointer':'default',position:'relative',
-                      boxShadow:isDest?'inset 0 0 0 3px rgba(46,204,113,.6)':isSel?'inset 0 0 0 3px rgba(241,196,15,.7)':'none',
-                      transition:'background .12s',
-                    }}>
-                    {isDest&&<div style={{width:14,height:14,borderRadius:'50%',background:isLastCap?'rgba(231,76,60,.6)':'rgba(46,204,113,.5)',border:'2px solid rgba(255,255,255,.4)'}}/>}
-                    {cell&&(
-                      <div style={{
-                        width:CELL-8,height:CELL-8,borderRadius:'50%',
-                        background:cell.color==='w'
-                          ?'radial-gradient(circle at 35% 30%,#fff 0%,#ddd 50%,#bbb 100%)'
-                          :'radial-gradient(circle at 35% 30%,#555 0%,#222 50%,#111 100%)',
-                        border:cell.color==='w'?'2px solid #aaa':'2px solid #444',
-                        boxShadow:cell.color==='w'?'0 3px 8px rgba(0,0,0,.4),inset 0 1px 2px rgba(255,255,255,.6)':'0 3px 8px rgba(0,0,0,.6),inset 0 1px 2px rgba(255,255,255,.1)',
-                        display:'flex',alignItems:'center',justifyContent:'center',
-                        fontSize:cell.king?20:0,
-                        position:'relative',zIndex:1,
-                      }}>
-                        {cell.king&&<span style={{color:cell.color==='w'?'#8B6914':'#f1c40f',fontSize:16,lineHeight:1}}>♔</span>}
-                      </div>
-                    )}
+          {/* Tabuleiro 3D */}
+          <div className="board3d-wrap">
+            <div className="board3d">
+              <div className="board3d-border">
+                {/* Labels colunas */}
+                <div className="board3d-labels" style={{paddingLeft:16}}>
+                  {['A','B','C','D','E','F','G','H'].map(l=><div key={l} className="board3d-label">{l}</div>)}
+                </div>
+                <div style={{display:'flex'}}>
+                  {/* Labels linhas */}
+                  <div className="board3d-rank">
+                    {[8,7,6,5,4,3,2,1].map(n=><span key={n}>{n}</span>)}
                   </div>
-                );
-              }))}
+                  {/* Grid */}
+                  <div style={{display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`}}>
+                    {board.map((row,r)=>row.map((cell,cc)=>{
+                      const dark=(r+cc)%2===1;
+                      const isSel=sel&&sel[0]===r&&sel[1]===cc;
+                      const isDest=validDests.some(([dr,dc])=>dr===r&&dc===cc);
+                      const isCapture=isDest&&moves.find(m=>m.to[0]===r&&m.to[1]===cc)?.caps.length>0;
+                      const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===cc)||(lastMove.to[0]===r&&lastMove.to[1]===cc));
+                      let bg=dark
+                        ?isSel?'#8B6914':isLast?'#5a3f10':'#3d2b12'
+                        :isSel?'#f5e090':isLast?'#e8d890':'#c8b884';
+                      return(
+                        <div key={`${r}${cc}`} onClick={()=>handleCell(r,cc)}
+                          style={{width:CELL,height:CELL,background:bg,
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            cursor:dark?'pointer':'default',position:'relative',
+                            boxShadow:isSel?'inset 0 0 0 3px rgba(241,196,15,.9)':isDest?`inset 0 0 0 3px ${isCapture?'rgba(231,76,60,.7)':'rgba(46,204,113,.7)'}`:isLast?'inset 0 0 0 2px rgba(241,196,15,.4)':'none',
+                          }}>
+                          {isDest&&!cell&&(
+                            <div style={{width:12,height:12,borderRadius:'50%',
+                              background:isCapture?'rgba(231,76,60,.6)':'rgba(46,204,113,.55)',
+                              border:'2px solid rgba(255,255,255,.5)'}}/>
+                          )}
+                          {isDest&&cell&&(
+                            <div style={{position:'absolute',inset:0,
+                              background:isCapture?'rgba(231,76,60,.25)':'rgba(46,204,113,.25)',
+                              border:`3px solid ${isCapture?'rgba(231,76,60,.7)':'rgba(46,204,113,.7)'}`,
+                              borderRadius:2,zIndex:0}}/>
+                          )}
+                          {cell&&(
+                            <div
+                              className={`checker-piece checker-${cell.color}${cell.king?' checker-king':''}`}
+                              style={{width:CELL-8,height:CELL-8,
+                                transform:isSel?'translateY(-4px) scale(1.1)':'none',
+                                zIndex:1,
+                              }}/>
+                          )}
+                        </div>
+                      );
+                    }))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Info */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10,padding:'8px 12px',background:'rgba(0,0,0,.3)',borderRadius:10,border:'1px solid rgba(255,255,255,.05)'}}>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:18}}>⬜</div>
+              <div style={{color:'#aaa',fontSize:10,fontFamily:"'Rajdhani',serif"}}>VOCÊ</div>
+              {turn==='w'&&!over&&<div style={{width:6,height:6,borderRadius:'50%',background:'#2ecc71',margin:'2px auto 0'}}/>}
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:'#f1c40f',fontSize:13,fontWeight:700,fontFamily:"'Cinzel',serif"}}>{bet} fichas</div>
+              <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani'"}}>APOSTA</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:18}}>⬛</div>
+              <div style={{color:'#aaa',fontSize:10,fontFamily:"'Rajdhani',serif"}}>IA</div>
+              {turn==='b'&&!over&&<div style={{width:6,height:6,borderRadius:'50%',background:'#e74c3c',margin:'2px auto 0'}}/>}
             </div>
           </div>
           {over&&(
             <div style={{textAlign:'center',marginTop:12}}>
-              <button onClick={()=>setGameStarted(false)} style={{padding:'10px 24px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:700,cursor:'pointer'}}>
+              <button onClick={()=>setGameStarted(false)}
+                style={{padding:'10px 28px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:700,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
                 🔄 JOGAR NOVAMENTE
               </button>
             </div>
           )}
-          <div style={{display:'flex',justifyContent:'space-between',marginTop:8,padding:'0 4px'}}>
-            <div style={{color:'#555',fontSize:11}}>⬜ Você (brancas)</div>
-            <div style={{color:'#555',fontSize:11,fontFamily:"'Rajdhani'"}}>{bet} fichas apostadas</div>
-            <div style={{color:'#555',fontSize:11}}>⬛ IA (pretas)</div>
-          </div>
+          {captureChain&&(
+            <div style={{textAlign:'center',marginTop:6,padding:'6px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,color:'#f1c40f',fontSize:11,fontFamily:"'Rajdhani'",letterSpacing:1}}>
+              ⚡ CAPTURA MÚLTIPLA — selecione o próximo destino
+            </div>
+          )}
         </>
       )}
     </div>
@@ -3372,171 +3838,14 @@ function Dama({chips,onChange,log}){
 }
 
 // ══════════════════════════════════════════════════════
-// XADREZ — Offline vs IA + Online
+// XADREZ — Offline vs IA (completo + 3D)
 // ══════════════════════════════════════════════════════
-const PIECE_UNICODE={wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',bK:'♚',bQ:'♛',bR:'♜',bB:'♝',bN:'♞',bP:'♟'};
-const PIECE_VALUE={P:100,N:320,B:330,R:500,Q:900,K:20000};
-const PAWN_TABLE_W=[
-  [0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],
-  [5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],
-  [5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]
-];
-const KNIGHT_TABLE=[
-  [-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],
-  [-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],
-  [-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],
-  [-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]
-];
-
-function initChess(){
-  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
-  const back=['R','N','B','Q','K','B','N','R'];
-  for(let c=0;c<8;c++){b[0][c]={t:back[c],col:'b'};b[7][c]={t:back[c],col:'w'};}
-  for(let c=0;c<8;c++){b[1][c]={t:'P',col:'b'};b[6][c]={t:'P',col:'w'};}
-  return b;
-}
-
-function getChessMoves(board,r,c,enPassant=null,castling={wK:true,wQ:true,bK:true,bQ:true}){
-  const p=board[r][c]; if(!p)return[];
-  const {t,col}=p; const opp=col==='w'?'b':'w';
-  const moves=[];
-  const inBounds=(r,c)=>r>=0&&r<=7&&c>=0&&c<=7;
-  const add=(tr,tc,extra={})=>{if(inBounds(tr,tc)&&board[tr][tc]?.col!==col)moves.push({from:[r,c],to:[tr,tc],...extra});};
-  const slide=(dr,dc)=>{let nr=r+dr,nc=c+dc;while(inBounds(nr,nc)){if(board[nr][nc]){if(board[nr][nc].col!==col)moves.push({from:[r,c],to:[nr,nc]});break;}moves.push({from:[r,c],to:[nr,nc]});nr+=dr;nc+=dc;}};
-
-  if(t==='P'){
-    const dir=col==='w'?-1:1; const start=col==='w'?6:1;
-    if(inBounds(r+dir,c)&&!board[r+dir][c]){
-      moves.push({from:[r,c],to:[r+dir,c],promo:r+dir===0||r+dir===7});
-      if(r===start&&!board[r+2*dir][c])moves.push({from:[r,c],to:[r+2*dir,c],double:true});
-    }
-    for(const dc of[-1,1]){
-      if(inBounds(r+dir,c+dc)){
-        if(board[r+dir][c+dc]?.col===opp)moves.push({from:[r,c],to:[r+dir,c+dc],promo:r+dir===0||r+dir===7});
-        else if(enPassant&&enPassant[0]===r+dir&&enPassant[1]===c+dc)moves.push({from:[r,c],to:[r+dir,c+dc],ep:true,capAt:[r,c+dc]});
-      }
-    }
-  } else if(t==='N'){
-    for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])add(r+dr,c+dc);
-  } else if(t==='B'){
-    for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1]])slide(dr,dc);
-  } else if(t==='R'){
-    for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);
-  } else if(t==='Q'){
-    for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);
-  } else if(t==='K'){
-    for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])add(r+dr,c+dc);
-    // Castling
-    const row=col==='w'?7:0;
-    if(r===row&&c===4){
-      if(castling[col+'K']&&!board[row][5]&&!board[row][6]&&board[row][7]?.t==='R')
-        moves.push({from:[r,c],to:[row,6],castle:'K'});
-      if(castling[col+'Q']&&!board[row][3]&&!board[row][2]&&!board[row][1]&&board[row][0]?.t==='R')
-        moves.push({from:[r,c],to:[row,2],castle:'Q'});
-    }
-  }
-  return moves;
-}
-
-function findKing(board,col){
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]?.t==='K'&&board[r][c]?.col===col)return[r,c];
-  return null;
-}
-
-function isInCheck(board,col){
-  const king=findKing(board,col); if(!king)return false;
-  const opp=col==='w'?'b':'w';
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]?.col===opp){
-      const ms=getChessMoves(board,r,c);
-      if(ms.some(m=>m.to[0]===king[0]&&m.to[1]===king[1]))return true;
-    }
-  }
-  return false;
-}
-
-function applyChessMove(board,mv,promo='Q'){
-  const nb=board.map(r=>r.map(c=>c?{...c}:null));
-  const p=nb[mv.from[0]][mv.from[1]];
-  nb[mv.from[0]][mv.from[1]]=null;
-  if(mv.ep&&mv.capAt)nb[mv.capAt[0]][mv.capAt[1]]=null;
-  nb[mv.to[0]][mv.to[1]]=p;
-  if(mv.promo)nb[mv.to[0]][mv.to[1]]={t:promo,col:p.col};
-  if(mv.castle){
-    const row=mv.from[0];
-    if(mv.castle==='K'){nb[row][5]={t:'R',col:p.col};nb[row][7]=null;}
-    else{nb[row][3]={t:'R',col:p.col};nb[row][0]=null;}
-  }
-  return nb;
-}
-
-function evalChess(board){
-  let s=0;
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    const p=board[r][c]; if(!p)continue;
-    const base=PIECE_VALUE[p.t]||0;
-    let pos=0;
-    if(p.t==='P')pos=p.col==='w'?PAWN_TABLE_W[r][c]:PAWN_TABLE_W[7-r][c];
-    if(p.t==='N')pos=KNIGHT_TABLE[r][c];
-    s+=p.col==='w'?base+pos:-(base+pos);
-  }
-  return s;
-}
-
-function getAllChessMoves(board,col,enPassant,castling){
-  const moves=[];
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]?.col===col){
-      const ms=getChessMoves(board,r,c,enPassant,castling);
-      for(const mv of ms){
-        const nb=applyChessMove(board,mv);
-        if(!isInCheck(nb,col))moves.push(mv);
-      }
-    }
-  }
-  return moves;
-}
-
-function minimaxChess(board,depth,alpha,beta,maximizing,enPassant,castling){
-  if(depth===0)return evalChess(board);
-  const col=maximizing?'w':'b';
-  const moves=getAllChessMoves(board,col,enPassant,castling);
-  if(!moves.length) return isInCheck(board,col)?(maximizing?-50000:50000):0;
-  if(maximizing){
-    let best=-Infinity;
-    for(const mv of moves){
-      best=Math.max(best,minimaxChess(applyChessMove(board,mv),depth-1,alpha,beta,false,mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null,castling));
-      alpha=Math.max(alpha,best); if(beta<=alpha)break;
-    }
-    return best;
-  } else {
-    let best=Infinity;
-    for(const mv of moves){
-      best=Math.min(best,minimaxChess(applyChessMove(board,mv),depth-1,alpha,beta,true,null,castling));
-      beta=Math.min(beta,best); if(beta<=alpha)break;
-    }
-    return best;
-  }
-}
-
-function bestChessMove(board,col,enPassant,castling){
-  const moves=getAllChessMoves(board,col,enPassant,castling);
-  if(!moves.length)return null;
-  let best=col==='b'?Infinity:-Infinity;
-  let bestMv=moves[0];
-  for(const mv of moves){
-    const s=minimaxChess(applyChessMove(board,mv),3,-Infinity,Infinity,col==='b',null,castling);
-    if(col==='b'?s<best:s>best){best=s;bestMv=mv;}
-  }
-  return bestMv;
-}
-
 function Xadrez({chips,onChange,log}){
   const [board,setBoard]=useState(()=>initChess());
   const [sel,setSel]=useState(null);
   const [turn,setTurn]=useState('w');
   const [moves,setMoves]=useState([]);
-  const [status,setStatus]=useState('Sua vez (brancas)');
+  const [status,setStatus]=useState('Sua vez — brancas');
   const [over,setOver]=useState(false);
   const [aiThinking,setAiThinking]=useState(false);
   const [enPassant,setEnPassant]=useState(null);
@@ -3546,14 +3855,17 @@ function Xadrez({chips,onChange,log}){
   const [gameStarted,setGameStarted]=useState(false);
   const [lastMove,setLastMove]=useState(null);
   const [captured,setCaptured]=useState({w:[],b:[]});
+  const [moveCount,setMoveCount]=useState(0);
+
+  const CELL=42;
 
   const startGame=()=>{
-    if(chips<bet){setStatus('Fichas insuficientes!');return;}
-    onChange(-bet); log(`♟ Xadrez: apostou ${bet} fichas`);
+    if(chips<bet){alert('Fichas insuficientes!');return;}
+    onChange(-bet); log(`♔ Xadrez: apostou ${bet} fichas`);
     setBoard(initChess()); setSel(null); setTurn('w'); setMoves([]);
-    setStatus('Sua vez (brancas)'); setOver(false); setGameStarted(true);
+    setStatus('Sua vez — brancas'); setOver(false); setGameStarted(true);
     setEnPassant(null); setCastling({wK:true,wQ:true,bK:true,bQ:true});
-    setLastMove(null); setCaptured({w:[],b:[]});
+    setLastMove(null); setCaptured({w:[],b:[]}); setMoveCount(0);
   };
 
   const doMove=(mv,promo='Q')=>{
@@ -3561,14 +3873,20 @@ function Xadrez({chips,onChange,log}){
     const cap=board[mv.to[0]][mv.to[1]];
     const nb=applyChessMove(board,mv,promo);
     setBoard(nb); setSel(null); setMoves([]); setLastMove(mv);
-    if(cap)setCaptured(cv=>({...cv,[cap.col]:[...cv[cap.col],cap.t]}));
-    // Update castling rights
+    if(cap) setCaptured(cv=>({...cv,[cap.col]:[...cv[cap.col],cap.t]}));
+    if(mv.ep&&mv.capAt){
+      const epCap=board[mv.capAt[0]][mv.capAt[1]];
+      if(epCap) setCaptured(cv=>({...cv,[epCap.col]:[...cv[epCap.col],epCap.t]}));
+    }
     const nc={...castling};
     if(p?.t==='K'){if(p.col==='w'){nc.wK=false;nc.wQ=false;}else{nc.bK=false;nc.bQ=false;}}
     if(p?.t==='R'){if(mv.from[1]===7)nc[p.col+'K']=false;if(mv.from[1]===0)nc[p.col+'Q']=false;}
+    if(mv.to[1]===7)nc[board[mv.to[0]][mv.to[1]]?.col+'K']=false;
+    if(mv.to[1]===0)nc[board[mv.to[0]][mv.to[1]]?.col+'Q']=false;
     setCastling(nc);
     const ep=mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null;
     setEnPassant(ep);
+    setMoveCount(n=>n+1);
     return{nb,ep,nc};
   };
 
@@ -3578,16 +3896,16 @@ function Xadrez({chips,onChange,log}){
     if(sel){
       const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
       if(mv){
-        if(mv.promo){setPromoModal({mv,r,c});return;}
+        if(mv.promo){setPromoModal({mv});return;}
         const {nb,ep,nc}=doMove(mv);
         checkAfterMove(nb,ep,nc,'b');
         return;
       }
     }
     if(p?.col==='w'){
-      const ms=getChessMoves(board,r,c,enPassant,castling).filter(m=>{
-        const nb=applyChessMove(board,m); return !isInCheck(nb,'w');
-      });
+      const ms=getChessMoves(board,r,c,enPassant,castling).filter(m=>
+        !isInCheck(applyChessMove(board,m),'w')
+      );
       setSel([r,c]); setMoves(ms);
     } else {setSel(null);setMoves([]);}
   };
@@ -3596,133 +3914,198 @@ function Xadrez({chips,onChange,log}){
     const oppMoves=getAllChessMoves(nb,nextCol,ep,nc);
     if(!oppMoves.length){
       if(isInCheck(nb,nextCol)){
-        setStatus(nextCol==='b'?'♔ Xeque-mate! Você venceu!':'♚ Xeque-mate! IA venceu!');
+        const won=nextCol==='b';
+        setStatus(won?'♔ Xeque-mate! Você venceu!':'♚ Xeque-mate! IA venceu!');
         setOver(true);
-        if(nextCol==='b'){onChange(bet*2);log(`♔ Xadrez: ganhou ${bet*2} fichas`);}
+        if(won){onChange(bet*2);log(`♔ Xadrez: ganhou ${bet*2} fichas`);}
         else log(`♚ Xadrez: perdeu ${bet} fichas`);
-      } else {setStatus('Empate — rei afogado!');setOver(true);}
+      } else {
+        setStatus('½ Empate — rei afogado!'); setOver(true);
+      }
       return;
     }
     if(nextCol==='b'){
-      if(isInCheck(nb,'b'))setStatus('⚠️ Xeque! IA pensando...');
-      else setStatus('IA pensando...');
+      setStatus(isInCheck(nb,'b')?'⚠️ Xeque! IA pensando...':'⏳ IA pensando...');
       setTurn('b'); setAiThinking(true);
       setTimeout(()=>{
         const aiMv=bestChessMove(nb,'b',ep,nc);
-        if(!aiMv){setStatus('Empate!');setOver(true);setAiThinking(false);return;}
-        const cap2=nb[aiMv.to[0]][aiMv.to[1]];
+        if(!aiMv){setStatus('½ Empate!');setOver(true);setAiThinking(false);return;}
+        const capPiece=nb[aiMv.to[0]][aiMv.to[1]];
         const nb2=applyChessMove(nb,aiMv);
-        setBoard(nb2); setLastMove(aiMv);
-        if(cap2)setCaptured(cv=>({...cv,[cap2.col]:[...cv[cap2.col],cap2.t]}));
+        if(capPiece) setCaptured(cv=>({...cv,[capPiece.col]:[...cv[capPiece.col],capPiece.t]}));
+        if(aiMv.ep&&aiMv.capAt){
+          const epCap=nb[aiMv.capAt[0]][aiMv.capAt[1]];
+          if(epCap) setCaptured(cv=>({...cv,[epCap.col]:[...cv[epCap.col],epCap.t]}));
+        }
+        setBoard(nb2); setLastMove(aiMv); setMoveCount(n=>n+1);
         const nc2={...nc};
         const ap=nb[aiMv.from[0]][aiMv.from[1]];
         if(ap?.t==='K'){if(ap.col==='w'){nc2.wK=false;nc2.wQ=false;}else{nc2.bK=false;nc2.bQ=false;}}
         if(ap?.t==='R'){if(aiMv.from[1]===7)nc2[ap.col+'K']=false;if(aiMv.from[1]===0)nc2[ap.col+'Q']=false;}
         setCastling(nc2);
-        setEnPassant(aiMv.double?[aiMv.to[0]+(aiMv.from[0]===1?1:-1),aiMv.to[1]]:null);
-        const wMoves=getAllChessMoves(nb2,'w',null,nc2);
+        const ep2=aiMv.double?[aiMv.to[0]+(aiMv.from[0]===1?1:-1),aiMv.to[1]]:null;
+        setEnPassant(ep2);
+        const wMoves=getAllChessMoves(nb2,'w',ep2,nc2);
         if(!wMoves.length){
           if(isInCheck(nb2,'w')){setStatus('♚ Xeque-mate! IA venceu!');setOver(true);log(`♚ Xadrez: perdeu ${bet} fichas`);}
-          else{setStatus('Empate!');setOver(true);}
+          else{setStatus('½ Empate!');setOver(true);}
         } else {
-          if(isInCheck(nb2,'w'))setStatus('⚠️ Você está em xeque!');
-          else setStatus('Sua vez (brancas)');
+          setStatus(isInCheck(nb2,'w')?'⚠️ Você está em xeque!':'Sua vez — brancas');
           setTurn('w');
         }
         setAiThinking(false);
-      },600);
+      },700);
     }
   };
 
-  const CELL=42;
   const validDests=moves.map(m=>m.to);
-  const isCheck=turn==='w'&&gameStarted&&isInCheck(board,'w');
-  const kingPos=isCheck?findKing(board,'w'):null;
+  const inCheck=gameStarted&&turn==='w'&&isInCheck(board,'w');
+  const kingPos=inCheck?findKing(board,'w'):null;
+
+  const renderPiece=(cell,r,c)=>{
+    if(!cell)return null;
+    const isSel2=sel&&sel[0]===r&&sel[1]===c;
+    return(
+      <span className={`chess-piece chess-piece-${cell.col}`}
+        style={{
+          fontSize:CELL*0.66,
+          transform:isSel2?'translateY(-5px) scale(1.15)':'none',
+          filter:cell.col==='w'
+            ?`drop-shadow(0 3px 5px rgba(0,0,0,.7)) drop-shadow(0 0 3px rgba(255,255,255,.3))${isSel2?' drop-shadow(0 0 8px rgba(241,196,15,.8))':''}`
+            :`drop-shadow(0 3px 5px rgba(0,0,0,.9))${isSel2?' drop-shadow(0 0 8px rgba(241,196,15,.8))':''}`,
+          transition:'all .15s',
+          userSelect:'none',
+          cursor:'pointer',
+        }}>
+        {PIECE_UNICODE[cell.col+cell.t]}
+      </span>
+    );
+  };
 
   return(
-    <div style={{padding:'12px 8px',maxWidth:500,margin:'0 auto'}}>
-      <div style={{textAlign:'center',marginBottom:10}}>
-        <div style={{fontSize:24,fontWeight:900,color:'#f1c40f',fontFamily:"'Cinzel',serif"}}>♟ XADREZ</div>
-        <div style={{color:isCheck?'#e74c3c':'#aaa',fontSize:12,marginTop:2,fontWeight:isCheck?700:400}}>{status}</div>
+    <div style={{padding:'12px 8px',maxWidth:480,margin:'0 auto'}}>
+      {/* Header */}
+      <div style={{textAlign:'center',marginBottom:8}}>
+        <div style={{fontSize:22,fontWeight:900,color:'#f1c40f',fontFamily:"'Cinzel',serif",letterSpacing:2}}>♔ XADREZ</div>
+        <div style={{color:inCheck?'#e74c3c':over?(status.includes('venceu')&&!status.includes('IA')?'#2ecc71':'#e74c3c'):'#aaa',
+          fontSize:12,marginTop:3,fontWeight:(inCheck||over)?700:400,minHeight:18}}>{status}</div>
       </div>
+
       {!gameStarted?(
-        <div style={{background:'rgba(0,0,0,.4)',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:20,textAlign:'center'}}>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:16}}>Jogue contra a IA</div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:16}}>
-            <span style={{color:'#aaa',fontSize:13}}>Aposta:</span>
+        <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(10,8,20,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
+          <div style={{fontSize:48,marginBottom:8}}>♔</div>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:20,lineHeight:1.5}}>Jogue contra a IA<br/><span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span></div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
+            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
             <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
-              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:14,textAlign:'center',outline:'none'}}/>
-            <span style={{color:'#666',fontSize:12}}>fichas</span>
+              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none',fontFamily:"'Cinzel',serif"}}/>
+            <span style={{color:'#555',fontSize:11}}>fichas</span>
           </div>
-          <button onClick={startGame} style={{padding:'12px 32px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:12,color:'#2ecc71',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>
-            INICIAR PARTIDA
+          <button onClick={startGame}
+            style={{padding:'13px 36px',background:'linear-gradient(135deg,#2a1a4a,#1a0d2e)',border:'1px solid rgba(155,89,182,.5)',borderRadius:12,color:'#9b59b6',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1,boxShadow:'0 4px 16px rgba(155,89,182,.2)'}}>
+            ▶ INICIAR PARTIDA
           </button>
         </div>
       ):(
         <>
-          {/* Capturadas pelo jogador */}
-          <div style={{fontSize:11,color:'#555',minHeight:18,marginBottom:4,textAlign:'center'}}>
-            {captured.b.map(t=>PIECE_UNICODE['b'+t]).join(' ')}
+          {/* Peças capturadas pela IA (peças brancas capturadas) */}
+          <div style={{minHeight:22,marginBottom:4,textAlign:'center',letterSpacing:1}}>
+            {captured.w.map((t,i)=><span key={i} style={{fontSize:16,opacity:.7}}>{PIECE_UNICODE['w'+t]}</span>)}
           </div>
-          <div style={{display:'flex',justifyContent:'center',marginBottom:4}}>
-            <div style={{
-              display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`,
-              border:'3px solid #5d4037',
-              boxShadow:'0 8px 32px rgba(0,0,0,.6)',
-            }}>
-              {board.map((row,r)=>row.map((cell,c)=>{
-                const light=(r+c)%2===0;
-                const isSel=sel&&sel[0]===r&&sel[1]===c;
-                const isDest=validDests.some(([dr,dc])=>dr===r&&dc===c);
-                const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===c)||(lastMove.to[0]===r&&lastMove.to[1]===c));
-                const isKingCheck=kingPos&&kingPos[0]===r&&kingPos[1]===c;
-                let bg=light?'#f0d9b5':'#b58863';
-                if(isKingCheck)bg='rgba(231,76,60,.8)';
-                else if(isSel)bg=light?'rgba(241,196,15,.6)':'rgba(241,196,15,.5)';
-                else if(isLast)bg=light?'rgba(241,196,15,.3)':'rgba(241,196,15,.25)';
-                return(
-                  <div key={`${r}${c}`} onClick={()=>handleCell(r,c)}
-                    style={{width:CELL,height:CELL,background:bg,display:'flex',alignItems:'center',
-                      justifyContent:'center',cursor:'pointer',position:'relative',transition:'background .1s'}}>
-                    {isDest&&<div style={{width:cell?CELL-4:14,height:cell?CELL-4:14,borderRadius:cell?'50%':'50%',
-                      background:cell?'transparent':'rgba(0,0,0,.25)',
-                      border:cell?'4px solid rgba(0,0,0,.25)':'none',pointerEvents:'none'}}/>}
-                    {cell&&(
-                      <span style={{fontSize:30,lineHeight:1,position:'relative',zIndex:1,
-                        textShadow:cell.col==='w'?'0 1px 3px rgba(0,0,0,.5)':'0 1px 3px rgba(0,0,0,.8)',
-                        filter:cell.col==='w'?'drop-shadow(0 1px 1px rgba(0,0,0,.4))':'none',
-                        userSelect:'none',
-                      }}>
-                        {PIECE_UNICODE[cell.col+cell.t]}
-                      </span>
-                    )}
-                    {c===0&&<div style={{position:'absolute',top:1,left:2,fontSize:9,color:light?'#b58863':'#f0d9b5',opacity:.7,lineHeight:1}}>{8-r}</div>}
-                    {r===7&&<div style={{position:'absolute',bottom:1,right:2,fontSize:9,color:light?'#b58863':'#f0d9b5',opacity:.7,lineHeight:1}}>{'abcdefgh'[c]}</div>}
+
+          {/* Tabuleiro 3D */}
+          <div className="board3d-wrap">
+            <div className="board3d">
+              <div className="board3d-border">
+                <div className="board3d-labels" style={{paddingLeft:16}}>
+                  {['a','b','c','d','e','f','g','h'].map(l=><div key={l} className="board3d-label">{l}</div>)}
+                </div>
+                <div style={{display:'flex'}}>
+                  <div className="board3d-rank">
+                    {[8,7,6,5,4,3,2,1].map(n=><span key={n}>{n}</span>)}
                   </div>
-                );
-              }))}
+                  <div style={{display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`}}>
+                    {board.map((row,r)=>row.map((cell,cc)=>{
+                      const light=(r+cc)%2===0;
+                      const isSel=sel&&sel[0]===r&&sel[1]===cc;
+                      const isDest=validDests.some(([dr,dc])=>dr===r&&dc===cc);
+                      const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===cc)||(lastMove.to[0]===r&&lastMove.to[1]===cc));
+                      const isKingCheck=kingPos&&kingPos[0]===r&&kingPos[1]===cc;
+                      let bg=light?'#f0d9b5':'#b58863';
+                      if(isKingCheck) bg='rgba(220,50,50,.85)';
+                      else if(isSel) bg=light?'rgba(241,196,15,.75)':'rgba(200,150,0,.65)';
+                      else if(isLast) bg=light?'rgba(241,196,15,.35)':'rgba(200,150,0,.3)';
+                      return(
+                        <div key={`${r}${cc}`} onClick={()=>handleCell(r,cc)}
+                          style={{width:CELL,height:CELL,background:bg,
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            cursor:'pointer',position:'relative',transition:'background .1s'}}>
+                          {isDest&&(
+                            <div style={{position:'absolute',
+                              width:cell?CELL-2:16,height:cell?CELL-2:16,
+                              borderRadius:'50%',
+                              background:cell?'transparent':'rgba(0,0,0,.22)',
+                              border:cell?'4px solid rgba(0,0,0,.3)':'none',
+                              pointerEvents:'none',zIndex:0}}/>
+                          )}
+                          {renderPiece(cell,r,cc)}
+                          {/* Coordenadas */}
+                          {cc===0&&<div style={{position:'absolute',top:1,left:2,fontSize:8,color:light?'#b58863':'#f0d9b5',opacity:.6,lineHeight:1,zIndex:3}}>{8-r}</div>}
+                          {r===7&&<div style={{position:'absolute',bottom:1,right:2,fontSize:8,color:light?'#b58863':'#f0d9b5',opacity:.6,lineHeight:1,zIndex:3}}>{'abcdefgh'[cc]}</div>}
+                        </div>
+                      );
+                    }))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          {/* Capturadas pela IA */}
-          <div style={{fontSize:11,color:'#555',minHeight:18,marginTop:4,textAlign:'center'}}>
-            {captured.w.map(t=>PIECE_UNICODE['w'+t]).join(' ')}
+
+          {/* Peças capturadas pelo jogador (peças pretas) */}
+          <div style={{minHeight:22,marginTop:4,textAlign:'center',letterSpacing:1}}>
+            {captured.b.map((t,i)=><span key={i} style={{fontSize:16,opacity:.7}}>{PIECE_UNICODE['b'+t]}</span>)}
           </div>
+
+          {/* Info bar */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,padding:'7px 12px',background:'rgba(0,0,0,.3)',borderRadius:10,border:'1px solid rgba(255,255,255,.05)'}}>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:20}}>{PIECE_UNICODE['wK']}</div>
+              <div style={{color:'#aaa',fontSize:9,fontFamily:"'Rajdhani'",letterSpacing:1}}>VOCÊ</div>
+              {turn==='w'&&!over&&<div style={{width:6,height:6,borderRadius:'50%',background:'#2ecc71',margin:'2px auto 0'}}/>}
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:'#f1c40f',fontSize:12,fontWeight:700,fontFamily:"'Cinzel',serif"}}>{bet} fichas</div>
+              <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani'"}}>APOSTA • {moveCount} lances</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:20}}>{PIECE_UNICODE['bK']}</div>
+              <div style={{color:'#aaa',fontSize:9,fontFamily:"'Rajdhani'",letterSpacing:1}}>IA</div>
+              {turn==='b'&&!over&&<div style={{width:6,height:6,borderRadius:'50%',background:'#e74c3c',margin:'2px auto 0'}}/>}
+            </div>
+          </div>
+
           {over&&(
-            <div style={{textAlign:'center',marginTop:10}}>
-              <button onClick={()=>setGameStarted(false)} style={{padding:'10px 24px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:700,cursor:'pointer'}}>
+            <div style={{textAlign:'center',marginTop:12}}>
+              <button onClick={()=>setGameStarted(false)}
+                style={{padding:'10px 28px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:700,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
                 🔄 JOGAR NOVAMENTE
               </button>
             </div>
           )}
+
+          {/* Modal promoção */}
           {promoModal&&(
-            <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center'}}>
-              <div style={{background:'#1a1a2e',border:'1px solid rgba(241,196,15,.3)',borderRadius:16,padding:24,textAlign:'center'}}>
-                <div style={{color:'#f1c40f',fontWeight:700,marginBottom:12,fontSize:14}}>Promover peão para:</div>
+            <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <div style={{background:'linear-gradient(135deg,#1a1a2e,#0d0d1a)',border:'1px solid rgba(241,196,15,.4)',borderRadius:18,padding:'24px 28px',textAlign:'center',boxShadow:'0 20px 60px rgba(0,0,0,.8)'}}>
+                <div style={{color:'#f1c40f',fontWeight:700,marginBottom:16,fontSize:14,fontFamily:"'Cinzel',serif",letterSpacing:1}}>PROMOVER PEÃO</div>
                 <div style={{display:'flex',gap:12,justifyContent:'center'}}>
                   {['Q','R','B','N'].map(t=>(
                     <div key={t} onClick={()=>{const{nb,ep,nc}=doMove(promoModal.mv,t);setPromoModal(null);checkAfterMove(nb,ep,nc,'b');}}
-                      style={{width:52,height:52,background:'rgba(255,255,255,.08)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:32}}>
-                      {PIECE_UNICODE['w'+t]}
+                      style={{width:58,height:58,background:'rgba(255,255,255,.07)',border:'1px solid rgba(241,196,15,.35)',borderRadius:12,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'all .15s',gap:2}}
+                      onMouseEnter={e=>{e.currentTarget.style.background='rgba(241,196,15,.15)';e.currentTarget.style.transform='translateY(-3px)';}}
+                      onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.07)';e.currentTarget.style.transform='none';}}>
+                      <span style={{fontSize:30}}>{PIECE_UNICODE['w'+t]}</span>
+                      <span style={{fontSize:9,color:'#888',fontFamily:"'Rajdhani'",letterSpacing:1}}>{{'Q':'DAMA','R':'TORRE','B':'BISPO','N':'CAVALO'}[t]}</span>
                     </div>
                   ))}
                 </div>
