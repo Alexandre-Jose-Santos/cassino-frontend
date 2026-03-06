@@ -2346,11 +2346,15 @@ function DamaOnline({socket,room,userData,onGameOver}){
     socket.emit('game_action',{roomId:room.id,action:'dama_init',data:{}});
     const h=({action,data})=>{
       if(action==='dama_init'){
-        myColorRef.current=data.color;
-        setMyColor(data.color);
+        // Backend envia colorMap {uid: 'w'/'b'} para todos
+        const myUid=userData?.uid;
+        const col=data.colorMap?data.colorMap[myUid]:data.color;
+        if(!col)return; // ainda não tenho uid ou não estou no mapa
+        myColorRef.current=col;
+        setMyColor(col);
         setBoard(initCheckers());
         setTurn('w');
-        setStatus(data.color==='w'?'Sua vez':'Vez do adversário');
+        setStatus(col==='w'?'Sua vez':'Vez do adversário');
       }
       if(action==='dama_update'){
         setBoard(data.board); setTurn(data.turn);
