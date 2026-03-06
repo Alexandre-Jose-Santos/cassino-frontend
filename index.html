@@ -2403,8 +2403,14 @@ function OnlineLobby({socket,chips,userData,onChange}){
             {myRoom.started&&gameOver&&(
               <div style={{margin:"12px 0",background:"rgba(0,0,0,.4)",border:"1px solid rgba(241,196,15,.15)",borderRadius:12,padding:"16px",textAlign:"center"}}>
                 {rematchCountdown===null?(
-                  <div style={{display:"flex",gap:8}}>
-                    <Btn full onClick={reiniciarJogo} c="#f1c40f" tc="#000">🔄 REINICIAR JOGO</Btn>
+                  <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+                    {euSouCriador?(
+                      <Btn full onClick={reiniciarJogo} c="#f1c40f" tc="#000">🔄 REINICIAR JOGO</Btn>
+                    ):(
+                      <div style={{textAlign:"center",padding:"10px",color:"rgba(255,255,255,.3)",fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,border:"1px solid rgba(255,255,255,.06)",borderRadius:8}}>
+                        ⏳ Aguardando o criador reiniciar...
+                      </div>
+                    )}
                     <Btn full onClick={sairAposPartida} c="#e74c3c" tc="#fff">🚪 SAIR</Btn>
                   </div>
                 ):(
