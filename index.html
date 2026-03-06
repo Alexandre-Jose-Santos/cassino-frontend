@@ -103,25 +103,31 @@ select option{background:#111;color:#fff;}
 .dom3d-anim{animation:dom3d-enter .3s ease-out;}
 
 /* ── Baralho 3D Realista ────────────────────── */
-.card3d-wrap{perspective:500px;display:inline-flex;position:relative;}
+.card3d-wrap{perspective:600px;display:inline-flex;position:relative;}
 .card3d{
-  border-radius:10px;position:relative;transform-style:preserve-3d;
-  transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg);
+  border-radius:9px;position:relative;transform-style:preserve-3d;
+  /* Inclinação suave — não distorce a leitura */
+  transform:rotateX(10deg) rotateY(-5deg);
   transition:transform .22s cubic-bezier(.34,1.4,.64,1),box-shadow .22s;
   cursor:default;
 }
 .card3d-face{
-  border-radius:10px;position:relative;overflow:hidden;
-  background:radial-gradient(ellipse at 25% 15%,#ffffff 0%,#fdfaf4 30%,#f8f3ea 60%,#f0e8d8 100%);
+  border-radius:9px;position:relative;overflow:hidden;
+  /* Papel branco puro — máxima nitidez */
+  background:#ffffff;
 }
 .card3d-face::before{
-  content:'';position:absolute;inset:0;border-radius:9px;z-index:10;pointer-events:none;
-  background:linear-gradient(135deg,rgba(255,255,255,.65) 0%,rgba(255,255,255,.2) 20%,transparent 45%,rgba(0,0,0,.04) 100%);
+  content:'';position:absolute;inset:0;border-radius:8px;z-index:10;pointer-events:none;
+  /* Reflexo sutil — não interfere na leitura */
+  background:linear-gradient(135deg,rgba(255,255,255,.4) 0%,rgba(255,255,255,.08) 25%,transparent 50%);
 }
-.card3d-face::after{content:'';position:absolute;inset:3px;border-radius:8px;z-index:9;pointer-events:none;border:1px solid rgba(0,0,0,.06);}
+.card3d-face::after{content:'';position:absolute;inset:2px;border-radius:7px;z-index:9;pointer-events:none;border:1px solid rgba(0,0,0,.08);}
 .card3d-tl{position:absolute;top:4px;left:4px;z-index:11;line-height:1.05;text-align:center;}
 .card3d-br{position:absolute;bottom:4px;right:4px;z-index:11;line-height:1.05;text-align:center;transform:rotate(180deg);}
-.card3d-rank{font-family:'Playfair Display',Georgia,serif;font-weight:700;display:block;line-height:1;}
+.card3d-rank{
+  font-family:'Georgia',serif;font-weight:900;display:block;line-height:1;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
 .card3d-suit-sm{display:block;line-height:1.1;}
 .card3d-pip{position:absolute;z-index:11;line-height:1;user-select:none;}
 .card3d-pip.inv{transform:rotate(180deg);}
@@ -152,21 +158,21 @@ select option{background:#111;color:#fff;}
 .card3d-back-txt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-family:'Cinzel',serif;font-size:11px;letter-spacing:2px;color:rgba(255,255,255,.28);}
 .card3d-wrap.c3d-play:hover .card3d{
-  transform:rotateX(5deg) rotateY(-2deg) translateY(-18px) scale(1.06);
-  box-shadow:0 28px 50px rgba(0,0,0,.8),0 0 0 2px rgba(241,196,15,.6),0 0 28px rgba(241,196,15,.4)!important;
+  transform:rotateX(3deg) rotateY(-1deg) translateY(-16px) scale(1.06);
+  box-shadow:0 22px 40px rgba(0,0,0,.75),0 0 0 2px rgba(241,196,15,.6),0 0 24px rgba(241,196,15,.4)!important;
 }
 .card3d-wrap.c3d-sel .card3d{
-  transform:rotateX(4deg) rotateY(-1deg) translateY(-20px) scale(1.08);
-  box-shadow:0 32px 56px rgba(0,0,0,.85),0 0 0 2px rgba(241,196,15,.85),0 0 38px rgba(241,196,15,.55)!important;
+  transform:rotateX(2deg) rotateY(0deg) translateY(-18px) scale(1.08);
+  box-shadow:0 24px 44px rgba(0,0,0,.8),0 0 0 2.5px rgba(241,196,15,.9),0 0 32px rgba(241,196,15,.5)!important;
 }
 .card3d-wrap.c3d-new .card3d{
   box-shadow:0 14px 28px rgba(0,0,0,.65),0 0 0 2px rgba(46,204,113,.55),0 0 18px rgba(46,204,113,.3)!important;
 }
 .card3d-wrap.c3d-play{cursor:pointer;}
 @keyframes card3d-enter{
-  0%{opacity:0;transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg) translateY(28px) scale(.8);}
-  70%{transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg) translateY(-4px) scale(1.02);}
-  100%{opacity:1;transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg);}
+  0%{opacity:0;transform:rotateX(10deg) rotateY(-5deg) translateY(26px) scale(.82);}
+  70%{transform:rotateX(10deg) rotateY(-5deg) translateY(-3px) scale(1.01);}
+  100%{opacity:1;transform:rotateX(10deg) rotateY(-5deg);}
 }
 .card3d-anim{animation:card3d-enter .45s cubic-bezier(.22,1,.36,1) both;}
 </style>
@@ -1801,8 +1807,8 @@ function Card3D({rank,suit,onClick,dim,selected,newCard,faceDown,mini=false,anim
   const isFig=['J','Q','K'].includes(rank);
   const isAce=rank==='A';
   const isNum=!isNaN(parseInt(rank));
-  const rankSz=mini?6:(rank==='10'?11:13);
-  const suitSz=mini?6:9;
+  const rankSz=mini?7:(rank==='10'?12:14);
+  const suitSz=mini?6:10;
 
   const wrapCls=['card3d-wrap',onClick?'c3d-play':'',selected?'c3d-sel':'',newCard?'c3d-new':''].filter(Boolean).join(' ');
   const cardCls=['card3d',animate?'card3d-anim':''].filter(Boolean).join(' ');
@@ -1829,7 +1835,7 @@ function Card3D({rank,suit,onClick,dim,selected,newCard,faceDown,mini=false,anim
     const n=parseInt(rank);
     const positions=CARD_PIP_POS[n];
     if(!positions) return null;
-    const pSz=mini?6:10;
+    const pSz=mini?6:11;
     const aL=mini?2:6, aR=W-(mini?2:6)-pSz;
     const aT=mini?4:16, aB=H-(mini?4:16)-pSz;
     const aW=aR-aL, aH=aB-aT;
@@ -2191,10 +2197,11 @@ function PifeOnline({socket,room,userData}){
                 onDragStart={()=>dragStart(i)}
                 onDragOver={(e)=>dragOver(e,i)}
                 onDragEnd={dragEnd}
-                style={{opacity:dragging===i?.4:1,transition:'opacity .15s'}}>
+                onClick={phase==='discard'?()=>selecionarCarta(i):undefined}
+                style={{opacity:dragging===i?.4:1,transition:'opacity .15s',
+                  cursor:phase==='discard'?'pointer':'grab'}}>
                 <Card3D
                   rank={card.rank} suit={card.suit}
-                  onClick={phase==='discard'?()=>selecionarCarta(i):undefined}
                   selected={isSel} newCard={isNew}
                   animate={isNew}
                 />
