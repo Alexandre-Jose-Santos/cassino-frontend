@@ -3519,78 +3519,39 @@ function Dama({chips,onChange,log}){
   const [bet,setBet]=useState(5);
   const [gameStarted,setGameStarted]=useState(false);
   const [lastMove,setLastMove]=useState(null);
-  const [captureChain,setCaptureChain]=useState(null); // captura múltipla em andamento
-
   const CELL=42;
 
   const startGame=()=>{
     if(chips<bet){alert('Fichas insuficientes!');return;}
     onChange(-bet); log(`♟ Dama: apostou ${bet} fichas`);
     setBoard(initCheckers()); setSel(null); setTurn('w'); setMoves([]);
-    setStatus('Sua vez (brancas ⬜)'); setOver(false); setGameStarted(true);
-    setLastMove(null); setCaptureChain(null);
-  };
-
-  // Capturas múltiplas: após capturar, verifica se pode capturar de novo
-  const getFollowUpCaps=(nb,r,c)=>{
-    const p=nb[r][c]; if(!p)return[];
-    const dirs=[];
-    if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
-    if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
-    const caps=[];
-    for(const [dr,dc] of dirs){
-      const mr=r+dr,mc=c+dc,jr=r+2*dr,jc=c+2*dc;
-      if(mr>=0&&mr<=7&&mc>=0&&mc<=7&&jr>=0&&jr<=7&&jc>=0&&jc<=7){
-        if(nb[mr][mc]&&nb[mr][mc].color!==p.color&&!nb[jr][jc]){
-          caps.push({from:[r,c],to:[jr,jc],caps:[[mr,mc]]});
-        }
-      }
-    }
-    return caps;
+    setStatus('Sua vez ⬜'); setOver(false); setGameStarted(true);
+    setLastMove(null);
   };
 
   const handleCell=(r,c)=>{
-    if(over||!gameStarted)return;
-    // Captura múltipla em andamento
-    if(captureChain){
-      if(turn!=='w')return;
-      const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
-      if(mv){
-        const nb=applyMove(board,mv);
-        setBoard(nb); setLastMove(mv);
-        const followUp=getFollowUpCaps(nb,r,c);
-        if(followUp.length>0){
-          // Pode capturar mais! Mantém vez do jogador
-          setSel([r,c]); setMoves(followUp); setCaptureChain([r,c]);
-          setStatus('⚡ Captura múltipla! Continue capturando');
-          return;
-        }
-        // Fim da cadeia
-        setCaptureChain(null); setSel(null); setMoves([]);
-        finishPlayerMove(nb,r,c);
-      }
-      return;
-    }
-    if(turn!=='w'||aiThinking)return;
+    if(over||!gameStarted||turn!=='w'||aiThinking)return;
     const p=board[r][c];
     if(sel){
       const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
       if(mv){
         const nb=applyMove(board,mv);
         setBoard(nb); setLastMove(mv);
-        // Verifica captura múltipla
-        if(mv.caps.length>0){
-          const followUp=getFollowUpCaps(nb,r,c);
-          if(followUp.length>0){
-            setSel([r,c]); setMoves(followUp); setCaptureChain([r,c]);
-            setStatus('⚡ Captura múltipla! Continue capturando');
-            return;
-          }
-        }
         setSel(null); setMoves([]);
-        finishPlayerMove(nb,r,c);
+        finishPlayerMove(nb);
         return;
       }
+      // Clicou em outra peça branca — re-seleciona
+      if(p?.color==='w'){
+        const allCaps=getAllMoves(board,'w').filter(m=>m.caps.length>0);
+        const myMoves=allCaps.length>0
+          ?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c)
+          :getCheckersMoves(board,r,c);
+        setSel([r,c]); setMoves(myMoves);
+        return;
+      }
+      setSel(null); setMoves([]);
+      return;
     }
     if(p?.color==='w'){
       const allCaps=getAllMoves(board,'w').filter(m=>m.caps.length>0);
@@ -3601,7 +3562,7 @@ function Dama({chips,onChange,log}){
     } else {setSel(null);setMoves([]);}
   };
 
-  const finishPlayerMove=(nb,fr,fc)=>{
+  const finishPlayerMove=(nb)=>{
     const bMoves=getAllMoves(nb,'b');
     if(!bMoves.length){
       setStatus('🏆 Você ganhou!'); setOver(true);
@@ -3614,18 +3575,9 @@ function Dama({chips,onChange,log}){
       if(!aiMv){setStatus('🏆 Você ganhou!');setOver(true);setAiThinking(false);onChange(bet*2);log(`🏆 Dama: ganhou ${bet*2} fichas`);return;}
       const nb2=applyMove(nb,aiMv);
       setBoard(nb2); setLastMove(aiMv);
-      // IA: capturas múltiplas automáticas
-      let curr=nb2; let currMv=aiMv;
-      let followUp=getFollowUpCaps(curr,aiMv.to[0],aiMv.to[1]);
-      while(followUp.length>0){
-        const next=followUp[0];
-        curr=applyMove(curr,next); currMv=next;
-        followUp=getFollowUpCaps(curr,next.to[0],next.to[1]);
-      }
-      if(curr!==nb2)setBoard(curr);
-      const wMoves=getAllMoves(curr,'w');
+      const wMoves=getAllMoves(nb2,'w');
       if(!wMoves.length){setStatus('😔 IA ganhou!');setOver(true);setAiThinking(false);log(`😔 Dama: perdeu ${bet} fichas`);return;}
-      setTurn('w'); setStatus('Sua vez (brancas ⬜)'); setAiThinking(false);
+      setTurn('w'); setStatus('Sua vez ⬜'); setAiThinking(false);
     },500);
   };
 
@@ -3740,11 +3692,7 @@ function Dama({chips,onChange,log}){
               </button>
             </div>
           )}
-          {captureChain&&(
-            <div style={{textAlign:'center',marginTop:6,padding:'6px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,color:'#f1c40f',fontSize:11,fontFamily:"'Rajdhani'",letterSpacing:1}}>
-              ⚡ CAPTURA MÚLTIPLA — selecione o próximo destino
-            </div>
-          )}
+
         </>
       )}
     </div>
