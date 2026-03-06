@@ -20,7 +20,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Rajdhani:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;background:#050505;font-family:'Georgia',serif;color:#fff;overscroll-behavior:none;}
 ::-webkit-scrollbar{width:3px;}
@@ -39,6 +39,136 @@ html,body{height:100%;background:#050505;font-family:'Georgia',serif;color:#fff;
 input,select{background:rgba(255,255,255,.05);border:1px solid rgba(241,196,15,.2);border-radius:8px;color:#fff;font-size:14px;font-family:Georgia,serif;outline:none;padding:10px 14px;width:100%;}
 input::placeholder{color:#444;}
 select option{background:#111;color:#fff;}
+
+/* ── Dominó 3D ──────────────────────────────── */
+.dom3d-wrap{perspective:400px;display:inline-block;}
+.dom3d{
+  position:relative;
+  transform-style:preserve-3d;
+  transform:rotateX(18deg) rotateY(-6deg);
+  transition:transform .2s, box-shadow .2s;
+  border-radius:8px;
+  cursor:default;
+}
+.dom3d.playable{cursor:pointer;}
+.dom3d.playable:hover{
+  transform:rotateX(6deg) rotateY(0deg) translateY(-12px) scale(1.08);
+  box-shadow:0 20px 40px rgba(0,0,0,.6),0 0 20px rgba(241,196,15,.35)!important;
+}
+.dom3d.selected{
+  transform:rotateX(6deg) rotateY(0deg) translateY(-14px) scale(1.1);
+  box-shadow:0 22px 44px rgba(0,0,0,.7),0 0 28px rgba(241,196,15,.6)!important;
+}
+.dom3d-face{
+  border-radius:8px;
+  background:linear-gradient(145deg,#f8f3e8 0%,#ede5d0 60%,#d9cdb5 100%);
+  border:1.5px solid #c8b89a;
+  position:relative;
+  overflow:hidden;
+}
+.dom3d-face::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.4) 0%,transparent 50%);
+  border-radius:7px;pointer-events:none;
+}
+.dom3d-side{
+  position:absolute;
+  background:linear-gradient(to bottom,#b8a88a,#9a8870);
+}
+.dom3d-bottom-edge{
+  position:absolute;
+  background:linear-gradient(to right,#9a8870,#b8a88a);
+}
+.dom3d-dot{
+  position:absolute;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#3a3a5c,#1a1a2e);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.5),0 1px 1px rgba(255,255,255,.1);
+}
+.dom3d-divider{
+  position:absolute;
+  background:linear-gradient(to right,transparent,#c8b89a,transparent);
+  height:1.5px;
+  left:6px;right:6px;
+}
+.dom3d-back{
+  border-radius:8px;
+  background:linear-gradient(135deg,#1a3a6b 0%,#0d1f3c 100%);
+  border:1.5px solid #2a4a8b;
+}
+@keyframes dom3d-enter{
+  from{opacity:0;transform:rotateX(18deg) rotateY(-6deg) translateY(20px) scale(.85);}
+  to{opacity:1;transform:rotateX(18deg) rotateY(-6deg) translateY(0) scale(1);}
+}
+.dom3d-anim{animation:dom3d-enter .3s ease-out;}
+
+/* ── Baralho 3D Realista ────────────────────── */
+.card3d-wrap{perspective:500px;display:inline-flex;position:relative;}
+.card3d{
+  border-radius:10px;position:relative;transform-style:preserve-3d;
+  transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg);
+  transition:transform .22s cubic-bezier(.34,1.4,.64,1),box-shadow .22s;
+  cursor:default;
+}
+.card3d-face{
+  border-radius:10px;position:relative;overflow:hidden;
+  background:radial-gradient(ellipse at 25% 15%,#ffffff 0%,#fdfaf4 30%,#f8f3ea 60%,#f0e8d8 100%);
+}
+.card3d-face::before{
+  content:'';position:absolute;inset:0;border-radius:9px;z-index:10;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.65) 0%,rgba(255,255,255,.2) 20%,transparent 45%,rgba(0,0,0,.04) 100%);
+}
+.card3d-face::after{content:'';position:absolute;inset:3px;border-radius:8px;z-index:9;pointer-events:none;border:1px solid rgba(0,0,0,.06);}
+.card3d-tl{position:absolute;top:4px;left:4px;z-index:11;line-height:1.05;text-align:center;}
+.card3d-br{position:absolute;bottom:4px;right:4px;z-index:11;line-height:1.05;text-align:center;transform:rotate(180deg);}
+.card3d-rank{font-family:'Playfair Display',Georgia,serif;font-weight:700;display:block;line-height:1;}
+.card3d-suit-sm{display:block;line-height:1.1;}
+.card3d-pip{position:absolute;z-index:11;line-height:1;user-select:none;}
+.card3d-pip.inv{transform:rotate(180deg);}
+.card3d-fig-bg{position:absolute;inset:0;z-index:8;background:radial-gradient(ellipse at 50% 50%,rgba(200,160,80,.05) 0%,transparent 65%);}
+.card3d-fig-frame{position:absolute;inset:5px;z-index:9;border:1px solid rgba(180,140,60,.15);border-radius:6px;}
+.card3d-fig-frame2{position:absolute;inset:8px;z-index:9;border:1px solid rgba(180,140,60,.09);border-radius:4px;}
+.card3d-fig-center{position:absolute;inset:0;z-index:11;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;}
+.card3d-ace{position:absolute;inset:0;z-index:11;display:flex;align-items:center;justify-content:center;}
+.card3d-side{
+  position:absolute;top:0;border-radius:0 3px 3px 0;
+  background:linear-gradient(to bottom,#e8ddc8,#d4c8a8,#b8a878,#9a8858,#786840);
+}
+.card3d-base{
+  position:absolute;left:0;border-radius:0 0 3px 3px;
+  background:linear-gradient(to right,#786840,#9a8858,#b8a878,#d4c8a8,#e8ddc8);
+}
+.card3d-back{
+  border-radius:10px;position:relative;overflow:hidden;
+  background:linear-gradient(145deg,#8b0000,#6b0000 50%,#4a0000 100%);
+}
+.card3d-back::before{content:'';position:absolute;inset:0;
+  background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.04) 0,rgba(255,255,255,.04) 1px,transparent 1px,transparent 10px),
+    repeating-linear-gradient(-45deg,rgba(255,255,255,.04) 0,rgba(255,255,255,.04) 1px,transparent 1px,transparent 10px);}
+.card3d-back-f1{position:absolute;inset:5px;border:1.5px solid rgba(255,255,255,.2);border-radius:7px;}
+.card3d-back-f2{position:absolute;inset:9px;border:1px solid rgba(255,255,255,.12);border-radius:5px;}
+.card3d-back-shine{position:absolute;inset:0;border-radius:10px;z-index:5;pointer-events:none;
+  background:linear-gradient(130deg,rgba(255,255,255,.18) 0%,transparent 40%);}
+.card3d-back-txt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Cinzel',serif;font-size:11px;letter-spacing:2px;color:rgba(255,255,255,.28);}
+.card3d-wrap.c3d-play:hover .card3d{
+  transform:rotateX(5deg) rotateY(-2deg) translateY(-18px) scale(1.06);
+  box-shadow:0 28px 50px rgba(0,0,0,.8),0 0 0 2px rgba(241,196,15,.6),0 0 28px rgba(241,196,15,.4)!important;
+}
+.card3d-wrap.c3d-sel .card3d{
+  transform:rotateX(4deg) rotateY(-1deg) translateY(-20px) scale(1.08);
+  box-shadow:0 32px 56px rgba(0,0,0,.85),0 0 0 2px rgba(241,196,15,.85),0 0 38px rgba(241,196,15,.55)!important;
+}
+.card3d-wrap.c3d-new .card3d{
+  box-shadow:0 14px 28px rgba(0,0,0,.65),0 0 0 2px rgba(46,204,113,.55),0 0 18px rgba(46,204,113,.3)!important;
+}
+.card3d-wrap.c3d-play{cursor:pointer;}
+@keyframes card3d-enter{
+  0%{opacity:0;transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg) translateY(28px) scale(.8);}
+  70%{transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg) translateY(-4px) scale(1.02);}
+  100%{opacity:1;transform:rotateX(18deg) rotateY(-8deg) rotateZ(-0.5deg);}
+}
+.card3d-anim{animation:card3d-enter .45s cubic-bezier(.22,1,.36,1) both;}
 </style>
 </head>
 <body>
@@ -1040,26 +1170,73 @@ function Pife({chips,onChange,log}){
 const DOM_DOTS={0:[],1:[[50,50]],2:[[25,25],[75,75]],3:[[25,25],[50,50],[75,75]],4:[[25,25],[75,25],[25,75],[75,75]],5:[[25,25],[75,25],[50,50],[25,75],[75,75]],6:[[25,20],[75,20],[25,50],[75,50],[25,80],[75,80]]};
 function mkDomSet(){const t=[];for(let a=0;a<=6;a++)for(let b=a;b<=6;b++)t.push({a,b,id:`${a}${b}`});return t.sort(()=>Math.random()-.5);}
 // Peça de dominó — vertical (como dominó real)
-function Domino({a,b,onClick,glow,dim,rotate=false}){
-  const W=44,H=88;
-  const sideDots=(v,cy0)=>(DOM_DOTS[v]||[]).map(([px,py],i)=>{
-    const cx=4+px/100*36,cy=cy0+py/100*36;
-    return <circle key={i} cx={cx} cy={cy} r={3.2} fill="#1a1a2e"/>;
+function Domino({a,b,onClick,glow,dim,rotate=false,selected=false,animate=false}){
+  const W=44,H=88,DEPTH=6;
+  const makeDots=(v,topOffset)=>(DOM_DOTS[v]||[]).map(([px,py],i)=>{
+    const x=5+px/100*(W-10), y=topOffset+py/100*(H/2-10);
+    return(
+      <div key={i} className="dom3d-dot" style={{
+        width:7.5,height:7.5,left:x-3.75,top:y-3.75,
+      }}/>
+    );
   });
+  if(rotate){
+    return(
+      <svg width={H} height={W} viewBox={`0 0 ${H} ${W}`} onClick={onClick}
+        style={{cursor:onClick?"pointer":"default",flexShrink:0,opacity:dim?.4:1,
+          filter:glow?"drop-shadow(0 0 8px #f1c40f)":"drop-shadow(2px 3px 6px rgba(0,0,0,.6))",
+          transition:"all .2s"}}>
+        <defs>
+          <linearGradient id="tileGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#faf6ec"/>
+            <stop offset="50%" stopColor="#ede5d0"/>
+            <stop offset="100%" stopColor="#cfc3a8"/>
+          </linearGradient>
+        </defs>
+        <rect x={1} y={1} width={H-2} height={W-2} rx={7} fill="url(#tileGrad)"/>
+        <rect x={1} y={1} width={H-2} height={W-2} rx={7} fill="none" stroke="#c0a878" strokeWidth={1}/>
+        <line x1={H/2} y1={5} x2={H/2} y2={W-5} stroke="rgba(120,90,40,.35)" strokeWidth={1.5}/>
+        <line x1={H/2} y1={5} x2={H/2} y2={W-5} stroke="rgba(255,255,255,.25)" strokeWidth={.8} strokeDasharray="0"/>
+        {(DOM_DOTS[a]||[]).map(([px,py],i)=>{
+          const cx=5+px/100*34, cy=3+py/100*34;
+          return <circle key={i} cx={cx} cy={cy} r={3.2} fill="#0e0808"
+            style={{filter:"drop-shadow(0 1px 1px rgba(255,240,200,.2))"}}/>;
+        })}
+        {(DOM_DOTS[b]||[]).map(([px,py],i)=>{
+          const cx=H/2+5+px/100*34, cy=3+py/100*34;
+          return <circle key={i} cx={cx} cy={cy} r={3.2} fill="#0e0808"
+            style={{filter:"drop-shadow(0 1px 1px rgba(255,240,200,.2))"}}/>;
+        })}
+      </svg>
+    );
+  }
   return(
-    <svg width={rotate?H:W} height={rotate?W:H}
-      viewBox={rotate?`${-(H-W)/2} ${(H-W)/2} ${H} ${W}`:`0 0 ${W} ${H}`}
-      onClick={onClick}
-      style={{cursor:onClick?"pointer":"default",flexShrink:0,opacity:dim?.4:1,
-        filter:glow?"drop-shadow(0 0 8px #f1c40f)":"drop-shadow(2px 3px 5px rgba(0,0,0,.45))",
-        transition:"all .2s",transform:glow?"scale(1.08)":"none",
-        transformOrigin:"center"}}>
-      <rect x={1} y={1} width={W-2} height={H-2} rx={7} fill="#f5f0e8"/>
-      <rect x={1} y={1} width={W-2} height={H-2} rx={7} fill="none" stroke="#c8b89a" strokeWidth={2}/>
-      <line x1={5} y1={H/2} x2={W-5} y2={H/2} stroke="#c8b89a" strokeWidth={1.5}/>
-      {sideDots(a,4)}
-      {sideDots(b,H/2+4)}
-    </svg>
+    <div className={"dom3d-wrap"+(selected?" dom3d-selected":"")+(onClick?" dom3d-playable":"")}
+      style={{opacity:dim?.4:1,display:"inline-block"}}>
+      <div
+        className={['dom3d',animate?'dom3d-anim':''].join(' ')}
+        onClick={onClick}
+        style={{
+          width:W,height:H,
+          boxShadow:glow
+            ?'0 10px 28px rgba(0,0,0,.6),0 0 24px rgba(241,196,15,.55)'
+            :'0 10px 24px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4)',
+        }}>
+        <div className="dom3d-face" style={{width:W,height:H}}>
+          {makeDots(a,3)}
+          <div className="dom3d-divider" style={{top:H/2-1}}/>
+          {makeDots(b,H/2+3)}
+        </div>
+        <div className="dom3d-side" style={{
+          width:DEPTH,height:H-2,top:1,right:-DEPTH,
+          transform:'rotateY(90deg)',transformOrigin:'left center',
+        }}/>
+        <div className="dom3d-bottom-edge" style={{
+          width:W-2,height:DEPTH,bottom:-DEPTH,left:1,
+          transform:'rotateX(-90deg)',transformOrigin:'top center',
+        }}/>
+      </div>
+    </div>
   );
 }
 
@@ -1196,7 +1373,7 @@ function Dominoes({chips,onChange,log}){
                   const isLast=ri===buildSnake(chain).length-1&&i===row.length-1;
                   return(
                     <div key={i} style={{position:"relative"}}>
-                      <Domino a={e.dA} b={e.dB}/>
+                      <Domino a={e.dA} b={e.dB} animate={isLast}/>
                       {isFirst&&<div style={{position:"absolute",top:-14,left:"50%",transform:"translateX(-50%)",color:"#f1c40f",fontSize:9,whiteSpace:"nowrap"}}>← {e.dA}</div>}
                       {isLast&&<div style={{position:"absolute",bottom:-14,left:"50%",transform:"translateX(-50%)",color:"#f1c40f",fontSize:9,whiteSpace:"nowrap"}}>{e.dB} →</div>}
                     </div>
@@ -1515,13 +1692,20 @@ function DominoOnline({socket,room,userData}){
       {/* Adversário */}
       <div style={{display:'flex',gap:3,justifyContent:'center',alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
         {Array(Math.min(oppCount,7)).fill(0).map((_,i)=>(
-          <div key={i} style={{width:12,height:22,background:'linear-gradient(135deg,#1a3a6b,#2255a0)',borderRadius:3,border:'1px solid #0d2045'}}/>
+          <div key={i} className={"dom3d-wrap"} style={{display:'inline-block',margin:'1px',opacity:.85}}>
+            <div className="dom3d dom3d-anim" style={{width:16,height:28,
+              boxShadow:'0 6px 14px rgba(0,0,0,.6)',animationDelay:`${i*0.05}s`}}>
+              <div className="dom3d-back" style={{width:16,height:28,borderRadius:4}}/>
+              <div className="dom3d-side" style={{width:4,height:28,top:0,right:-4,transform:'rotateY(90deg)',transformOrigin:'left center'}}/>
+              <div className="dom3d-bottom-edge" style={{width:16,height:4,bottom:-4,left:0,transform:'rotateX(-90deg)',transformOrigin:'top center'}}/>
+            </div>
+          </div>
         ))}
         <span style={{color:'#888',fontSize:11,marginLeft:4,fontWeight:700}}>{oppName} ({oppCount})</span>
       </div>
 
       {/* Mesa serpentina */}
-      <div style={{background:'radial-gradient(ellipse at 50% 50%,#2d5016 0%,#1a3a0a 100%)',border:'5px solid #5d4037',borderRadius:14,padding:12,marginBottom:8,minHeight:100}}>
+      <div style={{background:'radial-gradient(ellipse at 50% 60%,#2a4d14 0%,#162d08 100%)',border:'4px solid #4a3428',borderRadius:14,padding:12,marginBottom:8,minHeight:100,boxShadow:'inset 0 2px 20px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.5)',perspective:'600px'}}>
         {chain.length===0
           ?<div style={{color:'rgba(255,255,255,.2)',textAlign:'center',padding:'30px 0',fontSize:13}}>Coloque a primeira peça...</div>
           :<div>
@@ -1533,7 +1717,7 @@ function DominoOnline({socket,room,userData}){
                   const isLast=ri===snap.length-1&&i===row.length-1;
                   return(
                     <div key={i} style={{position:'relative'}}>
-                      <Domino a={e.dA} b={e.dB}/>
+                      <Domino a={e.dA} b={e.dB} animate={isLast}/>
                       {isFirst&&<div style={{position:'absolute',top:-14,left:'50%',transform:'translateX(-50%)',color:'#f1c40f',fontSize:9,whiteSpace:'nowrap'}}>← {e.dA}</div>}
                       {isLast&&<div style={{position:'absolute',bottom:-14,left:'50%',transform:'translateX(-50%)',color:'#f1c40f',fontSize:9,whiteSpace:'nowrap'}}>{e.dB} →</div>}
                     </div>
@@ -1552,12 +1736,12 @@ function DominoOnline({socket,room,userData}){
           {hand.map(t=>{
             const ok=canPlay(t,chain);
             return(
-              <div key={t.id} style={{transition:'transform .2s'}}
-                onMouseEnter={e=>{if(myTurn&&ok)e.currentTarget.style.transform='translateY(-10px)';}}
-                onMouseLeave={e=>{e.currentTarget.style.transform='none';}}>
+              <div key={t.id}>
                 <Domino a={t.a} b={t.b}
                   onClick={myTurn&&phase==='play'?()=>playTile(t):undefined}
-                  glow={myTurn&&ok} dim={myTurn&&!ok}/>
+                  glow={myTurn&&ok&&phase==='play'}
+                  dim={!ok&&myTurn&&phase==='play'}
+                  selected={pendingTile&&pendingTile.id===t.id}/>
               </div>
             );
           })}
@@ -1589,6 +1773,106 @@ function DominoOnline({socket,room,userData}){
   );
 }
 
+
+
+// ── Naipes SVG vetoriais ──
+const SUIT_SVG={
+  '♠':(s,col)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><path d="M50 5C50 5 10 45 10 65C10 80 25 85 40 75C38 85 35 90 25 95L75 95C65 90 62 85 60 75C75 85 90 80 90 65C90 45 50 5 50 5Z" fill="${col}"/></svg>`,
+  '♥':(s,col)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><path d="M50 85C50 85 8 52 8 30C8 15 20 5 35 10C42 13 48 20 50 25C52 20 58 13 65 10C80 5 92 15 92 30C92 52 50 85 50 85Z" fill="${col}"/></svg>`,
+  '♣':(s,col)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><circle cx="50" cy="36" r="20" fill="${col}"/><circle cx="28" cy="58" r="20" fill="${col}"/><circle cx="72" cy="58" r="20" fill="${col}"/><rect x="44" y="64" width="12" height="22" rx="3" fill="${col}"/><rect x="30" y="90" width="40" height="7" rx="3" fill="${col}"/></svg>`,
+  '♦':(s,col)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><path d="M50 5L90 50L50 95L10 50Z" fill="${col}"/></svg>`,
+};
+const CARD_FIGS={'J':'♟','Q':'♛','K':'♚'};
+const CARD_PIP_POS={
+  2:[[.5,0],[.5,1]],
+  3:[[.5,0],[.5,.5],[.5,1]],
+  4:[[0,0],[1,0],[0,1],[1,1]],
+  5:[[0,0],[1,0],[.5,.5],[0,1],[1,1]],
+  6:[[0,0],[1,0],[0,.5],[1,.5],[0,1],[1,1]],
+  7:[[0,0],[1,0],[.5,.29],[0,.5],[1,.5],[0,1],[1,1]],
+  8:[[0,0],[1,0],[.5,.27],[0,.5],[1,.5],[.5,.73],[0,1],[1,1]],
+  9:[[0,0],[1,0],[0,.27],[1,.27],[.5,.5],[0,.73],[1,.73],[0,1],[1,1]],
+  10:[[0,0],[1,0],[.5,.18],[0,.36],[1,.36],[0,.64],[1,.64],[.5,.82],[0,1],[1,1]],
+};
+
+function Card3D({rank,suit,onClick,dim,selected,newCard,faceDown,mini=false,animate=false}){
+  const W=mini?22:46, H=mini?32:68, DEPTH=mini?2:4;
+  const col=(suit==='♥'||suit==='♦')?'#b01414':'#0e0e1e';
+  const isFig=['J','Q','K'].includes(rank);
+  const isAce=rank==='A';
+  const isNum=!isNaN(parseInt(rank));
+  const rankSz=mini?6:(rank==='10'?11:13);
+  const suitSz=mini?6:9;
+
+  const wrapCls=['card3d-wrap',onClick?'c3d-play':'',selected?'c3d-sel':'',newCard?'c3d-new':''].filter(Boolean).join(' ');
+  const cardCls=['card3d',animate?'card3d-anim':''].filter(Boolean).join(' ');
+  const shadow=selected
+    ?'0 32px 56px rgba(0,0,0,.85),0 0 0 2px rgba(241,196,15,.85),0 0 38px rgba(241,196,15,.55)'
+    :newCard
+      ?'0 14px 28px rgba(0,0,0,.65),0 0 0 2px rgba(46,204,113,.55),0 0 18px rgba(46,204,113,.3)'
+      :'0 14px 28px rgba(0,0,0,.65),0 6px 10px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.2)';
+
+  if(faceDown) return(
+    <div className={wrapCls} style={{opacity:dim?.38:1,display:'inline-flex',margin:'2px'}}>
+      <div className={cardCls} style={{width:W,height:H,boxShadow:shadow}}>
+        <div className="card3d-back" style={{width:W,height:H}}>
+          <div className="card3d-back-f1"/><div className="card3d-back-f2"/>
+          {!mini&&<div className="card3d-back-txt">AR</div>}
+          <div className="card3d-back-shine"/>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Pips para cartas numéricas
+  const renderPips=()=>{
+    const n=parseInt(rank);
+    const positions=CARD_PIP_POS[n];
+    if(!positions) return null;
+    const pSz=mini?6:10;
+    const aL=mini?2:6, aR=W-(mini?2:6)-pSz;
+    const aT=mini?4:16, aB=H-(mini?4:16)-pSz;
+    const aW=aR-aL, aH=aB-aT;
+    return positions.map(([nx,ny],i)=>(
+      <div key={i} className={'card3d-pip'+(ny>.55?' inv':'')}
+        style={{left:aL+nx*aW,top:aT+ny*aH}}
+        dangerouslySetInnerHTML={{__html:SUIT_SVG[suit](pSz,col)}}/>
+    ));
+  };
+
+  return(
+    <div className={wrapCls} style={{opacity:dim?.38:1,display:'inline-flex',margin:'2px'}}>
+      <div className={cardCls} style={{width:W,height:H,boxShadow:shadow}}>
+        <div className="card3d-face" style={{width:W,height:H}}>
+          {/* Cantos rank+naipe */}
+          {!mini&&<>
+            <div className="card3d-tl">
+              <span className="card3d-rank" style={{fontSize:rankSz,color:col}}>{rank}</span>
+              <span className="card3d-suit-sm" dangerouslySetInnerHTML={{__html:SUIT_SVG[suit](suitSz,col)}}/>
+            </div>
+            <div className="card3d-br">
+              <span className="card3d-rank" style={{fontSize:rankSz,color:col}}>{rank}</span>
+              <span className="card3d-suit-sm" dangerouslySetInnerHTML={{__html:SUIT_SVG[suit](suitSz,col)}}/>
+            </div>
+          </>}
+          {/* Centro */}
+          {isAce&&<div className="card3d-ace" dangerouslySetInnerHTML={{__html:SUIT_SVG[suit](mini?14:40,col)}}/>}
+          {isFig&&<>
+            <div className="card3d-fig-bg"/><div className="card3d-fig-frame"/><div className="card3d-fig-frame2"/>
+            <div className="card3d-fig-center">
+              <span dangerouslySetInnerHTML={{__html:SUIT_SVG[suit](mini?10:18,col)}}/>
+              <span style={{fontSize:mini?10:22,color:col,lineHeight:1}}>{CARD_FIGS[rank]}</span>
+            </div>
+          </>}
+          {isNum&&renderPips()}
+        </div>
+        {/* Profundidade */}
+        <div className="card3d-side" style={{width:DEPTH,height:H,right:-DEPTH,transform:'rotateY(90deg)',transformOrigin:'left center'}}/>
+        <div className="card3d-base" style={{width:W,height:DEPTH,bottom:-DEPTH,transform:'rotateX(-90deg)',transformOrigin:'top center'}}/>
+      </div>
+    </div>
+  );
+}
 
 function PifeOnline({socket,room,userData}){
   const [hand,setHand]=useState([]);
@@ -1820,10 +2104,7 @@ function PifeOnline({socket,room,userData}){
                         {[...groups,remaining.length?remaining:null].filter(Boolean).map((grp,gi)=>(
                           <div key={gi} style={{display:'flex',gap:3,padding:'4px 6px',background:gi<groups.length?'rgba(46,204,113,.08)':'rgba(255,255,255,.03)',border:`1px solid ${gi<groups.length?'rgba(46,204,113,.2)':'rgba(255,255,255,.05)'}`,borderRadius:8}}>
                             {grp.map((idx,ci)=>{const card=hand9[idx];return(
-                              <div key={ci} style={{width:36,height:52,background:'#fff',border:'1px solid rgba(0,0,0,.1)',borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:sc2(card.suit)}}>
-                                <span style={{fontSize:9,fontWeight:900,lineHeight:1}}>{card.rank}</span>
-                                <span style={{fontSize:16,lineHeight:1}}>{card.suit}</span>
-                              </div>
+                              <Card3D key={ci} rank={card.rank} suit={card.suit}/>
                             );})}
                           </div>
                         ))}
@@ -1831,10 +2112,7 @@ function PifeOnline({socket,room,userData}){
                     ):(
                       <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
                         {hand9.map((card,i)=>(
-                          <div key={i} style={{width:36,height:52,background:'#fff',border:'1px solid rgba(0,0,0,.1)',borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:sc2(card.suit)}}>
-                            <span style={{fontSize:9,fontWeight:900,lineHeight:1}}>{card.rank}</span>
-                            <span style={{fontSize:16,lineHeight:1}}>{card.suit}</span>
-                          </div>
+                          <Card3D key={i} rank={card.rank} suit={card.suit}/>
                         ))}
                       </div>
                     )}
@@ -1866,7 +2144,7 @@ function PifeOnline({socket,room,userData}){
         <div style={{color:'#444',fontSize:9,marginBottom:4,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{oppName.toUpperCase()} — {oppCount} CARTAS</div>
         <div style={{display:'flex',justifyContent:'center',gap:2,flexWrap:'wrap'}}>
           {Array(Math.min(oppCount,10)).fill(0).map((_,i)=>(
-            <div key={i} style={{width:22,height:34,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid #2a4a8b',borderRadius:4}}/>
+            <Card3D key={i} rank="?" suit="♠" faceDown={true} mini={true}/>
           ))}
         </div>
       </div>
@@ -1874,10 +2152,15 @@ function PifeOnline({socket,room,userData}){
       {/* Monte e Descarte */}
       <div style={{display:'flex',justifyContent:'center',gap:14,margin:'8px 0 10px'}}>
         <div style={{textAlign:'center'}}>
-          <div onClick={comprarMonte}
-            style={{width:54,height:78,background:phase==='draw'&&deck>0?'linear-gradient(135deg,#1e3c78,#0d1f3c)':'rgba(255,255,255,.03)',border:`2px solid ${phase==='draw'&&deck>0?'#f1c40f':'#2a4a8b'}`,borderRadius:9,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:phase==='draw'&&deck>0?'#f1c40f':'#444',fontSize:18,fontWeight:900,cursor:phase==='draw'&&deck>0?'pointer':'default',transition:'all .2s',boxShadow:phase==='draw'&&deck>0?'0 0 12px rgba(241,196,15,.2)':'none',opacity:deck===0?.4:1}}>
-            <span style={{fontSize:11,opacity:.6}}>🂠</span>
-            <span>{deck}</span>
+          <div onClick={phase==='draw'&&deck>0?comprarMonte:undefined}
+            style={{position:'relative',cursor:phase==='draw'&&deck>0?'pointer':'default',opacity:deck===0?.4:1}}>
+            <Card3D rank="?" suit="♠" faceDown={true} dim={!(phase==='draw'&&deck>0)}/>
+            <div style={{position:'absolute',bottom:-2,right:-4,background:'#f1c40f',color:'#000',
+              borderRadius:'50%',width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',
+              fontSize:10,fontWeight:900,fontFamily:"'Rajdhani',sans-serif",
+              boxShadow:'0 2px 6px rgba(0,0,0,.4)',zIndex:20}}>
+              {deck}
+            </div>
           </div>
           <div style={{color:'#444',fontSize:9,marginTop:3,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>MONTE</div>
         </div>
@@ -1885,10 +2168,7 @@ function PifeOnline({socket,room,userData}){
           <div onClick={comprarDescarte}
             style={{width:54,height:78,background:discard[0]?'#fafafa':'rgba(255,255,255,.03)',border:`2px solid ${phase==='draw'&&discard.length>0?'#f1c40f':'rgba(255,255,255,.08)'}`,borderRadius:9,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:phase==='draw'&&discard.length>0?'pointer':'default',transition:'all .2s',boxShadow:phase==='draw'&&discard.length>0?'0 0 12px rgba(241,196,15,.2)':'none'}}>
             {discard[0]
-              ?<>
-                <span style={{color:sc(discard[0].suit),fontSize:10,fontWeight:700,lineHeight:1}}>{rankDisplay(discard[0].rank)}</span>
-                <span style={{color:sc(discard[0].suit),fontSize:20,lineHeight:1}}>{discard[0].suit}</span>
-              </>
+              ?<Card3D rank={discard[0].rank} suit={discard[0].suit}/>
               :<span style={{color:'rgba(255,255,255,.1)',fontSize:10}}>—</span>}
           </div>
           <div style={{color:'#444',fontSize:9,marginTop:3,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>DESCARTE</div>
@@ -1911,19 +2191,13 @@ function PifeOnline({socket,room,userData}){
                 onDragStart={()=>dragStart(i)}
                 onDragOver={(e)=>dragOver(e,i)}
                 onDragEnd={dragEnd}
-                onClick={()=>selecionarCarta(i)}
-                style={{
-                  width:46,height:66,background:isSel?'#fff8e1':'#fff',
-                  border:`2px solid ${isSel?'#f1c40f':isNew?'#2ecc71':'rgba(0,0,0,.1)'}`,
-                  borderRadius:8,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-                  color:sc(card.suit),cursor:phase==='discard'?'pointer':'grab',
-                  transform:isSel?'translateY(-10px) scale(1.08)':isNew?'translateY(-5px)':'none',
-                  transition:'all .15s',
-                  boxShadow:isSel?'0 6px 16px rgba(241,196,15,.5)':isNew?'0 4px 12px rgba(46,204,113,.4)':'0 1px 4px rgba(0,0,0,.3)',
-                  opacity:dragging===i?.5:1,
-                }}>
-                <span style={{fontSize:11,fontWeight:900,lineHeight:1}}>{rankDisplay(card.rank)}</span>
-                <span style={{fontSize:22,lineHeight:1}}>{card.suit}</span>
+                style={{opacity:dragging===i?.4:1,transition:'opacity .15s'}}>
+                <Card3D
+                  rank={card.rank} suit={card.suit}
+                  onClick={phase==='discard'?()=>selecionarCarta(i):undefined}
+                  selected={isSel} newCard={isNew}
+                  animate={isNew}
+                />
               </div>
             );
           })}
