@@ -1527,7 +1527,7 @@ function DadosOnline({socket,room,userData}){
 // ══════════════════════════════════════════════════════════════
 //  DOMINO ONLINE
 // ══════════════════════════════════════════════════════════════
-function DominoOnline({socket,room,userData}){
+function DominoOnline({socket,room,userData,onGameOver}){
   const [hand,setHand]=useState([]);
   const [chain,setChain]=useState([]);
   const [oppCount,setOppCount]=useState(7);
@@ -1611,6 +1611,7 @@ function DominoOnline({socket,room,userData}){
         const won=data.winnerId===userData?.uid;
         setResult({outcome:won?'win':'lose',scores:data.scores||{},reason:data.reason});
         setPhase('over');
+        onGameOver?.();
       }
     });
     return()=>socket.off('game_action');
@@ -1880,7 +1881,7 @@ function Card3D({rank,suit,onClick,dim,selected,newCard,faceDown,mini=false,anim
   );
 }
 
-function PifeOnline({socket,room,userData}){
+function PifeOnline({socket,room,userData,onGameOver}){
   const [hand,setHand]=useState([]);
   const [oppCount,setOppCount]=useState(9);
   const [deck,setDeck]=useState(0);
@@ -2657,8 +2658,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
             </div>
 
             {/* Jogos — escondidos durante pós-partida para evitar flash */}
-            {!gameOver&&myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
-            {!gameOver&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
+            {!gameOver&&myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {!gameOver&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {(myRoom.game!=='pife'&&myRoom.game!=='domino')&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
