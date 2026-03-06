@@ -2004,22 +2004,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
       } else {
         setMsg('Partida encerrada.');
       }
-      // Inicia contagem de 10s para voltar à tela de pronto
+      // Mostra botão reiniciar — contagem só começa quando clicar
       setGameOver(true);
-      setRematchCountdown(10);
-      const iv = setInterval(()=>{
-        setRematchCountdown(n=>{
-          if(n<=1){
-            clearInterval(iv);
-            // Servidor vai mandar room_update automaticamente — só limpa visual
-            setGameOver(false);
-            setRematchCountdown(null);
-            setMatchKey(k=>k+1);
-            return null;
-          }
-          return n-1;
-        });
-      },1000);
       // Não fecha automaticamente — jogadores decidem
     });
     socket.on('bet_proposal',({newBet,proposedBy})=>{
@@ -2127,7 +2113,21 @@ function OnlineLobby({socket,chips,userData,onChange}){
     localStorage.removeItem('cassino_my_room');
   };
   const reiniciarJogo=()=>{
-    socket?.emit('reset_room',{roomId:myRoom?.id});
+    // Inicia contagem de 10s — ao acabar o servidor reseta a sala
+    setRematchCountdown(10);
+    socket?.emit('schedule_reset',{roomId:myRoom?.id});
+    const iv=setInterval(()=>{
+      setRematchCountdown(n=>{
+        if(n<=1){
+          clearInterval(iv);
+          setGameOver(false);
+          setRematchCountdown(null);
+          setMatchKey(k=>k+1);
+          return null;
+        }
+        return n-1;
+      });
+    },1000);
   };
 
   const ficouPronto=()=>{
@@ -2395,14 +2395,23 @@ function OnlineLobby({socket,chips,userData,onChange}){
               </div>
             )}
 
-            {/* PÓS-PARTIDA — contagem regressiva automática */}
+            {/* PÓS-PARTIDA — botão reiniciar ou contagem */}
             {myRoom.started&&gameOver&&(
               <div style={{margin:"12px 0",background:"rgba(0,0,0,.4)",border:"1px solid rgba(241,196,15,.15)",borderRadius:12,padding:"16px",textAlign:"center"}}>
-                <div style={{color:"rgba(255,255,255,.4)",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>PRÓXIMA PARTIDA EM</div>
-                <div style={{color:"#f1c40f",fontWeight:900,fontSize:40,fontFamily:"'Cinzel',Georgia,serif",lineHeight:1}}>
-                  {rematchCountdown??10}
-                </div>
-                <div style={{color:"rgba(255,255,255,.3)",fontSize:10,marginTop:4}}>segundos</div>
+                {rematchCountdown===null?(
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn full onClick={reiniciarJogo} c="#f1c40f" tc="#000">🔄 REINICIAR JOGO</Btn>
+                    <Btn full onClick={sairAposPartida} c="#e74c3c" tc="#fff">🚪 SAIR</Btn>
+                  </div>
+                ):(
+                  <>
+                    <div style={{color:"rgba(255,255,255,.4)",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>PRÓXIMA PARTIDA EM</div>
+                    <div style={{color:"#f1c40f",fontWeight:900,fontSize:48,fontFamily:"'Cinzel',Georgia,serif",lineHeight:1}}>
+                      {rematchCountdown}
+                    </div>
+                    <div style={{color:"rgba(255,255,255,.3)",fontSize:10,marginTop:4}}>segundos</div>
+                  </>
+                )}
               </div>
             )}
           </div>
