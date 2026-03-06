@@ -3608,61 +3608,45 @@ function Dama({chips,onChange,log}){
         </div>
       ):(
         <>
-          {/* Tabuleiro 3D */}
-          <div className="board3d-wrap">
-            <div className="board3d">
-              <div className="board3d-border">
-                {/* Labels colunas */}
-                <div className="board3d-labels" style={{paddingLeft:16}}>
-                  {['A','B','C','D','E','F','G','H'].map(l=><div key={l} className="board3d-label">{l}</div>)}
-                </div>
-                <div style={{display:'flex'}}>
-                  {/* Labels linhas */}
-                  <div className="board3d-rank">
-                    {[8,7,6,5,4,3,2,1].map(n=><span key={n}>{n}</span>)}
-                  </div>
-                  {/* Grid */}
-                  <div style={{display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`}}>
-                    {board.map((row,r)=>row.map((cell,cc)=>{
-                      const dark=(r+cc)%2===1;
-                      const isSel=sel&&sel[0]===r&&sel[1]===cc;
-                      const isDest=validDests.some(([dr,dc])=>dr===r&&dc===cc);
-                      const isCapture=isDest&&moves.find(m=>m.to[0]===r&&m.to[1]===cc)?.caps.length>0;
-                      const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===cc)||(lastMove.to[0]===r&&lastMove.to[1]===cc));
-                      let bg=dark
-                        ?isSel?'#8B6914':isLast?'#5a3f10':'#3d2b12'
-                        :isSel?'#f5e090':isLast?'#e8d890':'#c8b884';
-                      return(
-                        <div key={`${r}${cc}`} onClick={()=>handleCell(r,cc)}
-                          style={{width:CELL,height:CELL,background:bg,
-                            display:'flex',alignItems:'center',justifyContent:'center',
-                            cursor:dark?'pointer':'default',position:'relative',
-                            boxShadow:isSel?'inset 0 0 0 3px rgba(241,196,15,.9)':isDest?`inset 0 0 0 3px ${isCapture?'rgba(231,76,60,.7)':'rgba(46,204,113,.7)'}`:isLast?'inset 0 0 0 2px rgba(241,196,15,.4)':'none',
-                          }}>
-                          {isDest&&!cell&&(
-                            <div style={{width:12,height:12,borderRadius:'50%',
-                              background:isCapture?'rgba(231,76,60,.6)':'rgba(46,204,113,.55)',
-                              border:'2px solid rgba(255,255,255,.5)'}}/>
-                          )}
-                          {isDest&&cell&&(
-                            <div style={{position:'absolute',inset:0,
-                              background:isCapture?'rgba(231,76,60,.25)':'rgba(46,204,113,.25)',
-                              border:`3px solid ${isCapture?'rgba(231,76,60,.7)':'rgba(46,204,113,.7)'}`,
-                              borderRadius:2,zIndex:0}}/>
-                          )}
-                          {cell&&(
-                            <div
-                              className={`checker-piece checker-${cell.color}${cell.king?' checker-king':''}`}
-                              style={{width:CELL-8,height:CELL-8,
-                                transform:isSel?'translateY(-4px) scale(1.1)':'none',
-                                zIndex:1,
-                              }}/>
-                          )}
-                        </div>
-                      );
-                    }))}
-                  </div>
-                </div>
+          {/* Tabuleiro */}
+          <div style={{display:'flex',justifyContent:'center',marginBottom:8}}>
+            <div style={{border:'4px solid #5d4037',borderRadius:4,boxShadow:'0 8px 32px rgba(0,0,0,.7),inset 0 0 0 2px #3a2a18',overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`}}>
+                {board.map((row,r)=>row.map((cell,cc)=>{
+                  const dark=(r+cc)%2===1;
+                  const isSel=sel&&sel[0]===r&&sel[1]===cc;
+                  const isDest=validDests.some(([dr,dc])=>dr===r&&dc===cc);
+                  const isCapture=isDest&&moves.find(m=>m.to[0]===r&&m.to[1]===cc)?.caps.length>0;
+                  const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===cc)||(lastMove.to[0]===r&&lastMove.to[1]===cc));
+                  const bg=dark
+                    ?(isSel?'#a07820':isLast?'#5a3f10':'#3d2b12')
+                    :(isSel?'#f5e090':isLast?'#e8d890':'#c8b884');
+                  return(
+                    <div key={`${r}${cc}`} onClick={()=>handleCell(r,cc)}
+                      style={{width:CELL,height:CELL,background:bg,
+                        display:'flex',alignItems:'center',justifyContent:'center',
+                        cursor:'pointer',position:'relative',
+                        boxShadow:isSel?'inset 0 0 0 3px rgba(241,196,15,1)':isDest?`inset 0 0 0 3px ${isCapture?'rgba(231,76,60,.8)':'rgba(46,204,113,.8)'}`:isLast?'inset 0 0 0 2px rgba(241,196,15,.4)':'none',
+                        transition:'background .1s'}}>
+                      {isDest&&!cell&&<div style={{width:14,height:14,borderRadius:'50%',
+                        background:isCapture?'rgba(231,76,60,.6)':'rgba(46,204,113,.6)',
+                        border:'2px solid rgba(255,255,255,.5)'}}/>}
+                      {cell&&<div style={{width:CELL-6,height:CELL-6,borderRadius:'50%',
+                        background:cell.color==='w'
+                          ?'radial-gradient(circle at 35% 30%,#fff,#ddd 50%,#bbb)'
+                          :'radial-gradient(circle at 35% 30%,#555,#222 50%,#111)',
+                        border:cell.color==='w'?'2px solid #ccc':'2px solid #444',
+                        boxShadow:cell.color==='w'
+                          ?'0 3px 8px rgba(0,0,0,.5),inset 0 2px 3px rgba(255,255,255,.8)'
+                          :'0 3px 8px rgba(0,0,0,.7),inset 0 1px 2px rgba(255,255,255,.1)',
+                        display:'flex',alignItems:'center',justifyContent:'center',
+                        transform:isSel?'scale(1.12) translateY(-2px)':'none',
+                        transition:'transform .12s',zIndex:1}}>
+                        {cell.king&&<span style={{color:cell.color==='w'?'#8B6914':'#f1c40f',fontSize:13}}>♔</span>}
+                      </div>}
+                    </div>
+                  );
+                }))}
               </div>
             </div>
           </div>
