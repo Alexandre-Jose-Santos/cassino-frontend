@@ -2367,6 +2367,8 @@ function DamaOnline({socket,room,userData,onGameOver}){
         setStatus(col==='w'?'Sua vez':'Vez do adversário');
       }
       if(action==='dama_update'){
+        // Ignora update do servidor se ainda estamos em cadeia de captura
+        if(chainRef.current) return;
         syncBoard(data.board); syncSel(null); syncLegal([]); syncChain(false);
         setTurn(data.turn);
         setStatus(data.turn===myColorRef.current?'Sua vez':'Vez do adversário');
@@ -2381,13 +2383,16 @@ function DamaOnline({socket,room,userData,onGameOver}){
 
   const emitMove=(nb)=>{
     const nt=myColorRef.current==='w'?'b':'w';
-    setTurn(nt); setStatus('Vez do adversário');
+    // Só muda o turn localmente DEPOIS de emitir — o dama_update do server vai confirmar
     socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
+    setTurn(nt); setStatus('Vez do adversário');
   };
 
   const handleCell=(r,c)=>{
     const mc=myColorRef.current;
-    if(result||turn!==mc)return;
+    const inChain=chainRef.current;
+    // Durante cadeia de captura, ignora verificação de turn (o server pode ter mandado update)
+    if(result||(turn!==mc&&!inChain))return;
     const b=boardRef.current||board;
     const curLegal=legalRef.current;
     const curSel=selRef.current;
