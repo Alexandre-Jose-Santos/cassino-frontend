@@ -1765,14 +1765,62 @@ function PifeOnline({socket,room,userData}){
                 </span>
                 {isWinner&&<span style={{fontSize:11,color:'#f1c40f',fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,fontWeight:700}}>🏆 PIFE!</span>}
               </div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:4,justifyContent:'flex-start'}}>
-                {(info.hand||[]).map((card,i)=>(
-                  <div key={i} style={{width:40,height:58,background:'#fff',border:'1px solid rgba(0,0,0,.1)',borderRadius:7,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:sc2(card.suit)}}>
-                    <span style={{fontSize:10,fontWeight:900,lineHeight:1}}>{card.rank}</span>
-                    <span style={{fontSize:18,lineHeight:1}}>{card.suit}</span>
+              {(()=>{
+                const hand9 = info.hand||[];
+                // Tenta organizar em grupos (trios e sequências)
+                const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+                const ri=r=>RANKS.indexOf(r);
+                const groups=[];
+                const used=new Set();
+                // Encontra trios
+                const byRank={};
+                hand9.forEach((cd,i)=>{if(!byRank[cd.rank])byRank[cd.rank]=[];byRank[cd.rank].push(i);});
+                Object.entries(byRank).forEach(([r,idxs])=>{if(idxs.length>=3&&groups.length<3){groups.push(idxs.slice(0,3));idxs.slice(0,3).forEach(i=>used.add(i));}});
+                // Encontra sequências
+                const bySuit={};
+                hand9.forEach((cd,i)=>{if(!used.has(i)){if(!bySuit[cd.suit])bySuit[cd.suit]=[];bySuit[cd.suit].push(i);}});
+                Object.entries(bySuit).forEach(([suit,idxs])=>{
+                  const sorted=idxs.sort((a,b)=>ri(hand9[a].rank)-ri(hand9[b].rank));
+                  let seq=[sorted[0]];
+                  for(let k=1;k<sorted.length;k++){
+                    const prev=hand9[sorted[k-1]].rank,cur=hand9[sorted[k]].rank;
+                    if(ri(cur)-ri(prev)===1)seq.push(sorted[k]);
+                    else{if(seq.length>=3&&groups.length<3){groups.push(seq);seq.map(i=>used.add(i));}seq=[sorted[k]];}
+                  }
+                  if(seq.length>=3&&groups.length<3){groups.push(seq);seq.forEach(i=>used.add(i));}
+                });
+                // Renderiza grupos separados por espaço
+                const groupedIdxs=groups.flat();
+                const remaining=hand9.map((_,i)=>i).filter(i=>!used.has(i));
+                const order=[...groupedIdxs,...remaining];
+                return(
+                  <div>
+                    {groups.length>0?(
+                      <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                        {[...groups,remaining.length?remaining:null].filter(Boolean).map((grp,gi)=>(
+                          <div key={gi} style={{display:'flex',gap:3,padding:'4px 6px',background:gi<groups.length?'rgba(46,204,113,.08)':'rgba(255,255,255,.03)',border:`1px solid ${gi<groups.length?'rgba(46,204,113,.2)':'rgba(255,255,255,.05)'}`,borderRadius:8}}>
+                            {grp.map((idx,ci)=>{const card=hand9[idx];return(
+                              <div key={ci} style={{width:36,height:52,background:'#fff',border:'1px solid rgba(0,0,0,.1)',borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:sc2(card.suit)}}>
+                                <span style={{fontSize:9,fontWeight:900,lineHeight:1}}>{card.rank}</span>
+                                <span style={{fontSize:16,lineHeight:1}}>{card.suit}</span>
+                              </div>
+                            );})}
+                          </div>
+                        ))}
+                      </div>
+                    ):(
+                      <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
+                        {hand9.map((card,i)=>(
+                          <div key={i} style={{width:36,height:52,background:'#fff',border:'1px solid rgba(0,0,0,.1)',borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:sc2(card.suit)}}>
+                            <span style={{fontSize:9,fontWeight:900,lineHeight:1}}>{card.rank}</span>
+                            <span style={{fontSize:16,lineHeight:1}}>{card.suit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -1898,11 +1946,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [rooms,setRooms]=useState([]);
   const [online,setOnline]=useState(0);
   const [creating,setCreating]=useState(false);
-  const [newGame,setNewGame]=useState('dados');
+  const [newGame,setNewGame]=useState('pife');
   const [newBet,setNewBet]=useState(10);
   const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
   const [msg,setMsg]=useState('');
-  const GAMES_INFO={dados:{n:"Dados",i:"🎲",c:"#c0392b"},pife:{n:"Pife",i:"🃏",c:"#2471a3"},truco:{n:"Truco",i:"⚡",c:"#ca6f1e"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"}};
+  const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"}};
 
   useEffect(()=>{
     if(!socket)return;
@@ -2077,6 +2125,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket?.emit('leave_room',{roomId:myRoom?.id});
     setMyRoom(null);
     localStorage.removeItem('cassino_my_room');
+  };
+  const reiniciarJogo=()=>{
+    socket?.emit('reset_room',{roomId:myRoom?.id});
   };
 
   const ficouPronto=()=>{
@@ -2297,10 +2348,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
             </div>
 
             {/* Dados online — área de jogo */}
-            {myRoom.game==='dados'&&<DadosOnline key={`dados-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
             {myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
             {myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
-            {(myRoom.game!=='dados'&&myRoom.game!=='pife'&&myRoom.game!=='domino')&&(
+            {(myRoom.game!=='pife'&&myRoom.game!=='domino')&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
               </div>
@@ -2385,18 +2435,18 @@ function OnlineLobby({socket,chips,userData,onChange}){
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogo:</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
             {Object.entries(GAMES_INFO).map(([k,g])=>(
-              <button key={k} onClick={()=>{setNewGame(k);if(k==='dados')setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:`1px solid ${newGame===k?g.c:"rgba(255,255,255,.1)"}`,borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
+              <button key={k} onClick={()=>{setNewGame(k);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:`1px solid ${newGame===k?g.c:"rgba(255,255,255,.1)"}`,borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
             ))}
           </div>
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Número de jogadores:</div>
           <div style={{display:"flex",gap:6,marginBottom:8}}>
-            {(newGame==='dados'?[2]:[2,3,4]).map(n=>(
+            {[2,3,4].map(n=>(
               <button key={n} onClick={()=>setMaxPlayers(n)} style={{flex:1,padding:"8px",background:maxPlayers===n?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:`2px solid ${maxPlayers===n?"#f1c40f":"rgba(255,255,255,.1)"}`,borderRadius:8,color:maxPlayers===n?"#f1c40f":"#aaa",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
                 {n}👤
               </button>
             ))}
           </div>
-          {newGame==='dados'&&<div style={{color:"rgba(255,255,255,.25)",fontSize:10,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>⚡ Dados online é sempre 1 vs 1</div>}
+          
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
             {[10,20,50,100,200,500].map(v=>(
