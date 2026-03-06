@@ -175,6 +175,11 @@ select option{background:#111;color:#fff;}
   100%{opacity:1;transform:rotateX(10deg) rotateY(-5deg);}
 }
 .card3d-anim{animation:card3d-enter .45s cubic-bezier(.22,1,.36,1) both;}
+
+@keyframes mic-pulse{
+  0%,100%{box-shadow:0 0 8px rgba(231,76,60,.4);}
+  50%{box-shadow:0 0 18px rgba(231,76,60,.7),0 0 30px rgba(231,76,60,.3);}
+}
 </style>
 </head>
 <body>
@@ -2358,6 +2363,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setChatMsgs(m=>[...m,{uid:senderUid,name,text:message,ts:time,mine:senderUid===userData?.uid}]);
       setTimeout(()=>chatEndRef.current?.scrollIntoView({behavior:'smooth'}),50);
     });
+    socket.on('chat_audio',({uid:senderUid,name,audio,mimeType,time})=>{
+      setChatMsgs(m=>[...m,{uid:senderUid,name,audio,mimeType,ts:time,mine:senderUid===userData?.uid}]);
+      setTimeout(()=>chatEndRef.current?.scrollIntoView({behavior:'smooth'}),50);
+    });
     socket.on('error',({message})=>{
       setMsg('❌ '+message);
       if(message.includes('não encontrada')||message.includes('cheia')||message.includes('iniciado')){
@@ -2391,6 +2400,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('bet_changed');
       socket.off('bet_rejected');
       socket.off('chat_message');
+      socket.off('chat_audio');
       socket.off('game_result');
       socket.off('error');
     };
@@ -2401,6 +2411,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [showBetMenu,setShowBetMenu]=useState(false);
   const [chatMsgs,setChatMsgs]=useState([]);
   const [chatInput,setChatInput]=useState('');
+  const [recording,setRecording]=useState(false);
+  const mediaRecRef=React.useRef(null);
+  const audioChunksRef=React.useRef([]);
   const [gameOver,setGameOver]=useState(false);
   const [rematchCountdown,setRematchCountdown]=useState(null);
   const [rematchMsg,setRematchMsg]=useState('');
@@ -2473,6 +2486,38 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.emit('chat_message',{roomId:myRoom.id,message:txt});
     // NÃO adiciona localmente — o servidor devolve via chat_message para todos (inclusive remetente)
     setChatInput('');
+  };
+
+  const iniciarGravacao=async()=>{
+    if(recording)return;
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const mr=new MediaRecorder(stream,{mimeType:MediaRecorder.isTypeSupported('audio/webm')?'audio/webm':'audio/ogg'});
+      audioChunksRef.current=[];
+      mr.ondataavailable=e=>{if(e.data.size>0)audioChunksRef.current.push(e.data);};
+      mr.onstop=()=>{
+        const blob=new Blob(audioChunksRef.current,{type:mr.mimeType});
+        stream.getTracks().forEach(t=>t.stop());
+        if(blob.size>0&&blob.size<500000){// max 500kb
+          const reader=new FileReader();
+          reader.onloadend=()=>{
+            socket.emit('chat_audio',{roomId:myRoom.id,audio:reader.result,mimeType:mr.mimeType});
+          };
+          reader.readAsDataURL(blob);
+        }
+        setRecording(false);
+      };
+      mr.start();
+      mediaRecRef.current=mr;
+      setRecording(true);
+    }catch(e){
+      alert('Permissão de microfone negada.');
+    }
+  };
+  const pararGravacao=()=>{
+    if(mediaRecRef.current&&recording){
+      mediaRecRef.current.stop();
+    }
   };
 
   // Tela de espera dentro da sala
@@ -2680,18 +2725,34 @@ function OnlineLobby({socket,chips,userData,onChange}){
                     ):(
                       <>
                         {!m.mine&&<div style={{color:"#444",fontSize:9,marginBottom:1}}>{m.name}</div>}
-                        <div style={{maxWidth:"82%",padding:"5px 9px",borderRadius:m.mine?"10px 10px 2px 10px":"10px 10px 10px 2px",background:m.mine?"rgba(46,204,113,.12)":"rgba(255,255,255,.04)",border:`1px solid ${m.mine?"rgba(46,204,113,.15)":"rgba(255,255,255,.05)"}`,color:m.mine?"#2ecc71":"#bbb",fontSize:12}}>{m.text}</div>
+                        <div style={{maxWidth:"85%",padding:m.audio?"4px 6px":"5px 9px",borderRadius:m.mine?"10px 10px 2px 10px":"10px 10px 10px 2px",background:m.mine?"rgba(46,204,113,.12)":"rgba(255,255,255,.04)",border:`1px solid ${m.mine?"rgba(46,204,113,.15)":"rgba(255,255,255,.05)"}`,color:m.mine?"#2ecc71":"#bbb",fontSize:12}}>
+                          {m.audio
+                            ?<audio controls src={m.audio} style={{height:28,maxWidth:180,display:'block',accentColor:'#2ecc71'}}/>
+                            :m.text}
+                        </div>
                       </>
                     )}
                   </div>
                 ))}
                 <div ref={chatEndRef}/>
               </div>
-              <div style={{display:"flex",gap:6,padding:"6px 8px",borderTop:"1px solid rgba(255,255,255,.04)"}}>
+              <div style={{display:"flex",gap:5,padding:"6px 8px",borderTop:"1px solid rgba(255,255,255,.04)",alignItems:"center"}}>
                 <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&enviarMsg()}
                   placeholder="Mensagem..." maxLength={120}
                   style={{flex:1,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)",borderRadius:7,padding:"6px 9px",color:"#fff",fontSize:12,outline:"none"}}/>
-                <button onClick={enviarMsg} style={{padding:"6px 11px",background:"rgba(46,204,113,.12)",border:"1px solid rgba(46,204,113,.18)",borderRadius:7,color:"#2ecc71",fontSize:13,cursor:"pointer",fontWeight:700}}>➤</button>
+                <button onClick={enviarMsg} style={{padding:"6px 10px",background:"rgba(46,204,113,.12)",border:"1px solid rgba(46,204,113,.18)",borderRadius:7,color:"#2ecc71",fontSize:13,cursor:"pointer",fontWeight:700}}>➤</button>
+                <button
+                  onMouseDown={iniciarGravacao}
+                  onMouseUp={pararGravacao}
+                  onTouchStart={e=>{e.preventDefault();iniciarGravacao();}}
+                  onTouchEnd={e=>{e.preventDefault();pararGravacao();}}
+                  style={{padding:"6px 9px",borderRadius:7,fontSize:14,cursor:"pointer",transition:"all .15s",
+                    background:recording?"rgba(231,76,60,.3)":"rgba(255,255,255,.05)",
+                    border:recording?"1px solid rgba(231,76,60,.6)":"1px solid rgba(255,255,255,.08)",
+                    boxShadow:recording?"0 0 10px rgba(231,76,60,.4)":"none",
+                    animation:recording?"mic-pulse 1s ease-in-out infinite":"none"}}>
+                  🎙️
+                </button>
               </div>
             </div>
 
