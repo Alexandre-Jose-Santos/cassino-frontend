@@ -2331,8 +2331,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
           if(n<=1){
             clearInterval(iv);
             setRematchCountdown(null);
-            setMatchKey(k=>k+1);
-            // Não reseta gameOver aqui — espera room_update com started:false
+            // matchKey só incrementa quando room_update confirmar — evita flash
             return null;
           }
           return n-1;
@@ -2657,9 +2656,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
               ))}
             </div>
 
-            {/* Jogos — escondidos durante pós-partida para evitar flash */}
-            {!gameOver&&myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {!gameOver&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {/* Jogos — ficam visíveis até reiniciar ser clicado */}
+            {myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {(myRoom.game!=='pife'&&myRoom.game!=='domino')&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
