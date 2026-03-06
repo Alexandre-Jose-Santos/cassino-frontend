@@ -2512,9 +2512,9 @@ function XadrezOnline({socket,room,userData,onGameOver}){
 
   const CELL=42;
   const validDests=moves.map(m=>m.to);
+  const gameStarted=!!myColor;
   const isCheck=gameStarted&&isInCheck(board,myColor||'w');
   const kingPos=isCheck?findKing(board,myColor||'w'):null;
-  const gameStarted=!!myColor;
   const flipR=r=>myColor==='b'?7-r:r;
   const flipC=c=>myColor==='b'?7-c:c;
 
@@ -3317,282 +3317,156 @@ function bestCheckerMove(board,color){
 
 // ══════════════════════════════════════════════════════
 // DAMA — Offline vs IA + Online
+
 // ══════════════════════════════════════════════════════
-function initCheckers(){
+// FUNÇÕES DE XADREZ
+// ══════════════════════════════════════════════════════
+const PIECE_UNICODE={wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',bK:'♚',bQ:'♛',bR:'♜',bB:'♝',bN:'♞',bP:'♟'};
+const PIECE_VALUE={P:100,N:320,B:330,R:500,Q:900,K:20000};
+const PAWN_TABLE_W=[
+  [0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],
+  [5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],
+  [5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]
+];
+const KNIGHT_TABLE=[
+  [-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],
+  [-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],
+  [-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],
+  [-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]
+];
+function initChess(){
   const b=Array(8).fill(null).map(()=>Array(8).fill(null));
-  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'b',king:false};
-  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'w',king:false};
+  const back=['R','N','B','Q','K','B','N','R'];
+  for(let c=0;c<8;c++){b[0][c]={t:back[c],col:'b'};b[7][c]={t:back[c],col:'w'};}
+  for(let c=0;c<8;c++){b[1][c]={t:'P',col:'b'};b[6][c]={t:'P',col:'w'};}
   return b;
 }
-function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
-function getCheckersMoves(board,r,c,mustCapture=false){
+function getChessMoves(board,r,c,enPassant=null,castling={wK:true,wQ:true,bK:true,bQ:true}){
   const p=board[r][c]; if(!p)return[];
-  const dirs=[];
-  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
-  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
-  const moves=[]; const caps=[];
-  for(const [dr,dc] of dirs){
-    const nr=r+dr,nc=c+dc;
-    if(nr<0||nr>7||nc<0||nc>7)continue;
-    if(!board[nr][nc]){
-      if(!mustCapture) moves.push({from:[r,c],to:[nr,nc],caps:[]});
-    } else if(board[nr][nc].color!==p.color){
-      const jr=r+2*dr,jc=c+2*dc;
-      if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!board[jr][jc]){
-        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
+  const {t,col}=p; const opp=col==='w'?'b':'w';
+  const moves=[];
+  const inBounds=(r,c)=>r>=0&&r<=7&&c>=0&&c<=7;
+  const add=(tr,tc,extra={})=>{if(inBounds(tr,tc)&&board[tr][tc]?.col!==col)moves.push({from:[r,c],to:[tr,tc],...extra});};
+  const slide=(dr,dc)=>{let nr=r+dr,nc=c+dc;while(inBounds(nr,nc)){if(board[nr][nc]){if(board[nr][nc].col!==col)moves.push({from:[r,c],to:[nr,nc]});break;}moves.push({from:[r,c],to:[nr,nc]});nr+=dr;nc+=dc;}};
+  if(t==='P'){
+    const dir=col==='w'?-1:1; const start=col==='w'?6:1;
+    if(inBounds(r+dir,c)&&!board[r+dir][c]){
+      moves.push({from:[r,c],to:[r+dir,c],promo:r+dir===0||r+dir===7});
+      if(r===start&&!board[r+2*dir][c])moves.push({from:[r,c],to:[r+2*dir,c],double:true});
+    }
+    for(const dc of[-1,1]){
+      if(inBounds(r+dir,c+dc)){
+        if(board[r+dir][c+dc]?.col===opp)moves.push({from:[r,c],to:[r+dir,c+dc],promo:r+dir===0||r+dir===7});
+        else if(enPassant&&enPassant[0]===r+dir&&enPassant[1]===c+dc)moves.push({from:[r,c],to:[r+dir,c+dc],ep:true,capAt:[r,c+dc]});
       }
     }
-  }
-  return caps.length>0?caps:mustCapture?[]:moves;
-}
-function getAllMoves(board,color){
-  const caps=[]; const moves=[];
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
-    if(board[r][c]?.color===color){
-      const m=getCheckersMoves(board,r,c);
-      for(const mv of m){
-        if(mv.caps.length>0) caps.push(mv); else moves.push(mv);
-      }
+  } else if(t==='N'){
+    for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])add(r+dr,c+dc);
+  } else if(t==='B'){
+    for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1]])slide(dr,dc);
+  } else if(t==='R'){
+    for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);
+  } else if(t==='Q'){
+    for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);
+  } else if(t==='K'){
+    for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])add(r+dr,c+dc);
+    const row=col==='w'?7:0;
+    if(r===row&&c===4){
+      if(castling[col+'K']&&!board[row][5]&&!board[row][6]&&board[row][7]?.t==='R')
+        moves.push({from:[r,c],to:[row,6],castle:'K'});
+      if(castling[col+'Q']&&!board[row][3]&&!board[row][2]&&!board[row][1]&&board[row][0]?.t==='R')
+        moves.push({from:[r,c],to:[row,2],castle:'Q'});
     }
   }
-  return caps.length>0?caps:moves;
+  return moves;
 }
-function applyMove(board,mv){
-  const nb=cloneBoard(board);
+function findKing(board,col){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]?.t==='K'&&board[r][c]?.col===col)return[r,c];
+  return null;
+}
+function isInCheck(board,col){
+  const king=findKing(board,col); if(!king)return false;
+  const opp=col==='w'?'b':'w';
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    if(board[r][c]?.col===opp){
+      const ms=getChessMoves(board,r,c);
+      if(ms.some(m=>m.to[0]===king[0]&&m.to[1]===king[1]))return true;
+    }
+  }
+  return false;
+}
+function applyChessMove(board,mv,promo='Q'){
+  const nb=board.map(r=>r.map(c=>c?{...c}:null));
   const p=nb[mv.from[0]][mv.from[1]];
   nb[mv.from[0]][mv.from[1]]=null;
-  for(const [cr,cc] of mv.caps) nb[cr][cc]=null;
+  if(mv.ep&&mv.capAt)nb[mv.capAt[0]][mv.capAt[1]]=null;
   nb[mv.to[0]][mv.to[1]]=p;
-  if((p.color==='w'&&mv.to[0]===0)||(p.color==='b'&&mv.to[0]===7)) nb[mv.to[0]][mv.to[1]].king=true;
+  if(mv.promo)nb[mv.to[0]][mv.to[1]]={t:promo,col:p.col};
+  if(mv.castle){
+    const row=mv.from[0];
+    if(mv.castle==='K'){nb[row][5]={t:'R',col:p.col};nb[row][7]=null;}
+    else{nb[row][3]={t:'R',col:p.col};nb[row][0]=null;}
+  }
   return nb;
 }
-function evalCheckers(board){
+function evalChess(board){
   let s=0;
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     const p=board[r][c]; if(!p)continue;
-    const v=p.king?3:1; s+=p.color==='w'?v:-v;
+    const base=PIECE_VALUE[p.t]||0;
+    let pos=0;
+    if(p.t==='P')pos=p.col==='w'?PAWN_TABLE_W[r][c]:PAWN_TABLE_W[7-r][c];
+    if(p.t==='N')pos=KNIGHT_TABLE[r][c];
+    s+=p.col==='w'?base+pos:-(base+pos);
   }
   return s;
 }
-function minimaxCheckers(board,depth,alpha,beta,maximizing){
-  const color=maximizing?'w':'b';
-  const moves=getAllMoves(board,color);
-  if(depth===0||moves.length===0) return evalCheckers(board);
+function getAllChessMoves(board,col,enPassant,castling){
+  const moves=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    if(board[r][c]?.col===col){
+      const ms=getChessMoves(board,r,c,enPassant,castling);
+      for(const mv of ms){
+        const nb=applyChessMove(board,mv);
+        if(!isInCheck(nb,col))moves.push(mv);
+      }
+    }
+  }
+  return moves;
+}
+function minimaxChess(board,depth,alpha,beta,maximizing,enPassant,castling){
+  if(depth===0)return evalChess(board);
+  const col=maximizing?'w':'b';
+  const moves=getAllChessMoves(board,col,enPassant,castling);
+  if(!moves.length) return isInCheck(board,col)?(maximizing?-50000:50000):0;
   if(maximizing){
     let best=-Infinity;
     for(const mv of moves){
-      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
+      best=Math.max(best,minimaxChess(applyChessMove(board,mv),depth-1,alpha,beta,false,null,castling));
       alpha=Math.max(alpha,best); if(beta<=alpha)break;
     }
     return best;
   } else {
     let best=Infinity;
     for(const mv of moves){
-      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
+      best=Math.min(best,minimaxChess(applyChessMove(board,mv),depth-1,alpha,beta,true,null,castling));
       beta=Math.min(beta,best); if(beta<=alpha)break;
     }
     return best;
   }
 }
-function bestCheckerMove(board,color){
-  const moves=getAllMoves(board,color);
+function bestChessMove(board,col,enPassant,castling){
+  const moves=getAllChessMoves(board,col,enPassant,castling);
   if(!moves.length)return null;
-  let best=color==='w'?-Infinity:Infinity;
+  let best=col==='b'?Infinity:-Infinity;
   let bestMv=moves[0];
   for(const mv of moves){
-    const s=minimaxCheckers(applyMove(board,mv),4,-Infinity,Infinity,color==='b');
-    if(color==='w'?s>best:s<best){best=s;bestMv=mv;}
+    const s=minimaxChess(applyChessMove(board,mv),3,-Infinity,Infinity,col==='b',null,castling);
+    if(col==='b'?s<best:s>best){best=s;bestMv=mv;}
   }
   return bestMv;
 }
 
-
-// ══════════════════════════════════════════════════════
-// DAMA — Offline vs IA + Online
-// ══════════════════════════════════════════════════════
-function initCheckers(){
-  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
-  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'b',king:false};
-  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'w',king:false};
-  return b;
-}
-function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
-function getCheckersMoves(board,r,c,mustCapture=false){
-  const p=board[r][c]; if(!p)return[];
-  const dirs=[];
-  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
-  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
-  const moves=[]; const caps=[];
-  for(const [dr,dc] of dirs){
-    const nr=r+dr,nc=c+dc;
-    if(nr<0||nr>7||nc<0||nc>7)continue;
-    if(!board[nr][nc]){
-      if(!mustCapture) moves.push({from:[r,c],to:[nr,nc],caps:[]});
-    } else if(board[nr][nc].color!==p.color){
-      const jr=r+2*dr,jc=c+2*dc;
-      if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!board[jr][jc]){
-        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
-      }
-    }
-  }
-  return caps.length>0?caps:mustCapture?[]:moves;
-}
-function getAllMoves(board,color){
-  const caps=[]; const moves=[];
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
-    if(board[r][c]?.color===color){
-      const m=getCheckersMoves(board,r,c);
-      for(const mv of m){
-        if(mv.caps.length>0) caps.push(mv); else moves.push(mv);
-      }
-    }
-  }
-  return caps.length>0?caps:moves;
-}
-function applyMove(board,mv){
-  const nb=cloneBoard(board);
-  const p=nb[mv.from[0]][mv.from[1]];
-  nb[mv.from[0]][mv.from[1]]=null;
-  for(const [cr,cc] of mv.caps) nb[cr][cc]=null;
-  nb[mv.to[0]][mv.to[1]]=p;
-  if((p.color==='w'&&mv.to[0]===0)||(p.color==='b'&&mv.to[0]===7)) nb[mv.to[0]][mv.to[1]].king=true;
-  return nb;
-}
-function evalCheckers(board){
-  let s=0;
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
-    const p=board[r][c]; if(!p)continue;
-    const v=p.king?3:1; s+=p.color==='w'?v:-v;
-  }
-  return s;
-}
-function minimaxCheckers(board,depth,alpha,beta,maximizing){
-  const color=maximizing?'w':'b';
-  const moves=getAllMoves(board,color);
-  if(depth===0||moves.length===0) return evalCheckers(board);
-  if(maximizing){
-    let best=-Infinity;
-    for(const mv of moves){
-      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
-      alpha=Math.max(alpha,best); if(beta<=alpha)break;
-    }
-    return best;
-  } else {
-    let best=Infinity;
-    for(const mv of moves){
-      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
-      beta=Math.min(beta,best); if(beta<=alpha)break;
-    }
-    return best;
-  }
-}
-function bestCheckerMove(board,color){
-  const moves=getAllMoves(board,color);
-  if(!moves.length)return null;
-  let best=color==='w'?-Infinity:Infinity;
-  let bestMv=moves[0];
-  for(const mv of moves){
-    const s=minimaxCheckers(applyMove(board,mv),4,-Infinity,Infinity,color==='b');
-    if(color==='w'?s>best:s<best){best=s;bestMv=mv;}
-  }
-  return bestMv;
-}
-
-
-// ══════════════════════════════════════════════════════
-// DAMA — Offline vs IA + Online
-// ══════════════════════════════════════════════════════
-function initCheckers(){
-  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
-  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'b',king:false};
-  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) b[r][c]={color:'w',king:false};
-  return b;
-}
-function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
-function getCheckersMoves(board,r,c,mustCapture=false){
-  const p=board[r][c]; if(!p)return[];
-  const dirs=[];
-  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
-  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
-  const moves=[]; const caps=[];
-  for(const [dr,dc] of dirs){
-    const nr=r+dr,nc=c+dc;
-    if(nr<0||nr>7||nc<0||nc>7)continue;
-    if(!board[nr][nc]){
-      if(!mustCapture) moves.push({from:[r,c],to:[nr,nc],caps:[]});
-    } else if(board[nr][nc].color!==p.color){
-      const jr=r+2*dr,jc=c+2*dc;
-      if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!board[jr][jc]){
-        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
-      }
-    }
-  }
-  return caps.length>0?caps:mustCapture?[]:moves;
-}
-function getAllMoves(board,color){
-  const caps=[]; const moves=[];
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
-    if(board[r][c]?.color===color){
-      const m=getCheckersMoves(board,r,c);
-      for(const mv of m){
-        if(mv.caps.length>0) caps.push(mv); else moves.push(mv);
-      }
-    }
-  }
-  return caps.length>0?caps:moves;
-}
-function applyMove(board,mv){
-  const nb=cloneBoard(board);
-  const p=nb[mv.from[0]][mv.from[1]];
-  nb[mv.from[0]][mv.from[1]]=null;
-  for(const [cr,cc] of mv.caps) nb[cr][cc]=null;
-  nb[mv.to[0]][mv.to[1]]=p;
-  if((p.color==='w'&&mv.to[0]===0)||(p.color==='b'&&mv.to[0]===7)) nb[mv.to[0]][mv.to[1]].king=true;
-  return nb;
-}
-function evalCheckers(board){
-  let s=0;
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
-    const p=board[r][c]; if(!p)continue;
-    const v=p.king?3:1; s+=p.color==='w'?v:-v;
-  }
-  return s;
-}
-function minimaxCheckers(board,depth,alpha,beta,maximizing){
-  const color=maximizing?'w':'b';
-  const moves=getAllMoves(board,color);
-  if(depth===0||moves.length===0) return evalCheckers(board);
-  if(maximizing){
-    let best=-Infinity;
-    for(const mv of moves){
-      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
-      alpha=Math.max(alpha,best); if(beta<=alpha)break;
-    }
-    return best;
-  } else {
-    let best=Infinity;
-    for(const mv of moves){
-      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
-      beta=Math.min(beta,best); if(beta<=alpha)break;
-    }
-    return best;
-  }
-}
-function bestCheckerMove(board,color){
-  const moves=getAllMoves(board,color);
-  if(!moves.length)return null;
-  let best=color==='w'?-Infinity:Infinity;
-  let bestMv=moves[0];
-  for(const mv of moves){
-    const s=minimaxCheckers(applyMove(board,mv),4,-Infinity,Infinity,color==='b');
-    if(color==='w'?s>best:s<best){best=s;bestMv=mv;}
-  }
-  return bestMv;
-}
-
-
-// ══════════════════════════════════════════════════════
-// DAMA — Offline vs IA (com capturas múltiplas e 3D)
 // ══════════════════════════════════════════════════════
 function Dama({chips,onChange,log}){
   const [board,setBoard]=useState(()=>initCheckers());
