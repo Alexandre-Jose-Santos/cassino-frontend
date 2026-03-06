@@ -3524,42 +3524,89 @@ function Dama({chips,onChange,log}){
   const startGame=()=>{
     if(chips<bet){alert('Fichas insuficientes!');return;}
     onChange(-bet); log(`♟ Dama: apostou ${bet} fichas`);
-    setBoard(initCheckers()); setSel(null); setTurn('w'); setMoves([]);
+    const ib=initCheckers(); setBoardSync(ib); setSelSync(null); setTurn('w'); setMovesSync([]); chainRef.current=false;
     setStatus('Sua vez ⬜'); setOver(false); setGameStarted(true);
     setLastMove(null);
   };
 
+  const capsDe=(nb,r,c)=>{
+    const p=nb[r][c]; if(!p) return [];
+    const dirs=[];
+    if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
+    if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
+    return dirs.reduce((acc,[dr,dc])=>{
+      const[mr,mc,jr,jc]=[r+dr,c+dc,r+2*dr,c+2*dc];
+      if(mr>=0&&mr<8&&mc>=0&&mc<8&&jr>=0&&jr<8&&jc>=0&&jc<8
+        &&nb[mr][mc]&&nb[mr][mc].color!==p.color&&!nb[jr][jc])
+        acc.push({from:[r,c],to:[jr,jc],caps:[[mr,mc]]});
+      return acc;
+    },[]);
+  };
+
+  // Refs para evitar stale closure no handleCell
+  const boardRef=useRef(null);
+  const movesRef=useRef([]);
+  const selRef=useRef(null);
+  const chainRef=useRef(false);
+
+  // Sincroniza refs com state
+  const setSelSync=(v)=>{ selRef.current=v; setSel(v); };
+  const setMovesSync=(v)=>{ movesRef.current=v; setMoves(v); };
+  const setBoardSync=(v)=>{ boardRef.current=v; setBoard(v); };
+
   const handleCell=(r,c)=>{
-    if(over||!gameStarted||turn!=='w'||aiThinking)return;
-    const p=board[r][c];
-    if(sel){
-      const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
+    if(over||!gameStarted||turn!=='w'||aiThinking) return;
+    const curBoard=boardRef.current||board;
+    const curMoves=movesRef.current;
+    const curSel=selRef.current;
+    const p=curBoard[r][c];
+
+    if(chainRef.current){
+      const mv=curMoves.find(m=>m.to[0]===r&&m.to[1]===c);
+      if(!mv) return;
+      const nb=applyMove(curBoard,mv);
+      setBoardSync(nb); setLastMove(mv);
+      const fu=capsDe(nb,r,c);
+      if(fu.length){
+        setSelSync([r,c]); setMovesSync(fu);
+        setStatus('⚡ Continue capturando!');
+      } else {
+        setSelSync(null); setMovesSync([]); chainRef.current=false;
+        finishPlayerMove(nb);
+      }
+      return;
+    }
+
+    if(curSel){
+      const mv=curMoves.find(m=>m.to[0]===r&&m.to[1]===c);
       if(mv){
-        const nb=applyMove(board,mv);
-        setBoard(nb); setLastMove(mv);
-        setSel(null); setMoves([]);
+        const nb=applyMove(curBoard,mv);
+        setBoardSync(nb); setLastMove(mv);
+        if(mv.caps.length>0){
+          const fu=capsDe(nb,r,c);
+          if(fu.length){
+            setSelSync([r,c]); setMovesSync(fu); chainRef.current=true;
+            setStatus('⚡ Continue capturando!');
+            return;
+          }
+        }
+        setSelSync(null); setMovesSync([]);
         finishPlayerMove(nb);
         return;
       }
-      // Clicou em outra peça branca — re-seleciona
       if(p?.color==='w'){
-        const allCaps=getAllMoves(board,'w').filter(m=>m.caps.length>0);
-        const myMoves=allCaps.length>0
-          ?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c)
-          :getCheckersMoves(board,r,c);
-        setSel([r,c]); setMoves(myMoves);
-        return;
+        const allCaps=getAllMoves(curBoard,'w').filter(m=>m.caps.length>0);
+        const myMoves=allCaps.length>0?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c):getCheckersMoves(curBoard,r,c);
+        setSelSync([r,c]); setMovesSync(myMoves); return;
       }
-      setSel(null); setMoves([]);
-      return;
+      setSelSync(null); setMovesSync([]); return;
     }
+
     if(p?.color==='w'){
-      const allCaps=getAllMoves(board,'w').filter(m=>m.caps.length>0);
-      const myMoves=allCaps.length>0
-        ?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c)
-        :getCheckersMoves(board,r,c);
-      setSel([r,c]); setMoves(myMoves);
-    } else {setSel(null);setMoves([]);}
+      const allCaps=getAllMoves(curBoard,'w').filter(m=>m.caps.length>0);
+      const myMoves=allCaps.length>0?allCaps.filter(m=>m.from[0]===r&&m.from[1]===c):getCheckersMoves(curBoard,r,c);
+      setSelSync([r,c]); setMovesSync(myMoves);
+    } else {setSelSync(null); setMovesSync([]);}
   };
 
   const finishPlayerMove=(nb)=>{
@@ -3573,9 +3620,18 @@ function Dama({chips,onChange,log}){
     setTimeout(()=>{
       const aiMv=bestCheckerMove(nb,'b');
       if(!aiMv){setStatus('🏆 Você ganhou!');setOver(true);setAiThinking(false);onChange(bet*2);log(`🏆 Dama: ganhou ${bet*2} fichas`);return;}
-      const nb2=applyMove(nb,aiMv);
-      setBoard(nb2); setLastMove(aiMv);
-      const wMoves=getAllMoves(nb2,'w');
+      // IA também faz capturas em cadeia
+      let curr=nb;
+      let mv=aiMv;
+      while(true){
+        curr=applyMove(curr,mv);
+        if(mv.caps.length===0) break;
+        const fu=capsDe(curr,mv.to[0],mv.to[1]);
+        if(!fu.length) break;
+        mv=fu[0];
+      }
+      setBoard(curr); setLastMove(mv);
+      const wMoves=getAllMoves(curr,'w');
       if(!wMoves.length){setStatus('😔 IA ganhou!');setOver(true);setAiThinking(false);log(`😔 Dama: perdeu ${bet} fichas`);return;}
       setTurn('w'); setStatus('Sua vez ⬜'); setAiThinking(false);
     },500);
