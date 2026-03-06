@@ -1354,6 +1354,7 @@ function DominoOnline({socket,room,userData}){
   const [phase,setPhase]=useState('wait');
   const [result,setResult]=useState(null);
   const [initialized,setInitialized]=useState(false);
+  const [pendingTile,setPendingTile]=useState(null); // peça aguardando escolha de lado
   const opp=room.players.find(p=>p.uid!==userData?.uid);
   const oppName=opp?.name||'Adversário';
 
@@ -1435,11 +1436,18 @@ function DominoOnline({socket,room,userData}){
   const playTile=(t)=>{
     if(!myTurn||phase!=='play')return;
     if(!canPlay(t,chain)){setMsg('❌ Peça não encaixa!');return;}
-    const nc=addToChain(t,chain);
+    if(!chain.length){confirmPlay(t,'left');return;}
+    const l=chain[0].dA, r=chain[chain.length-1].dB;
+    const fitsLeft=(t.a===l||t.b===l);
+    const fitsRight=(t.a===r||t.b===r);
+    // Encaixa nos dois lados — pede escolha
+    if(fitsLeft&&fitsRight){setPendingTile(t);setMsg('Escolha em qual extremidade jogar:');return;}
+    confirmPlay(t, fitsRight?'right':'left');
+  };
+  const confirmPlay=(t,side)=>{
     const nh=hand.filter(x=>x.id!==t.id);
-    setChain(nc);setHand(nh);
-    const side=chain.length===0?'left':
-      (t.a===chain[chain.length-1]?.dB||t.b===chain[chain.length-1]?.dB)?'right':'left';
+    setHand(nh);
+    setPendingTile(null);
     socket.emit('game_action',{roomId:room.id,action:'domino_play',data:{
       piece:{a:t.a,b:t.b},handIdx:hand.findIndex(x=>x.id===t.id),side
     }});
@@ -1557,7 +1565,19 @@ function DominoOnline({socket,room,userData}){
       </div>
 
       {/* Botões — igual offline */}
-      <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+      <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+        {/* Modal escolha de lado */}
+        {pendingTile&&(
+          <div style={{width:'100%',background:'rgba(0,0,0,.6)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,padding:'10px',textAlign:'center',marginBottom:4}}>
+            <div style={{color:'#f1c40f',fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1,marginBottom:8}}>
+              [{pendingTile.a}|{pendingTile.b}] — Qual extremidade?
+            </div>
+            <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+              <Btn c="#2ecc71" tc="#000" sm onClick={()=>confirmPlay(pendingTile,'left')}>← ESQUERDA ({chain[0]?.dA})</Btn>
+              <Btn c="#2ecc71" tc="#000" sm onClick={()=>confirmPlay(pendingTile,'right')}>DIREITA ({chain[chain.length-1]?.dB}) →</Btn>
+            </div>
+          </div>
+        )}
         {phase==='play'&&myTurn&&semPecaEncaixa&&stockCount>0&&(
           <Btn c="#9b59b6" tc="#fff" sm onClick={comprarMonte}>Comprar ({stockCount})</Btn>
         )}
@@ -1968,6 +1988,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
         if(!prev&&room)setMsg('');
         return room;
       });
+      // Se sala voltou para waiting, limpa gameOver (evita flash do jogo)
+      if(room&&!room.started&&room.status==='waiting'){
+        setGameOver(false);
+      }
       // Sala de 2: se todos prontos → criador inicia automaticamente
       if(room&&(room.maxPlayers||2)===2&&room.players?.length===2&&room.players.every(p=>p.ready)&&room.status==='waiting'){
         // Usa uid direto do socket (não depende do closure de userData)
@@ -2024,9 +2048,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
         setRematchCountdown(n=>{
           if(n<=1){
             clearInterval(iv);
-            setGameOver(false);
             setRematchCountdown(null);
             setMatchKey(k=>k+1);
+            // Não reseta gameOver aqui — espera room_update com started:false
             return null;
           }
           return n-1;
@@ -2351,9 +2375,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
               ))}
             </div>
 
-            {/* Dados online — área de jogo */}
-            {myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
-            {myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
+            {/* Jogos — escondidos durante pós-partida para evitar flash */}
+            {!gameOver&&myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
+            {!gameOver&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData}/>}
             {(myRoom.game!=='pife'&&myRoom.game!=='domino')&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
