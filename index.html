@@ -2337,19 +2337,16 @@ function DamaOnline({socket,room,userData,onGameOver}){
   const [myColor,setMyColor]=useState(null);
   const myColorRef=useRef(null);
   const [turn,setTurn]=useState('w');
-  const [moves,setMoves]=useState([]);
+  const [legal,setLegal]=useState([]);
   const [status,setStatus]=useState('Conectando...');
   const [result,setResult]=useState(null);
-  const [captureChain,setCaptureChain]=useState(null);
 
   useEffect(()=>{
     socket.emit('game_action',{roomId:room.id,action:'dama_init',data:{}});
     const h=({action,data})=>{
       if(action==='dama_init'){
-        // Backend envia colorMap {uid: 'w'/'b'} para todos
-        const myUid=userData?.uid;
-        const col=data.colorMap?data.colorMap[myUid]:data.color;
-        if(!col)return; // ainda não tenho uid ou não estou no mapa
+        const col=data.colorMap?data.colorMap[userData?.uid]:data.color;
+        if(!col)return;
         myColorRef.current=col;
         setMyColor(col);
         setBoard(initCheckers());
@@ -2358,7 +2355,7 @@ function DamaOnline({socket,room,userData,onGameOver}){
       }
       if(action==='dama_update'){
         setBoard(data.board); setTurn(data.turn);
-        setSel(null); setMoves([]); setCaptureChain(null);
+        setSel(null); setLegal([]);
         setStatus(data.turn===myColorRef.current?'Sua vez':'Vez do adversário');
       }
       if(action==='dama_win'){
@@ -2369,54 +2366,39 @@ function DamaOnline({socket,room,userData,onGameOver}){
     return()=>socket.off('game_action',h);
   },[]);
 
-  const followUp=(nb,r,c)=>{
-    const p=nb[r][c]; if(!p)return[];
-    const dirs=[];
-    if(p.color==='w'||p.king)dirs.push([-1,-1],[-1,1]);
-    if(p.color==='b'||p.king)dirs.push([1,-1],[1,1]);
-    const res=[];
-    for(const[dr,dc]of dirs){
-      const mr=r+dr,mc2=c+dc,jr=r+2*dr,jc=c+2*dc;
-      if(mr>=0&&mr<8&&mc2>=0&&mc2<8&&jr>=0&&jr<8&&jc>=0&&jc<8
-        &&nb[mr][mc2]&&nb[mr][mc2].color!==p.color&&!nb[jr][jc])
-        res.push({from:[r,c],to:[jr,jc],caps:[[mr,mc2]]});
-    }
-    return res;
-  };
-
-  const doMove=(nb,r,c)=>{
-    const fu=followUp(nb,r,c);
-    if(fu.length){setSel([r,c]);setMoves(fu);setCaptureChain(true);}
-    else{
-      setCaptureChain(null);setSel(null);setMoves([]);
-      const nt=myColorRef.current==='w'?'b':'w';
-      setTurn(nt); setStatus('Vez do adversário');
-      socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
-    }
-  };
-
   const handleCell=(r,c)=>{
     const mc=myColorRef.current;
     if(result||turn!==mc)return;
     const p=board[r][c];
+
     if(sel){
-      const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
-      if(mv){const nb=applyMove(board,mv);setBoard(nb);doMove(nb,r,c);return;}
+      const mv=legal.find(m=>m.to[0]===r&&m.to[1]===c);
+      if(mv){
+        const nb=applyMove(board,mv);
+        setBoard(nb); setSel(null); setLegal([]);
+        const nt=mc==='w'?'b':'w';
+        setTurn(nt); setStatus('Vez do adversário');
+        socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
+        return;
+      }
+      // Re-seleciona outra peça própria
+      if(p?.color===mc){
+        const mvs=getLegalMovesFor(board,r,c);
+        if(mvs.length){setSel([r,c]);setLegal(mvs);}
+        else setSel(null);
+        return;
+      }
+      setSel(null); setLegal([]); return;
     }
+
     if(p?.color===mc){
-      const caps=getAllMoves(board,mc).filter(m=>m.caps.length>0);
-      const myMoves=caps.length?caps.filter(m=>m.from[0]===r&&m.from[1]===c):getCheckersMoves(board,r,c);
-      setSel([r,c]);setMoves(myMoves);
-    } else setSel(null);
+      const mvs=getLegalMovesFor(board,r,c);
+      if(mvs.length){setSel([r,c]);setLegal(mvs);}
+    }
   };
 
   const CELL=42;
-  const vd=moves.map(m=>m.to);
-
-  // ESPELHAMENTO CORRETO:
-  // initCheckers: brancas nas linhas 5,6,7 (baixo), pretas nas linhas 0,1,2 (cima)
-  // Branco vê normal  → brancas embaixo ✓
-  // Preto espelha     → pretas ficam embaixo ✓
+  const destSet=new Set(legal.map(m=>m.to[0]*8+m.to[1]));
   const rows=myColor==='b'?[...board].reverse().map(r=>[...r].reverse()):board;
 
   if(result)return(
@@ -2444,21 +2426,21 @@ function DamaOnline({socket,room,userData,onGameOver}){
             const bc=myColor==='b'?7-ci:ci;
             const dark=(br+bc)%2===1;
             const isSel=sel&&sel[0]===br&&sel[1]===bc;
-            const isDest=vd.some(([dr,dc])=>dr===br&&dc===bc);
-            const isCap=isDest&&moves.find(m=>m.to[0]===br&&m.to[1]===bc)?.caps.length>0;
+            const isDest=destSet.has(br*8+bc);
+            const isCap=isDest&&legal.find(m=>m.to[0]===br&&m.to[1]===bc)?.caps.length>0;
             const bg=dark?(isSel?'#a07820':'#3d2b12'):(isSel?'#f5e090':'#c8b884');
             return(
               <div key={ri+'-'+ci} onClick={()=>handleCell(br,bc)}
                 style={{width:CELL,height:CELL,background:bg,
                   display:'flex',alignItems:'center',justifyContent:'center',
-                  cursor:dark&&turn===myColor?'pointer':'default',position:'relative',
-                  boxShadow:isDest?`inset 0 0 0 3px ${isCap?'rgba(231,76,60,.8)':'rgba(46,204,113,.8)'}`:
-                    isSel?'inset 0 0 0 3px rgba(241,196,15,1)':'none',
-                  transition:'background .1s'}}>
+                  cursor:turn===myColor?'pointer':'default',position:'relative',
+                  boxShadow:isSel?'inset 0 0 0 3px rgba(241,196,15,1)':
+                    isDest?`inset 0 0 0 3px ${isCap?'rgba(231,76,60,.8)':'rgba(46,204,113,.8)'}`:
+                    'none',transition:'background .1s'}}>
                 {isDest&&!cell&&<div style={{width:14,height:14,borderRadius:'50%',
                   background:isCap?'rgba(231,76,60,.6)':'rgba(46,204,113,.6)',
-                  border:'2px solid rgba(255,255,255,.6)'}}/>}
-                {cell&&<div style={{width:CELL-6,height:CELL-6,borderRadius:'50%',
+                  border:'2px solid rgba(255,255,255,.6)',pointerEvents:'none'}}/>}
+                {cell&&<div style={{width:CELL-6,height:CELL-6,borderRadius:'50%',pointerEvents:'none',
                   background:cell.color==='w'
                     ?'radial-gradient(circle at 35% 30%,#fff,#ddd 50%,#bbb)'
                     :'radial-gradient(circle at 35% 30%,#555,#222 50%,#111)',
@@ -2477,11 +2459,9 @@ function DamaOnline({socket,room,userData,onGameOver}){
         {myColor==='w'?'⬜ Você — brancas':myColor==='b'?'⬛ Você — pretas':'Aguardando...'}
         {turn===myColor&&myColor?<span style={{color:'#2ecc71',marginLeft:6,fontWeight:700}}>● sua vez</span>:null}
       </div>
-      {captureChain&&<div style={{textAlign:'center',marginTop:4,color:'#f1c40f',fontSize:11,fontWeight:700}}>⚡ CAPTURA MÚLTIPLA</div>}
     </div>
   );
 }
-
 
 function XadrezOnline({socket,room,userData,onGameOver}){
   const [board,setBoard]=useState(()=>initChess());
