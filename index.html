@@ -2002,8 +2002,10 @@ function PifeOnline({socket,room,userData,onGameOver}){
   // ── Verifica se a mão tem pife (3 grupos de 3) ──
   const temPife=(h)=>{
     if(h.length!==9)return false;
+    // Verifica duplicatas de id (sanidade)
+    const ids=new Set(h.map(c=>c.id||`${c.rank}${c.suit}`));
+    if(ids.size!==9)return false; // cartas duplicadas = inválido
     const vals={'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13};
-    // Tenta todas as combinações de 3 grupos de 3
     const cards=[...h];
     const isGroup=(g)=>{
       if(g.length!==3)return false;
@@ -2013,12 +2015,11 @@ function PifeOnline({socket,room,userData,onGameOver}){
       if(g[0].suit===g[1].suit&&g[1].suit===g[2].suit){
         const v=g.map(c=>vals[c.rank]).sort((a,b)=>a-b);
         if(v[1]===v[0]+1&&v[2]===v[1]+1)return true;
-        // Sequência com Ás (A-2-3 ou Q-K-A)
-        if(JSON.stringify(v)==='[1,12,13]')return true;
+        // Sequência com Ás: A-2-3
+        if(v[0]===1&&v[1]===2&&v[2]===3)return true;
       }
       return false;
     };
-    // Verifica todas as formas de dividir 9 cartas em 3 grupos de 3
     const check=(remaining,groups)=>{
       if(groups===3)return remaining.length===0;
       if(remaining.length<3)return false;
@@ -2304,7 +2305,7 @@ function PifeOnline({socket,room,userData,onGameOver}){
             const isNew=i===newCardIdx;
             const isSel=i===selected;
             return(
-              <div key={i}
+              <div key={card.id||`${card.rank}${card.suit}${i}`}
                 draggable={true}
                 onDragStart={()=>dragStart(i)}
                 onDragOver={(e)=>dragOver(e,i)}
