@@ -2521,6 +2521,7 @@ function XadrezOnline({socket,room,userData,onGameOver}){
   const [board,setBoard]=useState(()=>initChess());
   const [sel,setSel]=useState(null);
   const [myColor,setMyColor]=useState(null);
+  const myColorRef=React.useRef(null);
   const [turn,setTurn]=useState('w');
   const [moves,setMoves]=useState([]);
   const [status,setStatus]=useState('Aguardando...');
@@ -2535,16 +2536,19 @@ function XadrezOnline({socket,room,userData,onGameOver}){
     socket.emit('game_action',{roomId:room.id,action:'xadrez_init',data:{}});
     socket.on('game_action',({action,data})=>{
       if(action==='xadrez_init'){
-        setMyColor(data.color);
+        const col=data.colorMap?data.colorMap[userData?.uid]:data.color;
+        myColorRef.current=col;
+        setMyColor(col);
         setBoard(initChess()); setTurn('w');
-        setStatus(data.color==='w'?'Sua vez (brancas)':'Aguardando adversário (brancas)');
+        setStatus(col==='w'?'Sua vez ⬜ (brancas)':'Aguardando brancas jogar ⬛');
       }
       if(action==='xadrez_update'){
+        const mc=myColorRef.current;
         setBoard(data.board); setTurn(data.turn);
         setEnPassant(data.enPassant||null); setCastling(data.castling);
         setLastMove(data.lastMove||null);
-        if(data.turn===myColor) setStatus(data.check?'⚠️ Você está em xeque!':'Sua vez');
-        else setStatus('Vez do adversário');
+        if(data.turn===mc) setStatus(data.check?'⚠️ Você está em xeque!':'Sua vez ▶');
+        else setStatus('Vez do adversário...');
       }
       if(action==='xadrez_win'){
         setResult({outcome:data.winnerId===userData?.uid?'win':'lose',reason:data.reason});
