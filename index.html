@@ -1989,15 +1989,18 @@ function PifeOnline({socket,room,userData,onGameOver}){
   const [discard,setDiscard]=useState([]);
   const [myTurn,setMyTurn]=useState(false);
   const [phase,setPhase]=useState('wait'); // wait|draw|discard
-  const [newCardIdx,setNewCardIdx]=useState(null); // índice da carta recém comprada
+  const [newCardIdx,setNewCardIdx]=useState(null);
   const [selected,setSelected]=useState(null);
   const [dragging,setDragging]=useState(null);
   const [result,setResult]=useState(null);
   const [status,setStatus]=useState('Aguardando início...');
   const [statusOpp,setStatusOpp]=useState('');
   const [initialized,setInitialized]=useState(false);
+  const [numDecks,setNumDecks]=useState(1);
+  const [deckChosen,setDeckChosen]=useState(false);
   const opp=room.players.find(p=>p.uid!==userData?.uid);
   const oppName=opp?.name||'Adversário';
+  const isCriador=room.players[0]?.uid===userData?.uid;
 
   // ── Verifica se a mão tem pife (3 grupos de 3) ──
   const temPife=(h)=>{
@@ -2040,8 +2043,14 @@ function PifeOnline({socket,room,userData,onGameOver}){
   useEffect(()=>{
     if(!socket||initialized)return;
     setInitialized(true);
-    socket.emit('game_action',{roomId:room.id,action:'pife_init',data:{uid:userData?.uid}});
+    // Escuta pife_decks — não-criador recebe a config escolhida pelo criador
     socket.on('game_action',({uid:sUid,action,data})=>{
+      if(action==='pife_decks_chosen'){
+        // Não-criador recebe o número de baralhos e já pode iniciar
+        setNumDecks(data.numDecks);
+        setDeckChosen(true);
+        socket.emit('game_action',{roomId:room.id,action:'pife_init',data:{uid:userData?.uid}});
+      }
       if(action==='pife_state'){
         if(data.hand){setHand(data.hand);setNewCardIdx(null);}
         if(data.discard!==undefined)setDiscard(data.discard||[]);
@@ -2095,6 +2104,14 @@ function PifeOnline({socket,room,userData,onGameOver}){
     });
     return()=>socket.off('game_action');
   },[socket]);
+
+  const iniciarComBaralhos=(n)=>{
+    setNumDecks(n);
+    setDeckChosen(true);
+    // Avisa todos (inclusive o próprio criador) qual baralho foi escolhido
+    socket.emit('game_action',{roomId:room.id,action:'pife_decks_chosen',data:{numDecks:n}});
+    socket.emit('game_action',{roomId:room.id,action:'pife_init',data:{uid:userData?.uid,numDecks:n}});
+  };
 
   const comprarMonte=()=>{
     if(phase!=='draw'||deck<=0)return;
@@ -2158,6 +2175,40 @@ function PifeOnline({socket,room,userData,onGameOver}){
 
   const sc=s=>s==='♥'||s==='♦'?'#c0392b':'#1a1a2e';
   const rankDisplay=r=>r==='10'?'10':r;
+
+  // Tela de escolha de baralhos — só o criador vê, o outro aguarda
+  if(!deckChosen){
+    if(isCriador){
+      return(
+        <div style={{padding:'20px 12px',textAlign:'center'}}>
+          <div style={{fontSize:36,marginBottom:8}}>🃏</div>
+          <div style={{color:'#f1c40f',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif",letterSpacing:1,marginBottom:6}}>ESCOLHA O BARALHO</div>
+          <div style={{color:'#666',fontSize:12,marginBottom:20}}>Quantos baralhos usar na partida?</div>
+          <div style={{display:'flex',gap:12,justifyContent:'center'}}>
+            {[1,2].map(n=>(
+              <button key={n} onClick={()=>iniciarComBaralhos(n)}
+                style={{padding:'18px 28px',background:'linear-gradient(135deg,rgba(36,113,163,.2),rgba(36,113,163,.08))',
+                  border:'2px solid rgba(36,113,163,.5)',borderRadius:14,cursor:'pointer',
+                  color:'#fff',transition:'all .15s',minWidth:120}}
+                onMouseEnter={e=>{e.currentTarget.style.background='rgba(36,113,163,.3)';e.currentTarget.style.borderColor='#2471a3';}}
+                onMouseLeave={e=>{e.currentTarget.style.background='linear-gradient(135deg,rgba(36,113,163,.2),rgba(36,113,163,.08))';e.currentTarget.style.borderColor='rgba(36,113,163,.5)';}}>
+                <div style={{fontSize:28,marginBottom:4}}>{'🃏'.repeat(n)}</div>
+                <div style={{fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif"}}>{n} baralho{n>1?'s':''}</div>
+                <div style={{color:'rgba(255,255,255,.4)',fontSize:11,marginTop:3}}>{n===1?'52 cartas':'104 cartas'}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    } else {
+      return(
+        <div style={{padding:'30px 12px',textAlign:'center'}}>
+          <div style={{fontSize:36,marginBottom:12}}>⏳</div>
+          <div style={{color:'#aaa',fontSize:13}}>Aguardando o criador escolher o baralho...</div>
+        </div>
+      );
+    }
+  }
 
   if(result){
     const won=result.outcome==='win';
