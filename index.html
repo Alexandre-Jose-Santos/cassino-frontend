@@ -3436,19 +3436,72 @@ function bestCheckerMove(board){
 // ══════════════════════════════════════════════════════
 // FUNÇÕES DE XADREZ
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// ENGINE DE XADREZ — reescrito
+// ══════════════════════════════════════════════════════
 const PIECE_UNICODE={wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',bK:'♚',bQ:'♛',bR:'♜',bB:'♝',bN:'♞',bP:'♟'};
 const PIECE_VALUE={P:100,N:320,B:330,R:500,Q:900,K:20000};
 const PAWN_TABLE_W=[
-  [0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],
-  [5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],
-  [5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]
+  [0,0,0,0,0,0,0,0],
+  [50,50,50,50,50,50,50,50],
+  [10,10,20,30,30,20,10,10],
+  [5,5,10,25,25,10,5,5],
+  [0,0,0,20,20,0,0,0],
+  [5,-5,-10,0,0,-10,-5,5],
+  [5,10,10,-20,-20,10,10,5],
+  [0,0,0,0,0,0,0,0]
 ];
 const KNIGHT_TABLE=[
-  [-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],
-  [-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],
-  [-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],
-  [-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]
+  [-50,-40,-30,-30,-30,-30,-40,-50],
+  [-40,-20,0,0,0,0,-20,-40],
+  [-30,0,10,15,15,10,0,-30],
+  [-30,5,15,20,20,15,5,-30],
+  [-30,0,15,20,20,15,0,-30],
+  [-30,5,10,15,15,10,5,-30],
+  [-40,-20,0,5,5,0,-20,-40],
+  [-50,-40,-30,-30,-30,-30,-40,-50]
 ];
+const BISHOP_TABLE=[
+  [-20,-10,-10,-10,-10,-10,-10,-20],
+  [-10,0,0,0,0,0,0,-10],
+  [-10,0,5,10,10,5,0,-10],
+  [-10,5,5,10,10,5,5,-10],
+  [-10,0,10,10,10,10,0,-10],
+  [-10,10,10,10,10,10,10,-10],
+  [-10,5,0,0,0,0,5,-10],
+  [-20,-10,-10,-10,-10,-10,-10,-20]
+];
+const ROOK_TABLE=[
+  [0,0,0,0,0,0,0,0],
+  [5,10,10,10,10,10,10,5],
+  [-5,0,0,0,0,0,0,-5],
+  [-5,0,0,0,0,0,0,-5],
+  [-5,0,0,0,0,0,0,-5],
+  [-5,0,0,0,0,0,0,-5],
+  [-5,0,0,0,0,0,0,-5],
+  [0,0,0,5,5,0,0,0]
+];
+const QUEEN_TABLE=[
+  [-20,-10,-10,-5,-5,-10,-10,-20],
+  [-10,0,0,0,0,0,0,-10],
+  [-10,0,5,5,5,5,0,-10],
+  [-5,0,5,5,5,5,0,-5],
+  [0,0,5,5,5,5,0,-5],
+  [-10,5,5,5,5,5,0,-10],
+  [-10,0,5,0,0,0,0,-10],
+  [-20,-10,-10,-5,-5,-10,-10,-20]
+];
+const KING_MID=[
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-20,-30,-30,-40,-40,-30,-30,-20],
+  [-10,-20,-20,-20,-20,-20,-20,-10],
+  [20,20,0,0,0,0,20,20],
+  [20,30,10,0,0,10,30,20]
+];
+
 function initChess(){
   const b=Array(8).fill(null).map(()=>Array(8).fill(null));
   const back=['R','N','B','Q','K','B','N','R'];
@@ -3456,51 +3509,57 @@ function initChess(){
   for(let c=0;c<8;c++){b[1][c]={t:'P',col:'b'};b[6][c]={t:'P',col:'w'};}
   return b;
 }
+
 function getChessMoves(board,r,c,enPassant=null,castling={wK:true,wQ:true,bK:true,bQ:true}){
-  const p=board[r][c]; if(!p)return[];
-  const {t,col}=p; const opp=col==='w'?'b':'w';
+  const p=board[r][c]; if(!p) return [];
+  const{t,col}=p; const opp=col==='w'?'b':'w';
   const moves=[];
-  const inBounds=(r,c)=>r>=0&&r<=7&&c>=0&&c<=7;
-  const add=(tr,tc,extra={})=>{if(inBounds(tr,tc)&&board[tr][tc]?.col!==col)moves.push({from:[r,c],to:[tr,tc],...extra});};
-  const slide=(dr,dc)=>{let nr=r+dr,nc=c+dc;while(inBounds(nr,nc)){if(board[nr][nc]){if(board[nr][nc].col!==col)moves.push({from:[r,c],to:[nr,nc]});break;}moves.push({from:[r,c],to:[nr,nc]});nr+=dr;nc+=dc;}};
+  const ok=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+  const add=(tr,tc,extra={})=>{if(ok(tr,tc)&&board[tr][tc]?.col!==col)moves.push({from:[r,c],to:[tr,tc],...extra});};
+  const slide=(dr,dc)=>{let nr=r+dr,nc=c+dc;while(ok(nr,nc)){if(board[nr][nc]){if(board[nr][nc].col!==col)moves.push({from:[r,c],to:[nr,nc]});break;}moves.push({from:[r,c],to:[nr,nc]});nr+=dr;nc+=dc;}};
   if(t==='P'){
-    const dir=col==='w'?-1:1; const start=col==='w'?6:1;
-    if(inBounds(r+dir,c)&&!board[r+dir][c]){
+    const dir=col==='w'?-1:1,st=col==='w'?6:1;
+    if(ok(r+dir,c)&&!board[r+dir][c]){
       moves.push({from:[r,c],to:[r+dir,c],promo:r+dir===0||r+dir===7});
-      if(r===start&&!board[r+2*dir][c])moves.push({from:[r,c],to:[r+2*dir,c],double:true});
+      if(r===st&&!board[r+2*dir][c])moves.push({from:[r,c],to:[r+2*dir,c],double:true});
     }
     for(const dc of[-1,1]){
-      if(inBounds(r+dir,c+dc)){
-        if(board[r+dir][c+dc]?.col===opp)moves.push({from:[r,c],to:[r+dir,c+dc],promo:r+dir===0||r+dir===7});
-        else if(enPassant&&enPassant[0]===r+dir&&enPassant[1]===c+dc)moves.push({from:[r,c],to:[r+dir,c+dc],ep:true,capAt:[r,c+dc]});
-      }
+      if(!ok(r+dir,c+dc))continue;
+      if(board[r+dir][c+dc]?.col===opp)moves.push({from:[r,c],to:[r+dir,c+dc],promo:r+dir===0||r+dir===7});
+      else if(enPassant&&enPassant[0]===r+dir&&enPassant[1]===c+dc)moves.push({from:[r,c],to:[r+dir,c+dc],ep:true,capAt:[r,c+dc]});
     }
-  } else if(t==='N'){
-    for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])add(r+dr,c+dc);
-  } else if(t==='B'){
-    for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1]])slide(dr,dc);
-  } else if(t==='R'){
-    for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);
-  } else if(t==='Q'){
-    for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);
-  } else if(t==='K'){
+  }else if(t==='N'){for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])add(r+dr,c+dc);}
+  else if(t==='B'){for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1]])slide(dr,dc);}
+  else if(t==='R'){for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);}
+  else if(t==='Q'){for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]])slide(dr,dc);}
+  else if(t==='K'){
     for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])add(r+dr,c+dc);
     const row=col==='w'?7:0;
     if(r===row&&c===4){
-      if(castling[col+'K']&&!board[row][5]&&!board[row][6]&&board[row][7]?.t==='R')
-        moves.push({from:[r,c],to:[row,6],castle:'K'});
-      if(castling[col+'Q']&&!board[row][3]&&!board[row][2]&&!board[row][1]&&board[row][0]?.t==='R')
-        moves.push({from:[r,c],to:[row,2],castle:'Q'});
+      // Roque pequeno: casa 5 e 6 livres, rei não em xeque e não passa por xeque
+      if(castling[col+'K']&&!board[row][5]&&!board[row][6]&&board[row][7]?.t==='R'){
+        const nb1=applyChessMove(board,{from:[r,c],to:[row,5]});
+        if(!isInCheck(board,col)&&!isInCheck(nb1,col))
+          moves.push({from:[r,c],to:[row,6],castle:'K'});
+      }
+      // Roque grande: casas 1,2,3 livres
+      if(castling[col+'Q']&&!board[row][3]&&!board[row][2]&&!board[row][1]&&board[row][0]?.t==='R'){
+        const nb1=applyChessMove(board,{from:[r,c],to:[row,3]});
+        if(!isInCheck(board,col)&&!isInCheck(nb1,col))
+          moves.push({from:[r,c],to:[row,2],castle:'Q'});
+      }
     }
   }
   return moves;
 }
+
 function findKing(board,col){
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]?.t==='K'&&board[r][c]?.col===col)return[r,c];
   return null;
 }
+
 function isInCheck(board,col){
-  const king=findKing(board,col); if(!king)return false;
+  const king=findKing(board,col); if(!king) return false;
   const opp=col==='w'?'b':'w';
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
     if(board[r][c]?.col===opp){
@@ -3510,9 +3569,10 @@ function isInCheck(board,col){
   }
   return false;
 }
+
 function applyChessMove(board,mv,promo='Q'){
   const nb=board.map(r=>r.map(c=>c?{...c}:null));
-  const p=nb[mv.from[0]][mv.from[1]];
+  const p={...nb[mv.from[0]][mv.from[1]]};
   nb[mv.from[0]][mv.from[1]]=null;
   if(mv.ep&&mv.capAt)nb[mv.capAt[0]][mv.capAt[1]]=null;
   nb[mv.to[0]][mv.to[1]]=p;
@@ -3524,63 +3584,87 @@ function applyChessMove(board,mv,promo='Q'){
   }
   return nb;
 }
-function evalChess(board){
-  let s=0;
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    const p=board[r][c]; if(!p)continue;
-    const base=PIECE_VALUE[p.t]||0;
-    let pos=0;
-    if(p.t==='P')pos=p.col==='w'?PAWN_TABLE_W[r][c]:PAWN_TABLE_W[7-r][c];
-    if(p.t==='N')pos=KNIGHT_TABLE[r][c];
-    s+=p.col==='w'?base+pos:-(base+pos);
-  }
-  return s;
-}
+
 function getAllChessMoves(board,col,enPassant,castling){
   const moves=[];
   for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]?.col===col){
-      const ms=getChessMoves(board,r,c,enPassant,castling);
-      for(const mv of ms){
-        const nb=applyChessMove(board,mv);
-        if(!isInCheck(nb,col))moves.push(mv);
-      }
+    if(board[r][c]?.col!==col)continue;
+    for(const mv of getChessMoves(board,r,c,enPassant,castling)){
+      if(!isInCheck(applyChessMove(board,mv),col))moves.push(mv);
     }
   }
   return moves;
 }
-function minimaxChess(board,depth,alpha,beta,maximizing,enPassant,castling){
+
+function getPosScore(t,col,r,c){
+  const row=col==='w'?r:7-r;
+  if(t==='P')return PAWN_TABLE_W[row][c];
+  if(t==='N')return KNIGHT_TABLE[row][c];
+  if(t==='B')return BISHOP_TABLE[row][c];
+  if(t==='R')return ROOK_TABLE[row][c];
+  if(t==='Q')return QUEEN_TABLE[row][c];
+  if(t==='K')return KING_MID[row][c];
+  return 0;
+}
+
+function evalChess(board){
+  let s=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p) continue;
+    const v=(PIECE_VALUE[p.t]||0)+getPosScore(p.t,p.col,r,c);
+    s+=p.col==='w'?v:-v;
+  }
+  return s;
+}
+
+function minimaxChess(board,depth,alpha,beta,maximizing,ep,castling){
   if(depth===0)return evalChess(board);
   const col=maximizing?'w':'b';
-  const moves=getAllChessMoves(board,col,enPassant,castling);
-  if(!moves.length) return isInCheck(board,col)?(maximizing?-50000:50000):0;
+  const moves=getAllChessMoves(board,col,ep,castling);
+  if(!moves.length)return isInCheck(board,col)?(maximizing?-50000:50000):0;
+  // Ordena capturas primeiro
+  moves.sort((a,b)=>{
+    const va=board[a.to[0]][a.to[1]]?PIECE_VALUE[board[a.to[0]][a.to[1]].t]||0:0;
+    const vb=board[b.to[0]][b.to[1]]?PIECE_VALUE[board[b.to[0]][b.to[1]].t]||0:0;
+    return vb-va;
+  });
   if(maximizing){
     let best=-Infinity;
     for(const mv of moves){
-      best=Math.max(best,minimaxChess(applyChessMove(board,mv),depth-1,alpha,beta,false,null,castling));
+      const nb=applyChessMove(board,mv);
+      const ep2=mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null;
+      best=Math.max(best,minimaxChess(nb,depth-1,alpha,beta,false,ep2,castling));
       alpha=Math.max(alpha,best); if(beta<=alpha)break;
     }
     return best;
   } else {
     let best=Infinity;
     for(const mv of moves){
-      best=Math.min(best,minimaxChess(applyChessMove(board,mv),depth-1,alpha,beta,true,null,castling));
+      const nb=applyChessMove(board,mv);
+      const ep2=mv.double?[mv.to[0]+(mv.from[0]===1?1:-1),mv.to[1]]:null;
+      best=Math.min(best,minimaxChess(nb,depth-1,alpha,beta,true,ep2,castling));
       beta=Math.min(beta,best); if(beta<=alpha)break;
     }
     return best;
   }
 }
-function bestChessMove(board,col,enPassant,castling){
-  const moves=getAllChessMoves(board,col,enPassant,castling);
+
+function bestChessMove(board,col,ep,castling){
+  const moves=getAllChessMoves(board,col,ep,castling);
   if(!moves.length)return null;
-  let best=col==='b'?Infinity:-Infinity;
-  let bestMv=moves[0];
+  // Embaralha para variedade
+  for(let i=moves.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[moves[i],moves[j]]=[moves[j],moves[i]];}
+  const max=col==='w';
+  let best=max?-Infinity:Infinity, bestMv=moves[0];
   for(const mv of moves){
-    const s=minimaxChess(applyChessMove(board,mv),3,-Infinity,Infinity,col==='b',null,castling);
-    if(col==='b'?s<best:s>best){best=s;bestMv=mv;}
+    const nb=applyChessMove(board,mv);
+    const ep2=mv.double?[mv.to[0]+(mv.from[0]===(col==='w'?6:1)?1:-1),mv.to[1]]:null;
+    const s=minimaxChess(nb,3,-Infinity,Infinity,!max,ep2,castling);
+    if(max?s>best:s<best){best=s;bestMv=mv;}
   }
   return bestMv;
 }
+
 
 // ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
@@ -3824,218 +3908,227 @@ function Dama({chips,onChange,log}){
 }
 
 
+// ══════════════════════════════════════════════════════
+// XADREZ — Offline vs IA
+// ══════════════════════════════════════════════════════
 function Xadrez({chips,onChange,log}){
   const [board,setBoard]=useState(()=>initChess());
   const [sel,setSel]=useState(null);
   const [turn,setTurn]=useState('w');
-  const [moves,setMoves]=useState([]);
-  const [status,setStatus]=useState('Sua vez — brancas');
+  const [legal,setLegal]=useState([]);
+  const [status,setStatus]=useState('Sua vez ⬜');
   const [over,setOver]=useState(false);
   const [aiThinking,setAiThinking]=useState(false);
   const [enPassant,setEnPassant]=useState(null);
   const [castling,setCastling]=useState({wK:true,wQ:true,bK:true,bQ:true});
   const [promoModal,setPromoModal]=useState(null);
   const [bet,setBet]=useState(5);
-  const [gameStarted,setGameStarted]=useState(false);
+  const [started,setStarted]=useState(false);
   const [lastMove,setLastMove]=useState(null);
   const [captured,setCaptured]=useState({w:[],b:[]});
   const [moveCount,setMoveCount]=useState(0);
 
-  const CELL=42;
+  const CELL=44;
 
   const startGame=()=>{
     if(chips<bet){alert('Fichas insuficientes!');return;}
-    onChange(-bet); log(`♔ Xadrez: apostou ${bet} fichas`);
-    setBoard(initChess()); setSel(null); setTurn('w'); setMoves([]);
-    setStatus('Sua vez — brancas'); setOver(false); setGameStarted(true);
+    setBoard(initChess()); setSel(null); setTurn('w'); setLegal([]);
+    setStatus('Sua vez ⬜'); setOver(false); setStarted(true);
     setEnPassant(null); setCastling({wK:true,wQ:true,bK:true,bQ:true});
     setLastMove(null); setCaptured({w:[],b:[]}); setMoveCount(0);
   };
 
-  const doMove=(mv,promo='Q')=>{
-    const p=board[mv.from[0]][mv.from[1]];
-    const cap=board[mv.to[0]][mv.to[1]];
-    const nb=applyChessMove(board,mv,promo);
-    setBoard(nb); setSel(null); setMoves([]); setLastMove(mv);
-    if(cap) setCaptured(cv=>({...cv,[cap.col]:[...cv[cap.col],cap.t]}));
-    if(mv.ep&&mv.capAt){
-      const epCap=board[mv.capAt[0]][mv.capAt[1]];
-      if(epCap) setCaptured(cv=>({...cv,[epCap.col]:[...cv[epCap.col],epCap.t]}));
-    }
-    const nc={...castling};
+  const updateCastling=(nc,p,mv,b)=>{
     if(p?.t==='K'){if(p.col==='w'){nc.wK=false;nc.wQ=false;}else{nc.bK=false;nc.bQ=false;}}
     if(p?.t==='R'){if(mv.from[1]===7)nc[p.col+'K']=false;if(mv.from[1]===0)nc[p.col+'Q']=false;}
-    if(mv.to[1]===7)nc[board[mv.to[0]][mv.to[1]]?.col+'K']=false;
-    if(mv.to[1]===0)nc[board[mv.to[0]][mv.to[1]]?.col+'Q']=false;
-    setCastling(nc);
-    const ep=mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null;
-    setEnPassant(ep);
-    setMoveCount(n=>n+1);
-    return{nb,ep,nc};
+    // Se peça capturada era torre
+    const cap=b[mv.to[0]][mv.to[1]];
+    if(cap?.t==='R'){if(mv.to[1]===7)nc[cap.col+'K']=false;if(mv.to[1]===0)nc[cap.col+'Q']=false;}
   };
 
-  const handleCell=(r,c)=>{
-    if(over||turn!=='w'||aiThinking||!gameStarted)return;
-    const p=board[r][c];
-    if(sel){
-      const mv=moves.find(m=>m.to[0]===r&&m.to[1]===c);
-      if(mv){
-        if(mv.promo){setPromoModal({mv});return;}
-        const {nb,ep,nc}=doMove(mv);
-        checkAfterMove(nb,ep,nc,'b');
-        return;
-      }
+  const doMove=(b,mv,ep,nc,promo='Q')=>{
+    const p=b[mv.from[0]][mv.from[1]];
+    const cap=b[mv.to[0]][mv.to[1]];
+    const nb=applyChessMove(b,mv,promo);
+    const nc2={...nc};
+    updateCastling(nc2,p,mv,b);
+    const ep2=mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null;
+    // Capturadas
+    if(cap) setCaptured(cv=>({...cv,[cap.col]:[...cv[cap.col],cap.t]}));
+    if(mv.ep&&mv.capAt){
+      const epc=b[mv.capAt[0]][mv.capAt[1]];
+      if(epc) setCaptured(cv=>({...cv,[epc.col]:[...cv[epc.col],epc.t]}));
     }
-    if(p?.col==='w'){
-      const ms=getChessMoves(board,r,c,enPassant,castling).filter(m=>
-        !isInCheck(applyChessMove(board,m),'w')
-      );
-      setSel([r,c]); setMoves(ms);
-    } else {setSel(null);setMoves([]);}
+    return{nb,ep2,nc2};
   };
 
-  const checkAfterMove=(nb,ep,nc,nextCol)=>{
-    const oppMoves=getAllChessMoves(nb,nextCol,ep,nc);
-    if(!oppMoves.length){
+  const afterMove=(nb,ep2,nc2,nextCol)=>{
+    setBoard(nb); setCastling(nc2); setEnPassant(ep2); setMoveCount(n=>n+1);
+    const oMoves=getAllChessMoves(nb,nextCol,ep2,nc2);
+    if(!oMoves.length){
       if(isInCheck(nb,nextCol)){
-        const won=nextCol==='b';
-        setStatus(won?'♔ Xeque-mate! Você venceu!':'♚ Xeque-mate! IA venceu!');
+        const playerWon=nextCol==='b';
+        setStatus(playerWon?'♔ Xeque-mate! Você venceu!':'♚ Xeque-mate! IA venceu!');
         setOver(true);
-        if(won){onChange(bet*2);log(`♔ Xadrez: ganhou ${bet*2} fichas`);}
-        else log(`♚ Xadrez: perdeu ${bet} fichas`);
+        if(playerWon){onChange(bet);log(`♔ Xadrez: ganhou ${bet} fichas`);}
+        else{onChange(-bet);log(`♚ Xadrez: perdeu ${bet} fichas`);}
       } else {
-        setStatus('½ Empate — rei afogado!'); setOver(true);
+        setStatus('½ Empate — afogamento!'); setOver(true);
       }
       return;
     }
     if(nextCol==='b'){
-      setStatus(isInCheck(nb,'b')?'⚠️ Xeque! IA pensando...':'⏳ IA pensando...');
+      const chk=isInCheck(nb,'b');
+      setStatus(chk?'⚠️ Xeque! IA pensando...':'⏳ IA pensando...');
       setTurn('b'); setAiThinking(true);
       setTimeout(()=>{
-        const aiMv=bestChessMove(nb,'b',ep,nc);
+        const aiMv=bestChessMove(nb,'b',ep2,nc2);
         if(!aiMv){setStatus('½ Empate!');setOver(true);setAiThinking(false);return;}
-        const capPiece=nb[aiMv.to[0]][aiMv.to[1]];
-        const nb2=applyChessMove(nb,aiMv);
-        if(capPiece) setCaptured(cv=>({...cv,[capPiece.col]:[...cv[capPiece.col],capPiece.t]}));
-        if(aiMv.ep&&aiMv.capAt){
-          const epCap=nb[aiMv.capAt[0]][aiMv.capAt[1]];
-          if(epCap) setCaptured(cv=>({...cv,[epCap.col]:[...cv[epCap.col],epCap.t]}));
-        }
-        setBoard(nb2); setLastMove(aiMv); setMoveCount(n=>n+1);
-        const nc2={...nc};
-        const ap=nb[aiMv.from[0]][aiMv.from[1]];
-        if(ap?.t==='K'){if(ap.col==='w'){nc2.wK=false;nc2.wQ=false;}else{nc2.bK=false;nc2.bQ=false;}}
-        if(ap?.t==='R'){if(aiMv.from[1]===7)nc2[ap.col+'K']=false;if(aiMv.from[1]===0)nc2[ap.col+'Q']=false;}
-        setCastling(nc2);
-        const ep2=aiMv.double?[aiMv.to[0]+(aiMv.from[0]===1?1:-1),aiMv.to[1]]:null;
-        setEnPassant(ep2);
-        const wMoves=getAllChessMoves(nb2,'w',ep2,nc2);
+        const{nb:nb2,ep2:ep3,nc2:nc3}=doMove(nb,aiMv,ep2,nc2);
+        setBoard(nb2); setCastling(nc3); setEnPassant(ep3); setLastMove(aiMv); setMoveCount(n=>n+1);
+        const wMoves=getAllChessMoves(nb2,'w',ep3,nc3);
         if(!wMoves.length){
-          if(isInCheck(nb2,'w')){setStatus('♚ Xeque-mate! IA venceu!');setOver(true);log(`♚ Xadrez: perdeu ${bet} fichas`);}
+          if(isInCheck(nb2,'w')){setStatus('♚ Xeque-mate! IA venceu!');setOver(true);onChange(-bet);log(`♚ Xadrez: perdeu ${bet} fichas`);}
           else{setStatus('½ Empate!');setOver(true);}
         } else {
-          setStatus(isInCheck(nb2,'w')?'⚠️ Você está em xeque!':'Sua vez — brancas');
+          setStatus(isInCheck(nb2,'w')?'⚠️ Você está em xeque!':'Sua vez ⬜');
           setTurn('w');
         }
         setAiThinking(false);
-      },700);
+      },600);
+    } else {
+      setStatus(isInCheck(nb,'w')?'⚠️ Você está em xeque!':'Sua vez ⬜');
+      setTurn('w');
     }
   };
 
-  const validDests=moves.map(m=>m.to);
-  const inCheck=gameStarted&&turn==='w'&&isInCheck(board,'w');
+  const handleCell=(r,c)=>{
+    if(over||turn!=='w'||aiThinking||!started) return;
+    const p=board[r][c];
+    if(sel){
+      const mv=legal.find(m=>m.to[0]===r&&m.to[1]===c);
+      if(mv){
+        if(mv.promo){setPromoModal({r,c,mv});return;}
+        const{nb,ep2,nc2}=doMove(board,mv,enPassant,castling);
+        setLastMove(mv); setSel(null); setLegal([]);
+        afterMove(nb,ep2,nc2,'b');
+        return;
+      }
+      // Re-seleciona outra peça branca
+      if(p?.col==='w'){
+        const ms=getAllChessMoves(board,'w',enPassant,castling).filter(m=>m.from[0]===r&&m.from[1]===c);
+        setSel([r,c]); setLegal(ms); return;
+      }
+      setSel(null); setLegal([]); return;
+    }
+    if(p?.col==='w'){
+      const ms=getAllChessMoves(board,'w',enPassant,castling).filter(m=>m.from[0]===r&&m.from[1]===c);
+      setSel([r,c]); setLegal(ms);
+    }
+  };
+
+  const confirmPromo=(t)=>{
+    if(!promoModal) return;
+    const{mv}=promoModal;
+    const{nb,ep2,nc2}=doMove(board,mv,enPassant,castling,t);
+    setLastMove(mv); setSel(null); setLegal([]); setPromoModal(null);
+    afterMove(nb,ep2,nc2,'b');
+  };
+
+  const destSet=new Set(legal.map(m=>m.to[0]*8+m.to[1]));
+  const inCheck=started&&turn==='w'&&isInCheck(board,'w');
   const kingPos=inCheck?findKing(board,'w'):null;
 
-  const renderPiece=(cell,r,c)=>{
-    if(!cell)return null;
-    const isSel2=sel&&sel[0]===r&&sel[1]===c;
-    return(
-      <span className={`chess-piece chess-piece-${cell.col}`}
-        style={{
-          fontSize:CELL*0.66,
-          transform:isSel2?'translateY(-5px) scale(1.15)':'none',
-          filter:cell.col==='w'
-            ?`drop-shadow(0 3px 5px rgba(0,0,0,.7)) drop-shadow(0 0 3px rgba(255,255,255,.3))${isSel2?' drop-shadow(0 0 8px rgba(241,196,15,.8))':''}`
-            :`drop-shadow(0 3px 5px rgba(0,0,0,.9))${isSel2?' drop-shadow(0 0 8px rgba(241,196,15,.8))':''}`,
-          transition:'all .15s',
-          userSelect:'none',
-          cursor:'pointer',
-        }}>
-        {PIECE_UNICODE[cell.col+cell.t]}
-      </span>
-    );
+  const pieceStyle=(cell,r,c)=>{
+    const isSel=sel&&sel[0]===r&&sel[1]===c;
+    const isW=cell.col==='w';
+    return{
+      fontSize:CELL*0.72,
+      lineHeight:1,
+      userSelect:'none',
+      pointerEvents:'none',
+      display:'block',
+      transform:isSel?'translateY(-4px) scale(1.18)':'none',
+      transition:'transform .12s',
+      filter:isW
+        ?`drop-shadow(0 2px 4px rgba(0,0,0,.8)) drop-shadow(0 0 2px rgba(255,255,255,.4))${isSel?' drop-shadow(0 0 10px rgba(241,196,15,.9))':''}`
+        :`drop-shadow(0 2px 4px rgba(0,0,0,.9)) drop-shadow(0 1px 2px rgba(255,255,255,.1))${isSel?' drop-shadow(0 0 10px rgba(241,196,15,.9))':''}`,
+    };
   };
 
   return(
-    <div style={{padding:'12px 8px',maxWidth:480,margin:'0 auto'}}>
-      {/* Header */}
+    <div style={{padding:'12px 8px',maxWidth:500,margin:'0 auto'}}>
       <div style={{textAlign:'center',marginBottom:8}}>
         <div style={{fontSize:22,fontWeight:900,color:'#f1c40f',fontFamily:"'Cinzel',serif",letterSpacing:2}}>♔ XADREZ</div>
-        <div style={{color:inCheck?'#e74c3c':over?(status.includes('venceu')&&!status.includes('IA')?'#2ecc71':'#e74c3c'):'#aaa',
-          fontSize:12,marginTop:3,fontWeight:(inCheck||over)?700:400,minHeight:18}}>{status}</div>
+        <div style={{fontSize:12,marginTop:3,minHeight:18,fontWeight:(inCheck||over)?700:400,
+          color:inCheck?'#e74c3c':over?(status.includes('Você venceu')?'#2ecc71':'#e74c3c'):'#aaa'}}>
+          {status}
+        </div>
       </div>
 
-      {!gameStarted?(
-        <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(10,8,20,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center',boxShadow:'0 8px 32px rgba(0,0,0,.4)'}}>
+      {!started?(
+        <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(10,8,20,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center'}}>
           <div style={{fontSize:48,marginBottom:8}}>♔</div>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:20,lineHeight:1.5}}>Jogue contra a IA<br/><span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span></div>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:20,lineHeight:1.5}}>
+            Jogue contra a IA<br/>
+            <span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span>
+          </div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
             <span style={{color:'#888',fontSize:12}}>Aposta:</span>
             <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
-              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none',fontFamily:"'Cinzel',serif"}}/>
+              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
             <span style={{color:'#555',fontSize:11}}>fichas</span>
           </div>
           <button onClick={startGame}
-            style={{padding:'13px 36px',background:'linear-gradient(135deg,#2a1a4a,#1a0d2e)',border:'1px solid rgba(155,89,182,.5)',borderRadius:12,color:'#9b59b6',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1,boxShadow:'0 4px 16px rgba(155,89,182,.2)'}}>
+            style={{padding:'13px 36px',background:'linear-gradient(135deg,#2a1a4a,#1a0d2e)',border:'1px solid rgba(155,89,182,.5)',borderRadius:12,color:'#9b59b6',fontWeight:900,fontSize:14,cursor:'pointer',letterSpacing:1}}>
             ▶ INICIAR PARTIDA
           </button>
         </div>
       ):(
         <>
-          {/* Peças capturadas pela IA (peças brancas capturadas) */}
-          <div style={{minHeight:22,marginBottom:4,textAlign:'center',letterSpacing:1}}>
-            {captured.w.map((t,i)=><span key={i} style={{fontSize:16,opacity:.7}}>{PIECE_UNICODE['w'+t]}</span>)}
+          {/* Peças capturadas da IA (brancas) */}
+          <div style={{minHeight:20,marginBottom:4,textAlign:'center',letterSpacing:1,fontSize:15}}>
+            {captured.w.map((t,i)=><span key={i} style={{opacity:.65}}>{PIECE_UNICODE['w'+t]}</span>)}
           </div>
 
-          {/* Tabuleiro 3D */}
-          <div className="board3d-wrap">
-            <div className="board3d">
-              <div className="board3d-border">
-                <div className="board3d-labels" style={{paddingLeft:16}}>
-                  {['a','b','c','d','e','f','g','h'].map(l=><div key={l} className="board3d-label">{l}</div>)}
+          {/* Tabuleiro — PLANO (sem rotateX para evitar bug de clique) */}
+          <div style={{display:'flex',justifyContent:'center',marginBottom:4}}>
+            <div>
+              {/* Labels colunas */}
+              <div style={{display:'flex',paddingLeft:16,marginBottom:1}}>
+                {'abcdefgh'.split('').map(l=><div key={l} style={{width:CELL,textAlign:'center',fontSize:9,color:'#666'}}>{l}</div>)}
+              </div>
+              <div style={{display:'flex'}}>
+                {/* Labels linhas */}
+                <div style={{display:'flex',flexDirection:'column',justifyContent:'space-around',width:16,marginRight:1}}>
+                  {[8,7,6,5,4,3,2,1].map(n=><div key={n} style={{height:CELL,display:'flex',alignItems:'center',fontSize:9,color:'#666'}}>{n}</div>)}
                 </div>
-                <div style={{display:'flex'}}>
-                  <div className="board3d-rank">
-                    {[8,7,6,5,4,3,2,1].map(n=><span key={n}>{n}</span>)}
-                  </div>
+                {/* Grid */}
+                <div style={{border:'3px solid #5d4037',boxShadow:'0 8px 32px rgba(0,0,0,.8)'}}>
                   <div style={{display:'grid',gridTemplateColumns:`repeat(8,${CELL}px)`}}>
-                    {board.map((row,r)=>row.map((cell,cc)=>{
-                      const light=(r+cc)%2===0;
-                      const isSel=sel&&sel[0]===r&&sel[1]===cc;
-                      const isDest=validDests.some(([dr,dc])=>dr===r&&dc===cc);
-                      const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===cc)||(lastMove.to[0]===r&&lastMove.to[1]===cc));
-                      const isKingCheck=kingPos&&kingPos[0]===r&&kingPos[1]===cc;
+                    {board.map((row,r)=>row.map((cell,c)=>{
+                      const light=(r+c)%2===0;
+                      const isSel=sel&&sel[0]===r&&sel[1]===c;
+                      const isDest=destSet.has(r*8+c);
+                      const isLast=lastMove&&((lastMove.from[0]===r&&lastMove.from[1]===c)||(lastMove.to[0]===r&&lastMove.to[1]===c));
+                      const isKingChk=kingPos&&kingPos[0]===r&&kingPos[1]===c;
                       let bg=light?'#f0d9b5':'#b58863';
-                      if(isKingCheck) bg='rgba(220,50,50,.85)';
-                      else if(isSel) bg=light?'rgba(241,196,15,.75)':'rgba(200,150,0,.65)';
-                      else if(isLast) bg=light?'rgba(241,196,15,.35)':'rgba(200,150,0,.3)';
+                      if(isKingChk) bg='#e74c3c';
+                      else if(isSel) bg=light?'#f6f669':'#cdd26a';
+                      else if(isLast) bg=light?'#f6f669aa':'#cdd26a99';
                       return(
-                        <div key={`${r}${cc}`} onClick={()=>handleCell(r,cc)}
-                          style={{width:CELL,height:CELL,background:bg,
+                        <div key={r+'-'+c} onClick={()=>handleCell(r,c)}
+                          style={{width:CELL,height:CELL,background:bg,cursor:'pointer',
                             display:'flex',alignItems:'center',justifyContent:'center',
-                            cursor:'pointer',position:'relative',transition:'background .1s'}}>
+                            position:'relative',transition:'background .1s'}}>
                           {isDest&&(
-                            <div style={{position:'absolute',
-                              width:cell?CELL-2:16,height:cell?CELL-2:16,
-                              borderRadius:'50%',
-                              background:cell?'transparent':'rgba(0,0,0,.22)',
-                              border:cell?'4px solid rgba(0,0,0,.3)':'none',
-                              pointerEvents:'none',zIndex:0}}/>
+                            <div style={{position:'absolute',pointerEvents:'none',zIndex:0,
+                              width:cell?CELL:16,height:cell?CELL:16,
+                              borderRadius:cell?0:'50%',
+                              background:cell?'transparent':'rgba(0,0,0,.2)',
+                              border:cell?'4px solid rgba(0,0,0,.25)':'none'}}/>
                           )}
-                          {renderPiece(cell,r,cc)}
-                          {/* Coordenadas */}
-                          {cc===0&&<div style={{position:'absolute',top:1,left:2,fontSize:8,color:light?'#b58863':'#f0d9b5',opacity:.6,lineHeight:1,zIndex:3}}>{8-r}</div>}
-                          {r===7&&<div style={{position:'absolute',bottom:1,right:2,fontSize:8,color:light?'#b58863':'#f0d9b5',opacity:.6,lineHeight:1,zIndex:3}}>{'abcdefgh'[cc]}</div>}
+                          {cell&&<span style={pieceStyle(cell,r,c)}>{PIECE_UNICODE[cell.col+cell.t]}</span>}
                         </div>
                       );
                     }))}
@@ -4045,33 +4138,34 @@ function Xadrez({chips,onChange,log}){
             </div>
           </div>
 
-          {/* Peças capturadas pelo jogador (peças pretas) */}
-          <div style={{minHeight:22,marginTop:4,textAlign:'center',letterSpacing:1}}>
-            {captured.b.map((t,i)=><span key={i} style={{fontSize:16,opacity:.7}}>{PIECE_UNICODE['b'+t]}</span>)}
+          {/* Peças capturadas do jogador (pretas) */}
+          <div style={{minHeight:20,marginTop:2,textAlign:'center',letterSpacing:1,fontSize:15}}>
+            {captured.b.map((t,i)=><span key={i} style={{opacity:.65}}>{PIECE_UNICODE['b'+t]}</span>)}
           </div>
 
           {/* Info bar */}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,padding:'7px 12px',background:'rgba(0,0,0,.3)',borderRadius:10,border:'1px solid rgba(255,255,255,.05)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+            marginTop:8,padding:'7px 12px',background:'rgba(0,0,0,.3)',borderRadius:10,border:'1px solid rgba(255,255,255,.05)'}}>
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:20}}>{PIECE_UNICODE['wK']}</div>
-              <div style={{color:'#aaa',fontSize:9,fontFamily:"'Rajdhani'",letterSpacing:1}}>VOCÊ</div>
+              <div style={{color:'#aaa',fontSize:9,letterSpacing:1}}>VOCÊ</div>
               {turn==='w'&&!over&&<div style={{width:6,height:6,borderRadius:'50%',background:'#2ecc71',margin:'2px auto 0'}}/>}
             </div>
             <div style={{textAlign:'center'}}>
-              <div style={{color:'#f1c40f',fontSize:12,fontWeight:700,fontFamily:"'Cinzel',serif"}}>{bet} fichas</div>
-              <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani'"}}>APOSTA • {moveCount} lances</div>
+              <div style={{color:'#f1c40f',fontSize:12,fontWeight:700}}>{bet} fichas</div>
+              <div style={{color:'#555',fontSize:9}}>APOSTA • lance {moveCount}</div>
             </div>
             <div style={{textAlign:'center'}}>
               <div style={{fontSize:20}}>{PIECE_UNICODE['bK']}</div>
-              <div style={{color:'#aaa',fontSize:9,fontFamily:"'Rajdhani'",letterSpacing:1}}>IA</div>
+              <div style={{color:'#aaa',fontSize:9,letterSpacing:1}}>IA</div>
               {turn==='b'&&!over&&<div style={{width:6,height:6,borderRadius:'50%',background:'#e74c3c',margin:'2px auto 0'}}/>}
             </div>
           </div>
 
           {over&&(
             <div style={{textAlign:'center',marginTop:12}}>
-              <button onClick={()=>setGameStarted(false)}
-                style={{padding:'10px 28px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:700,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+              <button onClick={()=>setStarted(false)}
+                style={{padding:'10px 28px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:700,cursor:'pointer'}}>
                 🔄 JOGAR NOVAMENTE
               </button>
             </div>
@@ -4080,16 +4174,16 @@ function Xadrez({chips,onChange,log}){
           {/* Modal promoção */}
           {promoModal&&(
             <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}>
-              <div style={{background:'linear-gradient(135deg,#1a1a2e,#0d0d1a)',border:'1px solid rgba(241,196,15,.4)',borderRadius:18,padding:'24px 28px',textAlign:'center',boxShadow:'0 20px 60px rgba(0,0,0,.8)'}}>
+              <div style={{background:'linear-gradient(135deg,#1a1a2e,#0d0d1a)',border:'1px solid rgba(241,196,15,.4)',borderRadius:18,padding:'24px 28px',textAlign:'center'}}>
                 <div style={{color:'#f1c40f',fontWeight:700,marginBottom:16,fontSize:14,fontFamily:"'Cinzel',serif",letterSpacing:1}}>PROMOVER PEÃO</div>
                 <div style={{display:'flex',gap:12,justifyContent:'center'}}>
                   {['Q','R','B','N'].map(t=>(
-                    <div key={t} onClick={()=>{const{nb,ep,nc}=doMove(promoModal.mv,t);setPromoModal(null);checkAfterMove(nb,ep,nc,'b');}}
-                      style={{width:58,height:58,background:'rgba(255,255,255,.07)',border:'1px solid rgba(241,196,15,.35)',borderRadius:12,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'all .15s',gap:2}}
-                      onMouseEnter={e=>{e.currentTarget.style.background='rgba(241,196,15,.15)';e.currentTarget.style.transform='translateY(-3px)';}}
-                      onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.07)';e.currentTarget.style.transform='none';}}>
-                      <span style={{fontSize:30}}>{PIECE_UNICODE['w'+t]}</span>
-                      <span style={{fontSize:9,color:'#888',fontFamily:"'Rajdhani'",letterSpacing:1}}>{{'Q':'DAMA','R':'TORRE','B':'BISPO','N':'CAVALO'}[t]}</span>
+                    <div key={t} onClick={()=>confirmPromo(t)}
+                      style={{width:58,height:58,background:'rgba(255,255,255,.07)',border:'1px solid rgba(241,196,15,.35)',borderRadius:12,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',gap:2}}
+                      onMouseEnter={e=>{e.currentTarget.style.background='rgba(241,196,15,.15)';}}
+                      onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.07)';}}>
+                      <span style={{fontSize:28}}>{PIECE_UNICODE['w'+t]}</span>
+                      <span style={{fontSize:9,color:'#888',letterSpacing:1}}>{{'Q':'DAMA','R':'TORRE','B':'BISPO','N':'CAVALO'}[t]}</span>
                     </div>
                   ))}
                 </div>
@@ -4101,6 +4195,7 @@ function Xadrez({chips,onChange,log}){
     </div>
   );
 }
+
 
 function App(){
   const [authUser,setAuthUser]=useState(null);
