@@ -2115,14 +2115,24 @@ function PifeOnline({socket,room,userData,onGameOver}){
     setSelected(null);setNewCardIdx(null);
   };
   const declarar=()=>{
-    // Verifica localmente antes de enviar
-    const h9=hand.filter((_,i)=>i!==selected);
-    if(hand.length===10&&selected!==null){
-      if(!temPife(h9)){setStatus('❌ Não é pife! Você precisa de 3 grupos de 3.');return;}
+    let handToSend;
+    if(hand.length===10){
+      if(selected!==null){
+        // Carta selecionada explicitamente
+        const h9=hand.filter((_,i)=>i!==selected);
+        if(!temPife(h9)){setStatus('❌ Não é pife! Continue jogando.');return;}
+        handToSend=h9;
+      } else {
+        // Sem seleção — acha a carta que permite pife
+        const idx=hand.findIndex((_,i)=>temPife(hand.filter((_2,j)=>j!==i)));
+        if(idx===-1){setStatus('❌ Não é pife! Continue jogando.');return;}
+        handToSend=hand.filter((_,i)=>i!==idx);
+      }
     } else if(hand.length===9){
-      if(!temPife(hand)){setStatus('❌ Não é pife! Você precisa de 3 grupos de 3.');return;}
+      if(!temPife(hand)){setStatus('❌ Não é pife! Continue jogando.');return;}
+      handToSend=hand;
     } else {return;}
-    socket.emit('game_action',{roomId:room.id,action:'pife_declare',data:{hand:hand.length===10?h9:hand}});
+    socket.emit('game_action',{roomId:room.id,action:'pife_declare',data:{hand:handToSend}});
   };
 
   // ── Drag and drop para reordenar ──
@@ -2325,7 +2335,10 @@ function PifeOnline({socket,room,userData,onGameOver}){
         const handAfter = hand.length===10&&selected!==null
           ? hand.filter((_,i)=>i!==selected)
           : hand.length===9 ? hand : [];
-        const hasPife = handAfter.length===9 && temPife(handAfter);
+        // Se tem 10 cartas e nada selecionado, verifica se qualquer descarte dá pife
+        const hasPife = handAfter.length===9
+          ? temPife(handAfter)
+          : hand.length===10 && hand.some((_,i)=>temPife(hand.filter((_2,j)=>j!==i)));
         return(
           <button onClick={hasPife?declarar:undefined}
             style={{width:'100%',padding:'11px',
