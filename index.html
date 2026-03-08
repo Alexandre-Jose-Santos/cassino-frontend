@@ -1350,9 +1350,20 @@ function Domino({a,b,onClick,glow,dim,rotate=false,selected=false,animate=false}
 function Dominoes({chips,onChange,log}){
   const [numPlayers,setNumPlayers]=useState(0);
   const [ph,setPh]=useState([]),[ ais,setAis]=useState([]),[ chain,setChain]=useState([]),[ by,setBy]=useState([]),[ turn,setTurn]=useState("p"),[ phase,setPhase]=useState("idle"),[ bet,setBet]=useState(0),[ msg,setMsg]=useState("");
+  const [rules,setRules]=useState({duasPontas:1,bateDe4:1});
+  const [lastWin,setLastWin]=useState(null);
 
   const canPlay=(t,ch)=>{if(!ch.length)return true;const l=ch[0].dA,r=ch[ch.length-1].dB;return t.a===l||t.b===l||t.a===r||t.b===r;};
   const addToChain=(t,ch)=>{const nc=[...ch];if(!nc.length){nc.push({dA:t.a,dB:t.b,id:t.id});return nc;}const l=nc[0].dA,r=nc[nc.length-1].dB;if(t.a===r)nc.push({dA:t.a,dB:t.b,id:t.id});else if(t.b===r)nc.push({dA:t.b,dB:t.a,id:t.id});else if(t.a===l)nc.unshift({dA:t.b,dB:t.a,id:t.id});else nc.unshift({dA:t.a,dB:t.b,id:t.id});return nc;};
+  const detectNojada=(tile,nc,r)=>{
+    if(!nc.length||!tile)return null;
+    const l=nc[0].dA,rv=nc[nc.length-1].dB;
+    const carrocaNasPontas=l===rv&&tile.a===tile.b&&tile.a===l;
+    const fechaDuasPontas=!carrocaNasPontas&&l===rv&&((tile.a===l&&tile.b===l)||(tile.b===l&&tile.a===l));
+    if(carrocaNasPontas){return{type:"bateDe4",label:"🔥 BATE DE 4!",mult:r?.bateDe4||1};}
+    if(fechaDuasPontas){return{type:"duasPontas",label:"⚡ BATEU NAS 2 PONTAS!",mult:r?.duasPontas||1};}
+    return null;
+  };
 
   const start=(b,np)=>{
     if(chips<b)return;
@@ -1372,7 +1383,18 @@ function Dominoes({chips,onChange,log}){
     if(!canPlay(t,chain)){setMsg("Não encaixa!");return;}
     const nc=addToChain(t,chain),nh=ph.filter(x=>x.id!==t.id);
     setPh(nh);setChain(nc);
-    if(!nh.length){onChange(bet*numPlayers);setPhase("over");setMsg("🎉 Você venceu!");log(`🁣 Dominó +${bet*(numPlayers-1)}`);return;}
+    if(!nh.length){
+      const nojada=detectNojada(t,nc,rules);
+      const mult=nojada?nojada.mult:1;
+      const prize=bet*numPlayers*mult;
+      onChange(prize);
+      setLastWin(nojada);
+      setPhase("over");
+      const winMsg=nojada?`🎉 ${nojada.label} +${prize} fichas!`:"🎉 Você venceu!";
+      setMsg(winMsg);
+      log(`🁣 Dominó +${prize}`);
+      return;
+    }
     setTurn("a0");setMsg("Vez da IA 1...");
     setTimeout(()=>aiTurn(nc,0,nis=>{ setAis(nis); aiContinue(nc,nis,1,nh); }),700);
   };
@@ -1431,6 +1453,34 @@ function Dominoes({chips,onChange,log}){
       <h2 style={{color:"#f1c40f",fontFamily:"Georgia,serif",textAlign:"center",fontSize:22,margin:"0 0 14px"}}>🁣 Dominó</h2>
       <p style={{color:"#aaa",textAlign:"center",fontSize:12,marginBottom:18}}>Esvazie sua mão antes das IAs! Escolha de 2 a 4 jogadores.</p>
       <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:12,padding:14,marginBottom:14}}>
+        <div style={{color:"#f1c40f",fontSize:12,fontWeight:700,marginBottom:10}}>⚙️ Regras especiais:</div>
+        <div style={{marginBottom:14}}>
+          {[
+            {key:"duasPontas",label:"⚡ Batida nas 2 pontas",desc:"Fechar as duas pontas com a mesma peça"},
+            {key:"bateDe4",label:"🔥 Bate de 4",desc:"Carroça nas duas pontas iguais"},
+          ].map(({key,label,desc})=>(
+            <div key={key} style={{marginBottom:8,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"8px 10px"}}>
+              <div style={{color:"#ddd",fontSize:12,fontWeight:700,marginBottom:4}}>{label}</div>
+              <div style={{color:"#555",fontSize:10,marginBottom:6}}>{desc}</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[
+                  {v:1,l:"Normal (1×)"},
+                  {v:2,l:"Dobrado (2×)"},
+                  {v:3,l:"Triplo (3×)"},
+                  {v:0,l:"Desativado"},
+                ].map(({v,l})=>(
+                  <button key={v} onClick={()=>setRules(r=>({...r,[key]:v}))}
+                    style={{padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",borderRadius:6,
+                      background:rules[key]===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.04)",
+                      border:`1px solid ${rules[key]===v?"#f1c40f":"rgba(255,255,255,.1)"}`,
+                      color:rules[key]===v?"#f1c40f":"#666"}}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
         <div style={{color:"#f1c40f",fontSize:12,fontWeight:700,marginBottom:10}}>👥 Número de jogadores:</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
           {[2,3,4].map(np=>(
@@ -1639,8 +1689,11 @@ function DominoOnline({socket,room,userData,onGameOver}){
   const [result,setResult]=useState(null);
   const [initialized,setInitialized]=useState(false);
   const [pendingTile,setPendingTile]=useState(null); // peça aguardando escolha de lado
+  const [rules,setRules]=useState({duasPontas:1,bateDe4:1});
+  const [rulesReady,setRulesReady]=useState(false);
   const opp=room.players.find(p=>p.uid!==userData?.uid);
   const oppName=opp?.name||'Adversário';
+  const isCriador=room.players[0]?.uid===userData?.uid;
 
   const canPlay=(t,ch)=>{
     if(!ch.length)return true;
@@ -1661,8 +1714,16 @@ function DominoOnline({socket,room,userData,onGameOver}){
   useEffect(()=>{
     if(!socket||initialized)return;
     setInitialized(true);
-    socket.emit('game_action',{roomId:room.id,action:'domino_init',data:{uid:userData?.uid}});
+    // Não-criador espera o criador definir regras antes de emitir domino_init
     socket.on('game_action',({uid:sUid,action,data})=>{
+      if(action==='domino_rules_chosen'){
+        setRules(data.rules);
+        setRulesReady(true);
+        // Não-criador emite domino_init com as regras recebidas
+        if(!isCriador){
+          socket.emit('game_action',{roomId:room.id,action:'domino_init',data:{uid:userData?.uid,rules:data.rules}});
+        }
+      }
       if(action==='domino_state'){
         if(data.hand) setHand(data.hand.map((p,i)=>({...p,id:i})));
         if(data.board!==undefined) setChain(data.board.map(p=>({dA:p.a,dB:p.b})));
@@ -1710,7 +1771,7 @@ function DominoOnline({socket,room,userData,onGameOver}){
       }
       if(action==='domino_win'){
         const won=data.winnerId===userData?.uid;
-        setResult({outcome:won?'win':'lose',scores:data.scores||{},reason:data.reason});
+        setResult({outcome:won?'win':'lose',scores:data.scores||{},reason:data.reason,nojada:data.nojada,mult:data.mult||1});
         setPhase('over');
         onGameOver?.();
       }
@@ -1760,6 +1821,56 @@ function DominoOnline({socket,room,userData,onGameOver}){
 
   const semPecaEncaixa=hand.length>0&&hand.every(t=>!canPlay(t,chain));
 
+  // Tela de configuração de regras (antes do jogo iniciar)
+  if(!rulesReady){
+    if(isCriador) return(
+      <div style={{padding:'20px 12px',maxWidth:460,margin:'0 auto'}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif",textAlign:'center',marginBottom:16,letterSpacing:2}}>⚙️ REGRAS DA PARTIDA</div>
+        {[
+          {key:'duasPontas',label:'⚡ Batida nas 2 pontas',desc:'Fechar as duas pontas com a mesma peça'},
+          {key:'bateDe4',label:'🔥 Bate de 4',desc:'Carroça nas duas pontas iguais'},
+        ].map(({key,label,desc})=>(
+          <div key={key} style={{marginBottom:12,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:'12px'}}>
+            <div style={{color:'#ddd',fontSize:13,fontWeight:700,marginBottom:3}}>{label}</div>
+            <div style={{color:'#555',fontSize:10,marginBottom:8}}>{desc}</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {[
+                {v:1,l:'Normal (1x)'},
+                {v:2,l:'Dobrado (2x)'},
+                {v:3,l:'Triplo (3x)'},
+                {v:0,l:'Desativado'},
+              ].map(({v,l})=>(
+                <button key={v} onClick={()=>setRules(r=>({...r,[key]:v}))}
+                  style={{padding:'5px 12px',fontSize:11,fontWeight:700,cursor:'pointer',borderRadius:7,
+                    background:rules[key]===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
+                    border:`1px solid ${rules[key]===v?'#f1c40f':'rgba(255,255,255,.1)'}`,
+                    color:rules[key]===v?'#f1c40f':'#666'}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <button onClick={()=>{
+          setRulesReady(true);
+          socket.emit('game_action',{roomId:room.id,action:'domino_init',data:{uid:userData?.uid,rules}});
+          // Broadcast rules to opponent via server
+          socket.emit('game_action',{roomId:room.id,action:'domino_rules_chosen',data:{rules}});
+        }}
+          style={{width:'100%',padding:'14px',background:'rgba(46,204,113,.15)',border:'1px solid rgba(46,204,113,.4)',
+            borderRadius:13,color:'#2ecc71',fontWeight:900,fontSize:15,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+          ✅ CONFIRMAR REGRAS E INICIAR
+        </button>
+      </div>
+    );
+    return(
+      <div style={{padding:'30px 12px',textAlign:'center'}}>
+        <div style={{fontSize:36,marginBottom:12}}>⏳</div>
+        <div style={{color:'#aaa',fontSize:13}}>Aguardando o criador configurar as regras...</div>
+      </div>
+    );
+  }
+
   if(result){
     const won=result.outcome==='win';
     const myScore=result.scores?.[userData?.uid];
@@ -1771,8 +1882,17 @@ function DominoOnline({socket,room,userData,onGameOver}){
           <div style={{color:won?'#2ecc71':'#e74c3c',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1,marginBottom:4}}>
             {won?'VOCÊ GANHOU!':'VOCÊ PERDEU!'}
           </div>
-          <div style={{color:'rgba(255,255,255,.4)',fontSize:13}}>{won?`+${room.betAmount}`:`-${room.betAmount}`} fichas</div>
+          <div style={{color:'rgba(255,255,255,.4)',fontSize:13}}>{won?`+${room.betAmount*(result.mult||1)}`:`-${room.betAmount}`} fichas</div>
         </div>
+        {result.nojada&&(
+          <div style={{textAlign:'center',padding:'10px',marginBottom:8,
+            background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10}}>
+            <div style={{color:'#f1c40f',fontWeight:900,fontSize:16}}>{result.nojada.label}</div>
+            <div style={{color:'#aaa',fontSize:11,marginTop:2}}>
+              {result.nojada.mult}x a aposta {result.outcome==='win'?'— você levou '+room.betAmount*result.nojada.mult+' fichas!':''}
+            </div>
+          </div>
+        )}
         {result.reason==='bateu'&&(
           <div style={{background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:'12px'}}>
             <div style={{color:'rgba(255,255,255,.3)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,textAlign:'center',marginBottom:10}}>JOGO FECHADO — PONTUAÇÃO</div>
