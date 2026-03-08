@@ -4735,11 +4735,14 @@ function Poker({chips,onChange,log}){
   var BB=bet;
   var SB=Math.max(5,Math.floor(bet/2));
 
+  function updPc(v){ pcRef.current=typeof v==='function'?v(pcRef.current):v; setPc(v); }
+  function updGs(v){ gsRef.current=v; setGs(v); }
+
   function startGame(){
     var sc=bet*4;
     if(chips<sc)return;
     onChange(-sc);
-    setPc(sc); setAc(sc); setResult(null); setGs('playing');
+    updPc(sc); setAc(sc); setResult(null); updGs('playing');
     dealHand(sc,sc);
   }
 
@@ -4753,7 +4756,7 @@ function Poker({chips,onChange,log}){
     setStage('pre'); setLastAct(null); setShowRaise(false);
     var newPc=p-BB; var newAc=a-SB;
     var newPot=BB+SB;
-    setPc(newPc); setAc(newAc); setPot(newPot);
+    updPc(newPc); setAc(newAc); setPot(newPot);
     setPBet(BB); setABet(SB); setCurBet(BB);
     setRaiseAmt(BB*2);
     setStatus('Você pagou o BB. Call, Raise ou Fold?');
@@ -4770,9 +4773,9 @@ function Poker({chips,onChange,log}){
     else{outcome='tie';reason='Empate! '+pkHandName(ps);won=Math.floor(pot2/2);}
     var np=p+(outcome==='win'?pot2:outcome==='tie'?won:0);
     var na=a+(outcome==='lose'?pot2:outcome==='tie'?pot2-won:0);
-    setPc(np); setAc(na); setPot(0);
+    updPc(np); setAc(na); setPot(0);
     setResult({outcome,reason,chips:outcome==='win'?pot2:outcome==='lose'?0:won,ps,as,ph:playerH,ch:community});
-    setGs('over');
+    updGs('over');
   }
 
   function advance(p,a,pot2,community,deckRef,curStage,playerH,aiH){
@@ -4805,9 +4808,9 @@ function Poker({chips,onChange,log}){
     setTimeout(function(){
       setLastAct({who:'ai',act:action});
       if(action==='fold'){
-        setReveal(true); setAc(a); setPc(p+pot2); setPot(0);
+        setReveal(true); setAc(a); updPc(p+pot2); setPot(0);
         setResult({outcome:'win',reason:'IA desistiu',chips:pot2,ps:null,as:null});
-        setGs('over');
+        updGs('over');
       } else if(action==='call'||action==='check'){
         var toCall=Math.min(curBetVal-aBetVal,a);
         var na=a-toCall; var np2=pot2+toCall;
@@ -4832,14 +4835,14 @@ function Poker({chips,onChange,log}){
     setReveal(true); setAc(ac+pot); setPot(0);
     setLastAct({who:'player',act:'fold'});
     setResult({outcome:'lose',reason:'Voce desistiu',chips:0,ps:null,as:null});
-    setGs('over');
+    updGs('over');
   }
   function pCall(){
     if(thinking)return;
     var toCall=Math.min(curBet-pBet,pc);
     if(toCall<0)return;
     var np=pc-toCall; var pot2=pot+toCall; var npBet=pBet+toCall;
-    setPc(np); setPot(pot2); setPBet(npBet);
+    updPc(np); setPot(pot2); setPBet(npBet);
     setLastAct({who:'player',act:'call'});
     advance(np,ac,pot2,comm,deck,stage,ph,ah);
   }
@@ -4854,7 +4857,7 @@ function Poker({chips,onChange,log}){
     var toAdd=Math.min(amt-pBet,pc);
     if(toAdd<=0)return;
     var np=pc-toAdd; var pot2=pot+toAdd;
-    setPc(np); setPot(pot2); setPBet(amt); setCurBet(amt);
+    updPc(np); setPot(pot2); setPBet(amt); setCurBet(amt);
     setShowRaise(false);
     setLastAct({who:'player',act:pc===0?'allin':'raise'});
     setStatus(pc===0?'ALL IN!':'Voce aumentou para '+amt);
@@ -4864,10 +4867,10 @@ function Poker({chips,onChange,log}){
 
   function nextHand(){
     if(pc<=0||ac<=0){
-      onChange(pc); log('Poker: terminou com '+pc+' fichas');
-      setGs('idle'); return;
+      gsRef.current='idle'; onChange(pc); log('Poker: terminou com '+pc+' fichas');
+      updGs('idle'); return;
     }
-    setGs('playing');
+    updGs('playing');
     dealHand(pc,ac);
   }
 
@@ -5055,7 +5058,7 @@ function Poker({chips,onChange,log}){
                 Proxima Mao
               </button>
             )}
-            <button onClick={function(){onChange(pc);log('Poker: saiu com '+pc+' fichas');setGs('idle');}}
+            <button onClick={function(){gsRef.current='idle';onChange(pc);log('Poker: saiu com '+pc+' fichas');updGs('idle');}}
               style={{padding:'10px 20px',background:'rgba(255,255,255,.04)',
                 border:'1px solid rgba(255,255,255,.1)',borderRadius:11,
                 color:'#888',fontWeight:700,cursor:'pointer',fontSize:12}}>
