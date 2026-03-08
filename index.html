@@ -3198,7 +3198,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [newBet,setNewBet]=useState(10);
   const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
   const [msg,setMsg]=useState('');
-  const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"},dama:{n:"Dama",i:"♟",c:"#ca6f1e"},xadrez:{n:"Xadrez",i:"♔",c:"#8e44ad"},poker:{n:"Poker",i:"♠",c:"#c0392b"}};
+  const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"},dama:{n:"Dama",i:"♟",c:"#ca6f1e"},xadrez:{n:"Xadrez",i:"♔",c:"#8e44ad"},poker:{n:"Poker",i:"♠",c:"#c0392b"},go:{n:"Go",i:"⚫",c:"#8B6914"}};
 
   useEffect(()=>{
     if(!socket)return;
@@ -3648,7 +3648,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
             {myRoom.game==='dama'&&<DamaOnline key={`dama-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {myRoom.game==='xadrez'&&<XadrezOnline key={`xadrez-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {myRoom.game==='poker'&&<PokerOnline key={`poker-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {(!['pife','domino','dama','xadrez','poker'].includes(myRoom.game))&&(
+            {myRoom.game==='go'&&<GoOnline key={`go-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {(!['pife','domino','dama','xadrez','poker','go'].includes(myRoom.game))&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
               </div>
@@ -3764,10 +3765,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogo:</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
             {Object.entries(GAMES_INFO).map(([k,g])=>(
-              <button key={k} onClick={()=>{setNewGame(k);if(['dama','xadrez','poker'].includes(k))setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:`1px solid ${newGame===k?g.c:"rgba(255,255,255,.1)"}`,borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
+              <button key={k} onClick={()=>{setNewGame(k);if(['dama','xadrez','poker','go'].includes(k))setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:`1px solid ${newGame===k?g.c:"rgba(255,255,255,.1)"}`,borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
             ))}
           </div>
-          {!['dama','xadrez','poker'].includes(newGame)&&<>
+          {!['dama','xadrez','poker','go'].includes(newGame)&&<>
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Número de jogadores:</div>
           <div style={{display:"flex",gap:6,marginBottom:8}}>
             {[2,3,4].map(n=>(
@@ -3777,7 +3778,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             ))}
           </div>
           </>}
-          {['dama','xadrez','poker'].includes(newGame)&&<div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>⚔️ Sempre 1 vs 1 (Head-to-Head)</div>}
+          {['dama','xadrez','poker','go'].includes(newGame)&&<div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>⚔️ Sempre 1 vs 1 (Head-to-Head)</div>}
           
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -5281,6 +5282,897 @@ function Poker({chips,onChange,log}){
 }
 
 
+// ══════════════════════════════════════════════════════════════
+// GO — 19x19, offline vs IA + online 1v1
+// ══════════════════════════════════════════════════════════════
+
+// ── Go engine helpers ──────────────────────────────────────────
+function goNeighbors(r,c,N){
+  var nb=[];
+  if(r>0)nb.push([r-1,c]);
+  if(r<N-1)nb.push([r+1,c]);
+  if(c>0)nb.push([r,c-1]);
+  if(c<N-1)nb.push([r,c+1]);
+  return nb;
+}
+
+function goGroup(board,r,c,N){
+  var color=board[r][c];
+  if(!color)return{stones:[],liberties:[]};
+  var visited=new Set();
+  var stones=[];
+  var libs=new Set();
+  var queue=[[r,c]];
+  while(queue.length){
+    var cur=queue.pop();
+    var key=cur[0]+','+cur[1];
+    if(visited.has(key))continue;
+    visited.add(key);
+    stones.push(cur);
+    var nb=goNeighbors(cur[0],cur[1],N);
+    for(var i=0;i<nb.length;i++){
+      var nr=nb[i][0],nc=nb[i][1];
+      var nk=nr+','+nc;
+      if(!visited.has(nk)){
+        if(!board[nr][nc])libs.add(nk);
+        else if(board[nr][nc]===color)queue.push([nr,nc]);
+      }
+    }
+  }
+  return{stones:stones,liberties:Array.from(libs)};
+}
+
+function goCapture(board,r,c,N){
+  // Place stone at r,c (board already updated), capture opponent groups with 0 liberties
+  var opp=board[r][c]==='B'?'W':'B';
+  var captured=[];
+  var nb=goNeighbors(r,c,N);
+  for(var i=0;i<nb.length;i++){
+    var nr=nb[i][0],nc=nb[i][1];
+    if(board[nr][nc]===opp){
+      var g=goGroup(board,nr,nc,N);
+      if(g.liberties.length===0){
+        captured=captured.concat(g.stones);
+        for(var j=0;j<g.stones.length;j++)board[g.stones[j][0]][g.stones[j][1]]=null;
+      }
+    }
+  }
+  return captured;
+}
+
+function goLegal(board,r,c,color,prevBoard,N){
+  if(board[r][c])return false;
+  var nb=board.map(function(row){return row.slice();});
+  nb[r][c]=color;
+  var caps=goCapture(nb,r,c,N);
+  // Suicide check
+  var g=goGroup(nb,r,c,N);
+  if(g.liberties.length===0&&caps.length===0)return false;
+  // Ko check
+  if(prevBoard){
+    var same=true;
+    outer: for(var i=0;i<N;i++)for(var j=0;j<N;j++)if(nb[i][j]!==prevBoard[i][j]){same=false;break outer;}
+    if(same)return false;
+  }
+  return true;
+}
+
+function goScore(board,N,komi,method){
+  // Territory scoring (Japanese) or Area scoring (Chinese)
+  var bScore=0,wScore=komi;
+  var visited=new Array(N).fill(null).map(function(){return new Array(N).fill(false);});
+  for(var i=0;i<N;i++){
+    for(var j=0;j<N;j++){
+      if(board[i][j]==='B')bScore+=(method==='area'?1:0);
+      else if(board[i][j]==='W')wScore+=(method==='area'?1:0);
+      else if(!visited[i][j]){
+        // flood fill empty region
+        var region=[],borders=new Set();
+        var q=[[i,j]];
+        while(q.length){
+          var cur=q.pop();
+          var rk=cur[0]+','+cur[1];
+          if(visited[cur[0]][cur[1]])continue;
+          visited[cur[0]][cur[1]]=true;
+          region.push(cur);
+          var nb=goNeighbors(cur[0],cur[1],N);
+          for(var k=0;k<nb.length;k++){
+            if(board[nb[k][0]][nb[k][1]])borders.add(board[nb[k][0]][nb[k][1]]);
+            else if(!visited[nb[k][0]][nb[k][1]])q.push([nb[k][0],nb[k][1]]);
+          }
+        }
+        if(borders.size===1){
+          var owner=Array.from(borders)[0];
+          if(owner==='B')bScore+=region.length;
+          else wScore+=region.length;
+        }
+      }
+    }
+  }
+  return{black:Math.round(bScore*10)/10,white:Math.round(wScore*10)/10};
+}
+
+// Simple Go AI — Monte Carlo + heuristics
+function goAI(board,color,N,caps){
+  var opp=color==='B'?'W':'B';
+  var best=null,bestScore=-Infinity;
+  var moves=[];
+  for(var i=0;i<N;i++)for(var j=0;j<N;j++)
+    if(!board[i][j])moves.push([i,j]);
+  // Shuffle
+  for(var i=moves.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=moves[i];moves[i]=moves[j];moves[j]=t;}
+  // Score each move heuristically
+  var sampled=moves.slice(0,Math.min(60,moves.length));
+  for(var m=0;m<sampled.length;m++){
+    var r=sampled[m][0],c=sampled[m][1];
+    if(!goLegal(board,r,c,color,null,N))continue;
+    var nb2=board.map(function(row){return row.slice();});
+    nb2[r][c]=color;
+    var capd=goCapture(nb2,r,c,N);
+    var sc=0;
+    sc+=capd.length*3;
+    // Protect own groups in atari
+    var myNbs=goNeighbors(r,c,N);
+    for(var k=0;k<myNbs.length;k++){
+      if(board[myNbs[k][0]][myNbs[k][1]]===color){
+        var g=goGroup(board,myNbs[k][0],myNbs[k][1],N);
+        if(g.liberties.length<=2)sc+=4;
+      }
+      if(board[myNbs[k][0]][myNbs[k][1]]===opp){
+        var og=goGroup(nb2,myNbs[k][0],myNbs[k][1],N);
+        if(og.liberties.length===1)sc+=5;
+      }
+    }
+    // Prefer center early
+    var dr=r-Math.floor(N/2),dc=c-Math.floor(N/2);
+    sc-=Math.sqrt(dr*dr+dc*dc)*0.15;
+    sc+=Math.random()*0.5;
+    if(sc>bestScore){bestScore=sc;best=[r,c];}
+  }
+  return best;
+}
+
+function Go({chips,onChange,log}){
+  var N=19;
+  var KOMI=6.5;
+
+  function emptyBoard(){return Array.from({length:N},function(){return new Array(N).fill(null);});}
+  function copyBoard(b){return b.map(function(r){return r.slice();});}
+
+  var [board,setBoard]=useState(emptyBoard());
+  var [prevBoard,setPrevBoard]=useState(null);
+  var [turn,setTurn]=useState('B');
+  var [phase,setPhase]=useState('idle'); // idle | config | play | scoring | over
+  var [passCount,setPassCount]=useState(0);
+  var [caps,setCaps]=useState({B:0,W:0});
+  var [msg,setMsg]=useState('');
+  var [result,setResult]=useState(null);
+  var [bet,setBet]=useState(10);
+  var [countMethod,setCountMethod]=useState('territory');
+  var [komi,setKomi]=useState(6.5);
+  var [thinking,setThinking]=useState(false);
+  var [lastMove,setLastMove]=useState(null);
+  var [deadStones,setDeadStones]=useState([]); // marked during scoring
+  var [scorePreview,setScorePreview]=useState(null);
+  var [hoverCell,setHoverCell]=useState(null);
+  var [scroll,setScroll]=useState({x:0,y:0});
+  var [zoom,setZoom]=useState(1);
+  var CELL=28*zoom;
+
+  var STAR_POINTS=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
+
+  function startGame(){
+    if(chips<bet)return;
+    onChange(-bet);
+    setBoard(emptyBoard());
+    setPrevBoard(null);
+    setTurn('B');
+    setPhase('play');
+    setPassCount(0);
+    setCaps({B:0,W:0});
+    setMsg('Pretas jogam primeiro');
+    setResult(null);
+    setLastMove(null);
+    setDeadStones([]);
+  }
+
+  function placeStone(r,c){
+    if(phase!=='play'||turn!=='B'||thinking)return;
+    if(!goLegal(board,r,c,'B',prevBoard,N)){setMsg('Movimento ilegal!');return;}
+    var nb=copyBoard(board);
+    nb[r][c]='B';
+    var captured=goCapture(nb,r,c,N);
+    setPrevBoard(copyBoard(board));
+    setBoard(nb);
+    setLastMove([r,c]);
+    setCaps(function(cp){return{B:cp.B+captured.length,W:cp.W};});
+    setPassCount(0);
+    setMsg('Brancas pensando...');
+    setTurn('W');
+    // AI move
+    setThinking(true);
+    var boardSnap=copyBoard(nb);
+    var prevSnap=copyBoard(board);
+    setTimeout(function(){
+      var aiMove=goAI(boardSnap,'W',N,{B:caps.B,W:caps.W+captured.length});
+      if(!aiMove){
+        // AI passes
+        setPassCount(function(p){
+          if(p+1>=2){enterScoring(boardSnap);return p+1;}
+          return p+1;
+        });
+        setMsg('Brancas passaram. Sua vez (Pretas)');
+        setTurn('B');
+        setThinking(false);
+        return;
+      }
+      var nb2=copyBoard(boardSnap);
+      nb2[aiMove[0]][aiMove[1]]='W';
+      var cap2=goCapture(nb2,aiMove[0],aiMove[1],N);
+      setPrevBoard(boardSnap);
+      setBoard(nb2);
+      setLastMove([aiMove[0],aiMove[1]]);
+      setCaps(function(cp){return{B:cp.B,W:cp.W+cap2.length};});
+      setPassCount(0);
+      setMsg('Sua vez (Pretas)');
+      setTurn('B');
+      setThinking(false);
+    },600+Math.random()*400);
+  }
+
+  function pass(){
+    if(phase!=='play'||turn!=='B'||thinking)return;
+    var newPass=passCount+1;
+    if(newPass>=2){enterScoring(board);return;}
+    setPassCount(newPass);
+    setMsg('Você passou. Brancas pensando...');
+    setTurn('W');
+    setThinking(true);
+    var boardSnap=copyBoard(board);
+    setTimeout(function(){
+      // AI also passes sometimes, or plays
+      var aiMove=goAI(boardSnap,'W',N,caps);
+      if(!aiMove||Math.random()<0.15){
+        setPassCount(function(p){
+          if(p+1>=2){enterScoring(boardSnap);return p+1;}
+          return p+1;
+        });
+        setMsg('Brancas passaram. Fase de pontuação!');
+        setTurn('B');
+      } else {
+        var nb2=copyBoard(boardSnap);
+        nb2[aiMove[0]][aiMove[1]]='W';
+        var cap2=goCapture(nb2,aiMove[0],aiMove[1],N);
+        setPrevBoard(boardSnap);
+        setBoard(nb2);
+        setLastMove([aiMove[0],aiMove[1]]);
+        setCaps(function(cp){return{B:cp.B,W:cp.W+cap2.length};});
+        setPassCount(0);
+        setMsg('Brancas jogaram. Sua vez (Pretas)');
+        setTurn('B');
+      }
+      setThinking(false);
+    },600+Math.random()*400);
+  }
+
+  function enterScoring(b){
+    setPhase('scoring');
+    setMsg('Marque as pedras mortas e confirme a pontuação');
+    var sc=goScore(b,N,komi,countMethod);
+    setScorePreview(sc);
+  }
+
+  function toggleDead(r,c){
+    if(phase!=='scoring')return;
+    if(!board[r][c])return;
+    var key=r+','+c;
+    var g=goGroup(board,r,c,N);
+    var keys=g.stones.map(function(s){return s[0]+','+s[1];});
+    setDeadStones(function(ds){
+      var set=new Set(ds);
+      var allDead=keys.every(function(k){return set.has(k);});
+      if(allDead)keys.forEach(function(k){set.delete(k);});
+      else keys.forEach(function(k){set.add(k);});
+      return Array.from(set);
+    });
+  }
+
+  function confirmScore(){
+    // Remove dead stones and rescore
+    var b=copyBoard(board);
+    var deadSet=new Set(deadStones);
+    var extraCaps={B:0,W:0};
+    for(var i=0;i<N;i++)for(var j=0;j<N;j++){
+      var k=i+','+j;
+      if(deadSet.has(k)){
+        if(b[i][j]==='B')extraCaps.W++;
+        else if(b[i][j]==='W')extraCaps.B++;
+        b[i][j]=null;
+      }
+    }
+    var sc=goScore(b,N,komi,countMethod);
+    var won=sc.black>sc.white;
+    var diff=Math.abs(sc.black-sc.white);
+    if(won)onChange(bet*2);
+    setResult({black:sc.black,white:sc.white,won:won,diff:diff,caps:extraCaps});
+    setBoard(b);
+    setPhase('over');
+    log('Go: '+(won?'Vitória':'Derrota')+' — Pretas '+sc.black+' Brancas '+sc.white);
+  }
+
+  function resign(){
+    setPhase('over');
+    setResult({black:0,white:0,won:false,resigned:true});
+    log('Go: Resignou');
+  }
+
+  var cellSize=CELL;
+  var boardPx=cellSize*(N-1)+cellSize*2; // padding
+
+  if(phase==='idle'||phase==='config'){
+    return(
+      <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
+        <div style={{textAlign:'center',padding:'28px 20px 24px',
+          background:'radial-gradient(ellipse at 50% 0%,rgba(139,90,43,.3),rgba(5,5,5,.97))',
+          border:'1px solid rgba(139,90,43,.3)',borderRadius:24,
+          boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
+          <div style={{fontSize:48,marginBottom:8}}>⚫</div>
+          <div style={{color:'#f1c40f',fontWeight:900,fontSize:24,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>GO</div>
+          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:24}}>19x19 — OFFLINE VS IA</div>
+
+          <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,.04)'}}>
+            <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>APOSTA</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}}>
+              {[10,25,50,100,200].map(function(v){return(
+                <button key={v} onClick={function(){setBet(v);}}
+                  style={{padding:'5px 13px',fontSize:12,fontWeight:900,cursor:'pointer',borderRadius:7,
+                    background:bet===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
+                    border:'1px solid '+(bet===v?'#f1c40f':'rgba(255,255,255,.1)'),
+                    color:bet===v?'#f1c40f':'#666',fontFamily:"'Cinzel',serif"}}>
+                  {v}
+                </button>
+              );})}
+            </div>
+          </div>
+
+          <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,.04)'}}>
+            <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>CONTAGEM DE PONTOS</div>
+            <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+              {[{v:'territory',l:'Japonesa (Território)'},{v:'area',l:'Chinesa (Área)'}].map(function(opt){return(
+                <button key={opt.v} onClick={function(){setCountMethod(opt.v);}}
+                  style={{flex:1,padding:'8px 6px',fontSize:11,fontWeight:700,cursor:'pointer',borderRadius:8,
+                    background:countMethod===opt.v?'rgba(241,196,15,.15)':'rgba(255,255,255,.04)',
+                    border:'1px solid '+(countMethod===opt.v?'rgba(241,196,15,.5)':'rgba(255,255,255,.08)'),
+                    color:countMethod===opt.v?'#f1c40f':'#666'}}>
+                  {opt.l}
+                </button>
+              );})}
+            </div>
+            <div style={{color:'#444',fontSize:10,marginTop:8}}>Komi: {komi} pontos para Brancas</div>
+          </div>
+
+          <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:20,border:'1px solid rgba(255,255,255,.04)'}}>
+            <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>KOMI</div>
+            <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+              {[5.5,6.5,7.5].map(function(k){return(
+                <button key={k} onClick={function(){setKomi(k);}}
+                  style={{flex:1,padding:'7px',fontSize:12,fontWeight:900,cursor:'pointer',borderRadius:8,
+                    background:komi===k?'rgba(52,152,219,.2)':'rgba(255,255,255,.04)',
+                    border:'1px solid '+(komi===k?'rgba(52,152,219,.5)':'rgba(255,255,255,.08)'),
+                    color:komi===k?'#3498db':'#666',fontFamily:"'Cinzel',serif"}}>
+                  {k}
+                </button>
+              );})}
+            </div>
+          </div>
+
+          <button onClick={startGame} disabled={chips<bet}
+            style={{padding:'13px 36px',
+              background:chips>=bet?'linear-gradient(135deg,rgba(139,90,43,.6),rgba(80,50,20,.8))':'rgba(255,255,255,.04)',
+              border:'1px solid rgba(139,90,43,.5)',borderRadius:14,
+              color:chips>=bet?'#f1c40f':'#444',fontWeight:900,fontSize:15,
+              cursor:chips>=bet?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+            JOGAR
+          </button>
+          {chips<bet&&<div style={{color:'#c0392b',fontSize:10,marginTop:8}}>Precisa de {bet} fichas</div>}
+        </div>
+      </div>
+    );
+  }
+
+  if(phase==='over'&&result){
+    return(
+      <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
+        <div style={{textAlign:'center',padding:'28px 20px',
+          background:result.won?'rgba(46,204,113,.08)':'rgba(231,76,60,.08)',
+          border:'1px solid rgba(255,255,255,.06)',borderRadius:20}}>
+          <div style={{fontSize:48,marginBottom:8}}>{result.won?'🏆':'😔'}</div>
+          <div style={{color:result.won?'#2ecc71':'#e74c3c',fontWeight:900,fontSize:20,fontFamily:"'Cinzel',serif",letterSpacing:2,marginBottom:8}}>
+            {result.resigned?'Resignou':result.won?'VITÓRIA':'DERROTA'}
+          </div>
+          {!result.resigned&&(
+            <div style={{marginBottom:16}}>
+              <div style={{display:'flex',justifyContent:'center',gap:24,marginBottom:8}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{color:'#333',fontSize:10,letterSpacing:1}}>⚫ PRETAS</div>
+                  <div style={{color:'#fff',fontWeight:900,fontSize:26,fontFamily:"'Cinzel',serif"}}>{result.black}</div>
+                </div>
+                <div style={{color:'#444',fontSize:24,alignSelf:'center'}}>vs</div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{color:'#aaa',fontSize:10,letterSpacing:1}}>⚪ BRANCAS</div>
+                  <div style={{color:'#fff',fontWeight:900,fontSize:26,fontFamily:"'Cinzel',serif"}}>{result.white}</div>
+                </div>
+              </div>
+              <div style={{color:'#666',fontSize:12}}>
+                {result.won?'Pretas vencem por '+result.diff+' pontos':'Brancas vencem por '+result.diff+' pontos'}
+                {' · Komi '+komi+' · '+( countMethod==='territory'?'Japonesa':'Chinesa')}
+              </div>
+            </div>
+          )}
+          {result.won&&<div style={{color:'#2ecc71',fontSize:14,marginBottom:12}}>+{bet} fichas</div>}
+          <button onClick={function(){setPhase('idle');setBoard(emptyBoard());}}
+            style={{padding:'11px 28px',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.15)',
+              borderRadius:12,color:'#aaa',fontWeight:700,cursor:'pointer',fontSize:13}}>
+            Nova Partida
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Game board
+  var deadSet=new Set(deadStones);
+  var svgSize=cellSize*(N+1);
+
+  return(
+    <div style={{padding:'6px 0',maxWidth:'100%',overflowX:'auto',userSelect:'none'}}>
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 10px',marginBottom:4}}>
+        <div style={{display:'flex',gap:12,alignItems:'center'}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:'#888',fontSize:8,letterSpacing:1}}>⚫ CAPTURADAS</div>
+            <div style={{color:'#fff',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif"}}>{caps.W}</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:'#888',fontSize:8,letterSpacing:1}}>⚪ CAPTURADAS</div>
+            <div style={{color:'#fff',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif"}}>{caps.B}</div>
+          </div>
+        </div>
+        <div style={{textAlign:'center'}}>
+          <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:1,marginBottom:1}}>
+            {phase==='scoring'?'PONTUAÇÃO':'VEZ'}
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            {phase==='play'&&<div style={{width:14,height:14,borderRadius:'50%',background:turn==='B'?'#111':'#eee',border:turn==='B'?'2px solid #555':'2px solid #333',boxShadow:turn==='B'?'0 0 8px rgba(255,255,255,.2)':'0 0 8px rgba(0,0,0,.5)'}}/>}
+            <div style={{color:thinking?'#f1c40f':turn==='B'?'#eee':'#aaa',fontWeight:900,fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+              {thinking?'IA...':(phase==='scoring'?'MARQUE MORTAS':turn==='B'?'PRETAS':'BRANCAS')}
+            </div>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:5}}>
+          <button onClick={function(){setZoom(function(z){return Math.max(0.6,z-0.2);});}}
+            style={{width:28,height:28,borderRadius:6,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',color:'#888',cursor:'pointer',fontSize:14}}>-</button>
+          <button onClick={function(){setZoom(function(z){return Math.min(1.4,z+0.2);});}}
+            style={{width:28,height:28,borderRadius:6,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',color:'#888',cursor:'pointer',fontSize:14}}>+</button>
+        </div>
+      </div>
+
+      {msg&&<div style={{textAlign:'center',color:'rgba(255,255,255,.4)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,marginBottom:4,padding:'0 8px'}}>{msg}</div>}
+
+      {scorePreview&&phase==='scoring'&&(
+        <div style={{display:'flex',justifyContent:'center',gap:16,padding:'6px',marginBottom:4,background:'rgba(0,0,0,.3)',borderRadius:10,margin:'0 8px 6px'}}>
+          <span style={{color:'#eee',fontSize:11}}>⚫ {scorePreview.black}</span>
+          <span style={{color:'#888',fontSize:11}}>vs</span>
+          <span style={{color:'#aaa',fontSize:11}}>⚪ {scorePreview.white}</span>
+          <span style={{color:'rgba(255,255,255,.3)',fontSize:10}}>komi {komi}</span>
+        </div>
+      )}
+
+      <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'70vh'}}>
+        <svg width={svgSize} height={svgSize}
+          style={{display:'block',background:'#dcb468',cursor:phase==='play'&&turn==='B'&&!thinking?'crosshair':phase==='scoring'?'pointer':'default'}}
+          onMouseLeave={function(){setHoverCell(null);}}>
+
+          {/* Grid lines */}
+          {Array.from({length:N},function(_,i){return(
+            React.createElement('g',{key:i},
+              React.createElement('line',{x1:cellSize,y1:cellSize*(i+1),x2:cellSize*N,y2:cellSize*(i+1),stroke:'#8B6914',strokeWidth:.8}),
+              React.createElement('line',{x1:cellSize*(i+1),y1:cellSize,x2:cellSize*(i+1),y2:cellSize*N,stroke:'#8B6914',strokeWidth:.8})
+            )
+          );})}
+
+          {/* Star points */}
+          {STAR_POINTS.map(function(sp,i){return(
+            React.createElement('circle',{key:i,cx:cellSize*(sp[1]+1),cy:cellSize*(sp[0]+1),r:3,fill:'#8B6914'})
+          );})}
+
+          {/* Coordinate labels */}
+          {'ABCDEFGHJKLMNOPQRST'.split('').slice(0,N).map(function(l,i){return(
+            React.createElement('g',{key:i},
+              React.createElement('text',{x:cellSize*(i+1),y:cellSize*.55,fill:'#8B6914',fontSize:9,textAnchor:'middle',fontFamily:'monospace'},l),
+              React.createElement('text',{x:cellSize*(i+1),y:cellSize*(N+.65),fill:'#8B6914',fontSize:9,textAnchor:'middle',fontFamily:'monospace'},l)
+            )
+          );})}
+          {Array.from({length:N},function(_,i){return(
+            React.createElement('g',{key:i},
+              React.createElement('text',{x:cellSize*.55,y:cellSize*(i+1)+4,fill:'#8B6914',fontSize:9,textAnchor:'middle',fontFamily:'monospace'},N-i),
+              React.createElement('text',{x:cellSize*(N+.65),y:cellSize*(i+1)+4,fill:'#8B6914',fontSize:9,textAnchor:'middle',fontFamily:'monospace'},N-i)
+            )
+          );})}
+
+          {/* Hover indicator */}
+          {hoverCell&&phase==='play'&&turn==='B'&&!thinking&&goLegal(board,hoverCell[0],hoverCell[1],'B',prevBoard,N)&&(
+            React.createElement('circle',{
+              cx:cellSize*(hoverCell[1]+1),cy:cellSize*(hoverCell[0]+1),
+              r:cellSize*.42,fill:'rgba(0,0,0,.25)',stroke:'rgba(0,0,0,.4)',strokeWidth:1
+            })
+          )}
+
+          {/* Stones */}
+          {board.map(function(row,ri){return row.map(function(cell,ci){
+            if(!cell)return null;
+            var isDead=deadSet.has(ri+','+ci);
+            var isLast=lastMove&&lastMove[0]===ri&&lastMove[1]===ci;
+            var cx=cellSize*(ci+1),cy=cellSize*(ri+1);
+            var r=cellSize*.44;
+            return React.createElement('g',{
+              key:ri+','+ci,
+              onClick:function(){if(phase==='scoring')toggleDead(ri,ci);}
+            },
+              React.createElement('circle',{cx:cx,cy:cy,r:r,
+                fill:cell==='B'?'#111':'#f0f0f0',
+                stroke:cell==='B'?'#000':'#999',strokeWidth:.8,
+                opacity:isDead?.3:1,
+                style:{filter:cell==='B'?'drop-shadow(1px 2px 2px rgba(0,0,0,.6))':'drop-shadow(1px 2px 2px rgba(0,0,0,.3))'}
+              }),
+              isDead&&React.createElement('line',{x1:cx-r*.6,y1:cy-r*.6,x2:cx+r*.6,y2:cy+r*.6,stroke:'red',strokeWidth:2}),
+              isDead&&React.createElement('line',{x1:cx+r*.6,y1:cy-r*.6,x2:cx-r*.6,y2:cy+r*.6,stroke:'red',strokeWidth:2}),
+              isLast&&React.createElement('circle',{cx:cx,cy:cy,r:r*.3,fill:cell==='B'?'#fff':'#555'})
+            );
+          });})  }
+
+          {/* Invisible click targets */}
+          {Array.from({length:N},function(_,ri){return Array.from({length:N},function(_,ci){
+            return React.createElement('rect',{
+              key:ri+','+ci,
+              x:cellSize*(ci+1)-cellSize*.5,y:cellSize*(ri+1)-cellSize*.5,
+              width:cellSize,height:cellSize,
+              fill:'transparent',
+              onMouseEnter:function(){setHoverCell([ri,ci]);},
+              onClick:function(){
+                if(phase==='play')placeStone(ri,ci);
+                else if(phase==='scoring')toggleDead(ri,ci);
+              }
+            });
+          });})  }
+        </svg>
+      </div>
+
+      <div style={{display:'flex',gap:6,justifyContent:'center',padding:'8px 10px',flexWrap:'wrap'}}>
+        {phase==='play'&&(
+          React.createElement(React.Fragment,null,
+            React.createElement('button',{onClick:pass,disabled:turn!=='B'||thinking,
+              style:{padding:'9px 18px',background:'rgba(52,152,219,.1)',border:'1px solid rgba(52,152,219,.3)',
+                borderRadius:10,color:turn==='B'&&!thinking?'#3498db':'#444',fontWeight:700,cursor:turn==='B'&&!thinking?'pointer':'not-allowed',fontSize:12,fontFamily:"'Cinzel',serif"}},
+              'PASSAR'),
+            React.createElement('button',{onClick:resign,
+              style:{padding:'9px 18px',background:'rgba(231,76,60,.08)',border:'1px solid rgba(231,76,60,.25)',
+                borderRadius:10,color:'#c0392b',fontWeight:700,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}},
+              'RESIGNAR')
+          )
+        )}
+        {phase==='scoring'&&(
+          React.createElement(React.Fragment,null,
+            React.createElement('button',{onClick:confirmScore,
+              style:{padding:'9px 20px',background:'rgba(46,204,113,.15)',border:'1px solid rgba(46,204,113,.4)',
+                borderRadius:10,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:13,fontFamily:"'Cinzel',serif"}},
+              'CONFIRMAR PONTUACAO'),
+            React.createElement('button',{onClick:function(){setPhase('play');setDeadStones([]);setMsg('Jogo retomado');},
+              style:{padding:'9px 14px',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',
+                borderRadius:10,color:'#888',fontWeight:700,cursor:'pointer',fontSize:12}},
+              'Continuar')
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── GoOnline ──────────────────────────────────────────────────
+function GoOnline({socket,room,userData,onGameOver}){
+  var N=19;
+  var KOMI=6.5;
+  function emptyBoard(){return Array.from({length:N},function(){return new Array(N).fill(null);});}
+  function copyBoard(b){return b.map(function(r){return r.slice();});}
+
+  var [board,setBoard]=useState(emptyBoard());
+  var [prevBoard,setPrevBoard]=useState(null);
+  var [myColor,setMyColor]=useState(null);
+  var [turn,setTurn]=useState('B');
+  var [phase,setPhase]=useState('wait');
+  var [passCount,setPassCount]=useState(0);
+  var [caps,setCaps]=useState({B:0,W:0});
+  var [msg,setMsg]=useState('Aguardando inicio...');
+  var [result,setResult]=useState(null);
+  var [lastMove,setLastMove]=useState(null);
+  var [deadStones,setDeadStones]=useState([]);
+  var [scorePreview,setScorePreview]=useState(null);
+  var [countMethod,setCountMethod]=useState('territory');
+  var [komi,setKomi]=useState(KOMI);
+  var [initialized,setInitialized]=useState(false);
+  var [rulesReady,setRulesReady]=useState(false);
+  var [rules,setRules]=useState({countMethod:'territory',komi:6.5});
+  var [zoom,setZoom]=useState(1);
+  var [hoverCell,setHoverCell]=useState(null);
+  var CELL=28*zoom;
+
+  var opp=room.players.find(function(p){return p.uid!==userData?.uid;});
+  var oppName=opp?.name||'Adversario';
+  var isCriador=room.players[0]?.uid===userData?.uid;
+  var myTurn=turn===myColor;
+  var deadSet=new Set(deadStones);
+  var STAR_POINTS=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
+
+  useEffect(function(){
+    if(!socket||initialized)return;
+    setInitialized(true);
+
+    socket.on('game_action',function(evt){
+      var action=evt.action,data=evt.data,sUid=evt.uid;
+      if(action==='go_start'){
+        var mc=data.colors[userData?.uid];
+        setMyColor(mc);
+        setBoard(emptyBoard());
+        setPrevBoard(null);
+        setTurn('B');
+        setPhase('play');
+        setCountMethod(data.countMethod||'territory');
+        setKomi(data.komi||6.5);
+        setPassCount(0);
+        setCaps({B:0,W:0});
+        setMsg(mc==='B'?'Sua vez (Pretas)':'Vez das Pretas...');
+        setLastMove(null);
+      }
+      if(action==='go_rules_chosen'){
+        setRules(data.rules);
+        setRulesReady(true);
+        if(!isCriador){
+          socket.emit('game_action',{roomId:room.id,action:'go_init',data:{uid:userData?.uid,rules:data.rules}});
+        }
+      }
+      if(action==='go_move'){
+        var r=data.r,c=data.c,color=data.color;
+        setBoard(function(b){
+          var nb=copyBoard(b);
+          nb[r][c]=color;
+          var captured=goCapture(nb,r,c,N);
+          setCaps(function(cp){
+            var nc={B:cp.B,W:cp.W};
+            nc[color==='B'?'W':'B']+=captured.length;
+            return nc;
+          });
+          setPrevBoard(copyBoard(b));
+          return nb;
+        });
+        setLastMove([r,c]);
+        setTurn(function(t){var nt=t==='B'?'W':'B';return nt;});
+        setPassCount(0);
+        setMsg(data.color===myColor?'Vez do adversario...':'Sua vez!');
+      }
+      if(action==='go_pass'){
+        setPassCount(function(p){return p+1;});
+        setMsg(sUid===userData?.uid?'Voce passou.':'Adversario passou.');
+        setTurn(function(t){return t==='B'?'W':'B';});
+      }
+      if(action==='go_scoring'){
+        setPhase('scoring');
+        setMsg('Marque as pedras mortas e confirme');
+        setBoard(function(b){var sc=goScore(b,N,komi,countMethod);setScorePreview(sc);return b;});
+      }
+      if(action==='go_win'){
+        var won=data.winnerId===userData?.uid;
+        setResult({won:won,black:data.black,white:data.white,diff:data.diff,resigned:data.resigned});
+        setPhase('over');
+        onGameOver&&onGameOver();
+      }
+    });
+    return function(){socket.off('game_action');};
+  },[socket]);
+
+  function placeStone(r,c){
+    if(!myTurn||phase!=='play')return;
+    if(!goLegal(board,r,c,myColor,prevBoard,N)){setMsg('Movimento ilegal!');return;}
+    socket.emit('game_action',{roomId:room.id,action:'go_move',data:{r:r,c:c,color:myColor,uid:userData?.uid}});
+  }
+
+  function pass2(){
+    if(!myTurn||phase!=='play')return;
+    socket.emit('game_action',{roomId:room.id,action:'go_pass',data:{uid:userData?.uid}});
+  }
+
+  function resign2(){
+    socket.emit('game_action',{roomId:room.id,action:'go_resign',data:{uid:userData?.uid}});
+  }
+
+  function toggleDead2(r,c){
+    if(phase!=='scoring')return;
+    if(!board[r][c])return;
+    var key=r+','+c;
+    var g=goGroup(board,r,c,N);
+    var keys=g.stones.map(function(s){return s[0]+','+s[1];});
+    setDeadStones(function(ds){
+      var set=new Set(ds);
+      var allDead=keys.every(function(k){return set.has(k);});
+      if(allDead)keys.forEach(function(k){set.delete(k);});
+      else keys.forEach(function(k){set.add(k);});
+      return Array.from(set);
+    });
+  }
+
+  function confirmScore2(){
+    socket.emit('game_action',{roomId:room.id,action:'go_confirm_score',data:{deadStones:deadStones,uid:userData?.uid}});
+  }
+
+  if(!rulesReady&&phase==='wait'){
+    if(isCriador) return(
+      <div style={{padding:'20px 12px',maxWidth:460,margin:'0 auto'}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif",textAlign:'center',marginBottom:16,letterSpacing:2}}>⚙️ REGRAS DA PARTIDA</div>
+        <div style={{marginBottom:12,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:'12px'}}>
+          <div style={{color:'#ddd',fontSize:12,fontWeight:700,marginBottom:6}}>Contagem de pontos</div>
+          <div style={{display:'flex',gap:8}}>
+            {[{v:'territory',l:'Japonesa (Territorio)'},{v:'area',l:'Chinesa (Area)'}].map(function(opt){return(
+              <button key={opt.v} onClick={function(){setRules(function(r){return{...r,countMethod:opt.v};});}}
+                style={{flex:1,padding:'8px 5px',fontSize:11,fontWeight:700,cursor:'pointer',borderRadius:8,
+                  background:rules.countMethod===opt.v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
+                  border:'1px solid '+(rules.countMethod===opt.v?'#f1c40f':'rgba(255,255,255,.1)'),
+                  color:rules.countMethod===opt.v?'#f1c40f':'#666'}}>
+                {opt.l}
+              </button>
+            );})}
+          </div>
+        </div>
+        <div style={{marginBottom:16,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)',borderRadius:12,padding:'12px'}}>
+          <div style={{color:'#ddd',fontSize:12,fontWeight:700,marginBottom:6}}>Komi</div>
+          <div style={{display:'flex',gap:6}}>
+            {[5.5,6.5,7.5].map(function(k){return(
+              <button key={k} onClick={function(){setRules(function(r){return{...r,komi:k};});}}
+                style={{flex:1,padding:'7px',fontSize:12,fontWeight:900,cursor:'pointer',borderRadius:8,
+                  background:rules.komi===k?'rgba(52,152,219,.2)':'rgba(255,255,255,.04)',
+                  border:'1px solid '+(rules.komi===k?'rgba(52,152,219,.5)':'rgba(255,255,255,.08)'),
+                  color:rules.komi===k?'#3498db':'#666',fontFamily:"'Cinzel',serif"}}>
+                {k}
+              </button>
+            );})}
+          </div>
+        </div>
+        <button onClick={function(){
+          setRulesReady(true);
+          socket.emit('game_action',{roomId:room.id,action:'go_rules_chosen',data:{rules:rules}});
+          socket.emit('game_action',{roomId:room.id,action:'go_init',data:{uid:userData?.uid,rules:rules}});
+        }}
+          style={{width:'100%',padding:'14px',background:'rgba(46,204,113,.15)',border:'1px solid rgba(46,204,113,.4)',
+            borderRadius:13,color:'#2ecc71',fontWeight:900,fontSize:15,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+          CONFIRMAR E INICIAR
+        </button>
+      </div>
+    );
+    return(
+      <div style={{padding:'30px 12px',textAlign:'center'}}>
+        <div style={{fontSize:36,marginBottom:12}}>⏳</div>
+        <div style={{color:'#aaa',fontSize:13}}>Aguardando o criador configurar as regras...</div>
+      </div>
+    );
+  }
+
+  if(result) return(
+    <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
+      <div style={{textAlign:'center',padding:'28px 20px',
+        background:result.won?'rgba(46,204,113,.08)':'rgba(231,76,60,.08)',
+        border:'1px solid rgba(255,255,255,.06)',borderRadius:20}}>
+        <div style={{fontSize:48,marginBottom:8}}>{result.won?'🏆':'😔'}</div>
+        <div style={{color:result.won?'#2ecc71':'#e74c3c',fontWeight:900,fontSize:20,fontFamily:"'Cinzel',serif",marginBottom:8}}>
+          {result.resigned?'Resignou':result.won?'VITORIA':'DERROTA'}
+        </div>
+        {!result.resigned&&(
+          <div style={{display:'flex',justifyContent:'center',gap:20,marginBottom:8}}>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:'#555',fontSize:10}}>PRETAS</div>
+              <div style={{color:'#fff',fontWeight:900,fontSize:24,fontFamily:"'Cinzel',serif"}}>{result.black}</div>
+            </div>
+            <div style={{color:'#444',fontSize:20,alignSelf:'center'}}>vs</div>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:'#555',fontSize:10}}>BRANCAS</div>
+              <div style={{color:'#fff',fontWeight:900,fontSize:24,fontFamily:"'Cinzel',serif"}}>{result.white}</div>
+            </div>
+          </div>
+        )}
+        {result.won&&<div style={{color:'#2ecc71',fontSize:14,marginBottom:8}}>+{room.betAmount} fichas</div>}
+      </div>
+    </div>
+  );
+
+  var svgSize=CELL*(N+1);
+  return(
+    <div style={{padding:'6px 0',maxWidth:'100%',userSelect:'none'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 10px',marginBottom:4}}>
+        <div style={{display:'flex',gap:10}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:'#888',fontSize:8,letterSpacing:1}}>⚫ CAP</div>
+            <div style={{color:'#fff',fontWeight:900,fontSize:14,fontFamily:"'Cinzel',serif"}}>{caps.W}</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{color:'#888',fontSize:8,letterSpacing:1}}>⚪ CAP</div>
+            <div style={{color:'#fff',fontWeight:900,fontSize:14,fontFamily:"'Cinzel',serif"}}>{caps.B}</div>
+          </div>
+        </div>
+        <div style={{textAlign:'center'}}>
+          {myColor&&<div style={{color:myColor==='B'?'#eee':'#aaa',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+            Voce: {myColor==='B'?'PRETAS':'BRANCAS'}
+          </div>}
+          <div style={{color:myTurn?'#2ecc71':'rgba(255,255,255,.3)',fontSize:11,fontWeight:900,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+            {phase==='scoring'?'PONTUACAO':myTurn?'SUA VEZ':'ADVERSARIO'}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:4}}>
+          <button onClick={function(){setZoom(function(z){return Math.max(0.5,z-0.2);});}} style={{width:26,height:26,borderRadius:5,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',color:'#888',cursor:'pointer',fontSize:13}}>-</button>
+          <button onClick={function(){setZoom(function(z){return Math.min(1.4,z+0.2);});}} style={{width:26,height:26,borderRadius:5,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',color:'#888',cursor:'pointer',fontSize:13}}>+</button>
+        </div>
+      </div>
+      {msg&&<div style={{textAlign:'center',color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,marginBottom:4}}>{msg}</div>}
+      {scorePreview&&phase==='scoring'&&(
+        <div style={{display:'flex',justifyContent:'center',gap:16,padding:'5px',marginBottom:4,background:'rgba(0,0,0,.3)',borderRadius:8,margin:'0 8px 5px'}}>
+          <span style={{color:'#eee',fontSize:11}}>⚫ {scorePreview.black}</span>
+          <span style={{color:'#888',fontSize:11}}>vs</span>
+          <span style={{color:'#aaa',fontSize:11}}>⚪ {scorePreview.white}</span>
+        </div>
+      )}
+      <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'65vh'}}>
+        <svg width={svgSize} height={svgSize} style={{display:'block',background:'#dcb468',cursor:myTurn&&phase==='play'?'crosshair':phase==='scoring'?'pointer':'default'}}
+          onMouseLeave={function(){setHoverCell(null);}}>
+          {Array.from({length:N},function(_,i){return(
+            React.createElement('g',{key:i},
+              React.createElement('line',{x1:CELL,y1:CELL*(i+1),x2:CELL*N,y2:CELL*(i+1),stroke:'#8B6914',strokeWidth:.8}),
+              React.createElement('line',{x1:CELL*(i+1),y1:CELL,x2:CELL*(i+1),y2:CELL*N,stroke:'#8B6914',strokeWidth:.8})
+            )
+          );})}
+          {STAR_POINTS.map(function(sp,i){return React.createElement('circle',{key:i,cx:CELL*(sp[1]+1),cy:CELL*(sp[0]+1),r:3,fill:'#8B6914'});})}
+          {hoverCell&&myTurn&&phase==='play'&&goLegal(board,hoverCell[0],hoverCell[1],myColor,prevBoard,N)&&(
+            React.createElement('circle',{cx:CELL*(hoverCell[1]+1),cy:CELL*(hoverCell[0]+1),r:CELL*.42,fill:'rgba(0,0,0,.25)',stroke:'rgba(0,0,0,.4)',strokeWidth:1})
+          )}
+          {board.map(function(row,ri){return row.map(function(cell,ci){
+            if(!cell)return null;
+            var isDead=deadSet.has(ri+','+ci);
+            var isLast=lastMove&&lastMove[0]===ri&&lastMove[1]===ci;
+            var cx=CELL*(ci+1),cy=CELL*(ri+1),r=CELL*.44;
+            return React.createElement('g',{key:ri+','+ci,onClick:function(){if(phase==='scoring')toggleDead2(ri,ci);}},
+              React.createElement('circle',{cx:cx,cy:cy,r:r,fill:cell==='B'?'#111':'#f0f0f0',stroke:cell==='B'?'#000':'#999',strokeWidth:.8,opacity:isDead?.3:1,style:{filter:cell==='B'?'drop-shadow(1px 2px 2px rgba(0,0,0,.6))':'drop-shadow(1px 2px 2px rgba(0,0,0,.3))'}}),
+              isDead&&React.createElement('line',{x1:cx-r*.6,y1:cy-r*.6,x2:cx+r*.6,y2:cy+r*.6,stroke:'red',strokeWidth:2}),
+              isDead&&React.createElement('line',{x1:cx+r*.6,y1:cy-r*.6,x2:cx-r*.6,y2:cy+r*.6,stroke:'red',strokeWidth:2}),
+              isLast&&React.createElement('circle',{cx:cx,cy:cy,r:r*.3,fill:cell==='B'?'#fff':'#555'})
+            );
+          });})  }
+          {Array.from({length:N},function(_,ri){return Array.from({length:N},function(_,ci){
+            return React.createElement('rect',{key:ri+','+ci,x:CELL*(ci+1)-CELL*.5,y:CELL*(ri+1)-CELL*.5,width:CELL,height:CELL,fill:'transparent',
+              onMouseEnter:function(){setHoverCell([ri,ci]);},
+              onClick:function(){if(phase==='play')placeStone(ri,ci);else if(phase==='scoring')toggleDead2(ri,ci);}});
+          });})  }
+        </svg>
+      </div>
+      <div style={{display:'flex',gap:6,justifyContent:'center',padding:'8px 10px',flexWrap:'wrap'}}>
+        {phase==='play'&&myTurn&&React.createElement(React.Fragment,null,
+          React.createElement('button',{onClick:pass2,style:{padding:'9px 18px',background:'rgba(52,152,219,.1)',border:'1px solid rgba(52,152,219,.3)',borderRadius:10,color:'#3498db',fontWeight:700,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}},'PASSAR'),
+          React.createElement('button',{onClick:resign2,style:{padding:'9px 18px',background:'rgba(231,76,60,.08)',border:'1px solid rgba(231,76,60,.25)',borderRadius:10,color:'#c0392b',fontWeight:700,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}},'RESIGNAR')
+        )}
+        {phase==='scoring'&&React.createElement(React.Fragment,null,
+          React.createElement('button',{onClick:confirmScore2,style:{padding:'9px 20px',background:'rgba(46,204,113,.15)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:13,fontFamily:"'Cinzel',serif"}},'CONFIRMAR PONTUACAO'),
+          React.createElement('button',{onClick:function(){setPhase('play');setDeadStones([]);setMsg('Jogo retomado');},style:{padding:'9px 14px',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:10,color:'#888',fontWeight:700,cursor:'pointer',fontSize:12}},'Continuar')
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function App(){
   const [authUser,setAuthUser]=useState(null);
   const [userData,setUserData]=useState(null);
@@ -5450,6 +6342,7 @@ function App(){
     dama:<Dama chips={displayChips} onChange={onChange} log={log}/>,
     xadrez:<Xadrez chips={displayChips} onChange={onChange} log={log}/>,
     poker:<Poker chips={displayChips} onChange={onChange} log={log}/>,
+    go:<Go chips={displayChips} onChange={onChange} log={log}/>,
     lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange}/>,
   };
 
@@ -5460,6 +6353,7 @@ function App(){
     {k:"dama",i:"♟",l:"Dama"},
     {k:"xadrez",i:"♔",l:"Xadrez"},
     {k:"poker",i:"♠",l:"Poker"},
+    {k:"go",i:"⚫",l:"Go"},
     {k:"lobby",i:"🌐",l:"Online"},
     {k:"shop_btn",i:"💰",l:"Fichas"},
   ];
@@ -5559,6 +6453,7 @@ function App(){
                 {k:"xadrez",i:"♔",n:"Xadrez",d:"vs IA • Clássico",c:"#8e44ad",gc:"#12071a"},
                 {k:"lobby",i:"🌐",n:"Online",d:"vs Jogadores Reais",c:"#2ecc71",gc:"#082a15"},
                 {k:"poker",i:"♠",n:"Poker",d:"Texas Hold'em vs IA",c:"#c0392b",gc:"#2a0808"},
+                {k:"go",i:"⚫",n:"Go",d:"19x19 — Clássico oriental",c:"#8B6914",gc:"#1a1205"},
               ].map(g=>(
                 <div key={g.k} onClick={()=>!g.disabled&&setScreen(g.k)}
                   style={{background:`linear-gradient(145deg,${g.gc} 0%,#050505 100%)`,border:`1px solid ${g.disabled?"rgba(255,255,255,.05)":`${g.c}25`}`,borderRadius:16,padding:"16px 14px",cursor:g.disabled?"not-allowed":"pointer",opacity:g.disabled?.4:1,transition:"all .25s",position:"relative",overflow:"hidden"}}
