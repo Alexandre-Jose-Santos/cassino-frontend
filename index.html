@@ -4294,6 +4294,7 @@ function Xadrez({chips,onChange,log}){
 
 // ── Avaliação de mão ──
 function evalPokerHand(cards){
+  if(!cards||cards.length<5)return{hand:cards||[],score:[0,0,0,0,0,0]};
   const RV={'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14};
   const c5=(arr)=>{const res=[];const go=(s,cur)=>{if(cur.length===5){res.push([...cur]);return;}for(let i=s;i<arr.length;i++)go(i+1,[...cur,arr[i]]);};go(0,[]);return res;};
   const score5=(h)=>{
@@ -4343,7 +4344,7 @@ function pokerAI(hand,community,stage,aiBet,curBet){
 function Poker({chips,onChange,log}){
   const SUITS=['♠','♥','♦','♣'];
   const RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-  const SC={♠:'#ddd8f0',♥:'#e74c3c',♦:'#e74c3c',♣:'#ddd8f0'};
+  const SC={'♠':'#ddd8f0','♥':'#e74c3c','♦':'#e74c3c','♣':'#ddd8f0'};
   const mkDeck=()=>{const d=[];for(const s of SUITS)for(const r of RANKS)d.push({rank:r,suit:s,id:`${r}${s}${Math.random().toString(36).slice(2)}`});return d.sort(()=>Math.random()-.5);};
 
   const [gameState,setGameState]=useState('idle');
@@ -4915,6 +4916,8 @@ function Poker({chips,onChange,log}){
           IA PENSANDO...
         </div>
       )}
+    </div>
+    </div>
     </div>
   );
 }
