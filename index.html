@@ -3344,6 +3344,16 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('chat_audio');
       socket.off('game_result');
       socket.off('error');
+      socket.off('webrtc_offer');
+      socket.off('webrtc_answer');
+      socket.off('webrtc_ice');
+      socket.off('webrtc_call_request');
+      socket.off('webrtc_call_accept');
+      socket.off('webrtc_call_reject');
+      socket.off('webrtc_call_end');
+      socket.off('webrtc_speaking');
+      // Encerra chamada ao desmontar
+      encerrarChamada();
     };
   },[socket]);
 
@@ -3355,11 +3365,188 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [recording,setRecording]=useState(false);
   const mediaRecRef=React.useRef(null);
   const audioChunksRef=React.useRef([]);
+  // WebRTC chamada de voz
+  const [callState,setCallState]=useState('idle'); // idle|calling|incoming|connected
+  const [speaking,setSpeaking]=useState(false);
+  const [oppSpeaking,setOppSpeaking]=useState(false);
+  const [oppVolume,setOppVolume]=useState(1); // 0..1
+  const [pttActive,setPttActive]=useState(false); // push-to-talk pressionado
+  const pcRef=React.useRef(null);
+  const localStreamRef=React.useRef(null);
+  const remoteAudioRef=React.useRef(null);
+  const remoteGainRef=React.useRef(null); // GainNode para volume do opp
+  const oppAnalyserRef=React.useRef(null);
+  const oppVadRef=React.useRef(null);
+  const vadTimerRef=React.useRef(null);
+  const pttTrackRef=React.useRef(null); // AudioTrack do mic local
   const [gameOver,setGameOver]=useState(false);
   const [rematchCountdown,setRematchCountdown]=useState(null);
   const [rematchMsg,setRematchMsg]=useState('');
   const [matchKey,setMatchKey]=useState(0);
   const chatEndRef=React.useRef(null);
+
+
+  // ── WebRTC — Push-to-Talk ──────────────────────────────────
+  const ICE_SERVERS={iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+  ]};
+
+  // VAD no stream remoto — detecta se adversário está falando
+  const startRemoteVAD=(stream)=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const src=ctx.createMediaStreamSource(stream);
+      // GainNode para controle de volume
+      const gain=ctx.createGain();
+      gain.gain.value=1;
+      remoteGainRef.current=gain;
+      const analyser=ctx.createAnalyser();
+      analyser.fftSize=512;
+      oppAnalyserRef.current=analyser;
+      src.connect(gain);
+      gain.connect(analyser);
+      gain.connect(ctx.destination);
+      const buf=new Uint8Array(analyser.frequencyBinCount);
+      const tick=()=>{
+        analyser.getByteFrequencyData(buf);
+        const avg=buf.reduce((a,b)=>a+b,0)/buf.length;
+        setOppSpeaking(avg>14);
+        oppVadRef.current=requestAnimationFrame(tick);
+      };
+      oppVadRef.current=requestAnimationFrame(tick);
+    }catch(e){}
+  };
+
+  const encerrarChamada=()=>{
+    if(vadTimerRef.current)cancelAnimationFrame(vadTimerRef.current);
+    if(oppVadRef.current)cancelAnimationFrame(oppVadRef.current);
+    if(pcRef.current){pcRef.current.close();pcRef.current=null;}
+    if(localStreamRef.current){localStreamRef.current.getTracks().forEach(t=>t.stop());localStreamRef.current=null;}
+    pttTrackRef.current=null;
+    remoteGainRef.current=null;
+    oppAnalyserRef.current=null;
+    setCallState('idle');
+    setSpeaking(false);
+    setOppSpeaking(false);
+    setPttActive(false);
+  };
+
+  // Push-to-talk: pressionar = habilita mic; soltar = desabilita
+  const pttPress=()=>{
+    if(callState!=='connected')return;
+    const track=pttTrackRef.current;
+    if(track){track.enabled=true;}
+    setPttActive(true);
+    setSpeaking(true);
+    if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:true});
+  };
+  const pttRelease=()=>{
+    const track=pttTrackRef.current;
+    if(track){track.enabled=false;}
+    setPttActive(false);
+    setSpeaking(false);
+    if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
+  };
+
+  // Ajusta volume do adversário (0..1)
+  const setVolume=(v)=>{
+    setOppVolume(v);
+    if(remoteGainRef.current)remoteGainRef.current.gain.value=v;
+    if(remoteAudioRef.current)remoteAudioRef.current.volume=v;
+  };
+
+  const criarPC=(roomId2)=>{
+    const pc=new RTCPeerConnection(ICE_SERVERS);
+    pc.onicecandidate=e=>{
+      if(e.candidate&&socket)
+        socket.emit('webrtc_ice',{roomId:roomId2,candidate:e.candidate});
+    };
+    pc.ontrack=e=>{
+      // Usa Web Audio API para controle de volume + VAD remoto
+      startRemoteVAD(e.streams[0]);
+      // Fallback audio element (caso AudioContext falhe)
+      if(remoteAudioRef.current){
+        remoteAudioRef.current.srcObject=e.streams[0];
+        remoteAudioRef.current.volume=oppVolume;
+      }
+    };
+    pc.onconnectionstatechange=()=>{
+      if(['disconnected','failed','closed'].includes(pc.connectionState))encerrarChamada();
+    };
+    return pc;
+  };
+
+  const setupLocalStream=async()=>{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
+    // PTT começa com mic MUDO — só ativa ao pressionar
+    const track=stream.getAudioTracks()[0];
+    if(track)track.enabled=false;
+    pttTrackRef.current=track;
+    localStreamRef.current=stream;
+    return stream;
+  };
+
+  const iniciarChamada=async()=>{
+    if(!myRoom||callState!=='idle')return;
+    try{
+      const stream=await setupLocalStream();
+      const pc=criarPC(myRoom.id);
+      pcRef.current=pc;
+      stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+      const offer=await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('webrtc_call_request',{roomId:myRoom.id,offer,uid:userData?.uid});
+      setCallState('calling');
+      socket.once('webrtc_call_accept',async({answer})=>{
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        setCallState('connected');
+      });
+      socket.once('webrtc_call_reject',()=>{encerrarChamada();});
+    }catch(e){alert('Microfone não disponível.');}
+  };
+
+  const aceitarChamada=async(offer,callerUid)=>{
+    if(!myRoom)return;
+    try{
+      const stream=await setupLocalStream();
+      const pc=criarPC(myRoom.id);
+      pcRef.current=pc;
+      stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer=await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('webrtc_call_accept',{roomId:myRoom.id,answer,uid:userData?.uid});
+      setCallState('connected');
+    }catch(e){socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});}
+  };
+
+  React.useEffect(()=>{
+    if(!socket)return;
+    const onOffer=({offer,uid:callerUid})=>{
+      if(callerUid===userData?.uid)return;
+      setCallState('incoming');
+      socket._pendingOffer={offer,callerUid};
+    };
+    const onIce=({candidate})=>{
+      if(pcRef.current&&pcRef.current.remoteDescription)
+        pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(()=>{});
+    };
+    const onEnd=()=>encerrarChamada();
+    const onSpeaking=({uid:sUid,speaking:s})=>{
+      if(sUid!==userData?.uid)setOppSpeaking(s);
+    };
+    socket.on('webrtc_call_request',onOffer);
+    socket.on('webrtc_ice',onIce);
+    socket.on('webrtc_call_end',onEnd);
+    socket.on('webrtc_speaking',onSpeaking);
+    return()=>{
+      socket.off('webrtc_call_request',onOffer);
+      socket.off('webrtc_ice',onIce);
+      socket.off('webrtc_call_end',onEnd);
+      socket.off('webrtc_speaking',onSpeaking);
+    };
+  },[socket,userData]);
 
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
@@ -3681,6 +3868,128 @@ function OnlineLobby({socket,chips,userData,onChange}){
                 ))}
                 <div ref={chatEndRef}/>
               </div>
+
+              {/* ── Barra de chamada de voz ── */}
+              <audio ref={remoteAudioRef} autoPlay playsInline style={{display:'none'}}/>
+
+              {/* ── INCOMING CALL ── */}
+              {callState==='incoming'&&(
+                <div style={{margin:'6px 8px',padding:'12px',background:'linear-gradient(135deg,rgba(46,204,113,.12),rgba(0,0,0,.2))',border:'1px solid rgba(46,204,113,.4)',borderRadius:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,boxShadow:'0 4px 20px rgba(46,204,113,.15)'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:22,animation:'mic-pulse 1s ease-in-out infinite'}}>📞</span>
+                    <div>
+                      <div style={{color:'#2ecc71',fontSize:12,fontWeight:900,letterSpacing:1}}>CHAMADA DE VOZ</div>
+                      <div style={{color:'rgba(255,255,255,.4)',fontSize:10}}>Segure o botao para falar</div>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:7}}>
+                    <button onClick={()=>{const p=socket._pendingOffer;if(p)aceitarChamada(p.offer,p.callerUid);}}
+                      style={{padding:'7px 14px',background:'rgba(46,204,113,.25)',border:'1px solid rgba(46,204,113,.7)',borderRadius:8,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:12,letterSpacing:.5}}>
+                      ✅ Atender
+                    </button>
+                    <button onClick={()=>{socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});setCallState('idle');}}
+                      style={{padding:'7px 11px',background:'rgba(231,76,60,.18)',border:'1px solid rgba(231,76,60,.5)',borderRadius:8,color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:13}}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── ACTIVE CALL PANEL ── */}
+              {callState==='connected'&&(
+                <div style={{margin:'6px 8px',borderRadius:12,overflow:'hidden',border:'1px solid rgba(46,204,113,.2)',background:'rgba(0,0,0,.35)'}}>
+                  {/* Status bar */}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 11px',background:'rgba(46,204,113,.07)',borderBottom:'1px solid rgba(46,204,113,.1)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7}}>
+                      <div style={{width:7,height:7,borderRadius:'50%',background:'#2ecc71',boxShadow:'0 0 6px #2ecc71',animation:'mic-pulse 2s ease-in-out infinite'}}/>
+                      <span style={{color:'#2ecc71',fontSize:10,fontWeight:900,letterSpacing:2}}>EM CHAMADA</span>
+                    </div>
+                    <button onClick={()=>{socket.emit('webrtc_call_end',{roomId:myRoom.id});encerrarChamada();}}
+                      style={{padding:'3px 9px',background:'rgba(231,76,60,.18)',border:'1px solid rgba(231,76,60,.4)',borderRadius:6,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:10}}>
+                      📵 Encerrar
+                    </button>
+                  </div>
+
+                  {/* Indicadores de fala */}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-around',padding:'8px 12px 4px'}}>
+                    {/* Você */}
+                    <div style={{textAlign:'center',flex:1}}>
+                      <div style={{width:36,height:36,borderRadius:'50%',margin:'0 auto 4px',
+                        background:pttActive?'rgba(52,152,219,.3)':'rgba(255,255,255,.05)',
+                        border:'2px solid '+(pttActive?'#3498db':'rgba(255,255,255,.1)'),
+                        display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,
+                        boxShadow:pttActive?'0 0 14px rgba(52,152,219,.5)':'none',
+                        transition:'all .1s'}}>
+                        {pttActive?'🎤':'🔇'}
+                      </div>
+                      <div style={{color:pttActive?'#3498db':'#444',fontSize:9,fontWeight:700,letterSpacing:1,transition:'color .1s'}}>
+                        VOCÊ
+                      </div>
+                    </div>
+
+                    {/* PTT button — center */}
+                    <div style={{flex:2,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+                      <button
+                        onMouseDown={pttPress} onMouseUp={pttRelease} onMouseLeave={pttRelease}
+                        onTouchStart={e=>{e.preventDefault();pttPress();}} onTouchEnd={e=>{e.preventDefault();pttRelease();}}
+                        style={{padding:'10px 22px',borderRadius:10,fontSize:12,fontWeight:900,cursor:'pointer',
+                          userSelect:'none',WebkitUserSelect:'none',letterSpacing:1,transition:'all .08s',
+                          background:pttActive?'linear-gradient(135deg,rgba(52,152,219,.5),rgba(41,128,185,.7))':'rgba(52,152,219,.12)',
+                          border:'2px solid '+(pttActive?'#3498db':'rgba(52,152,219,.4)'),
+                          color:pttActive?'#fff':'#3498db',
+                          boxShadow:pttActive?'0 4px 18px rgba(52,152,219,.5), inset 0 2px 4px rgba(255,255,255,.15)':'none',
+                          transform:pttActive?'scale(.96)':'scale(1)'}}>
+                        {pttActive?'🎤 FALANDO':'🎙 SEGURAR'}
+                      </button>
+                      <div style={{color:'rgba(255,255,255,.2)',fontSize:9,letterSpacing:1}}>
+                        {pttActive?'solte para parar':'segure para falar'}
+                      </div>
+                    </div>
+
+                    {/* Adversário */}
+                    <div style={{textAlign:'center',flex:1}}>
+                      <div style={{width:36,height:36,borderRadius:'50%',margin:'0 auto 4px',
+                        background:oppSpeaking?'rgba(241,196,15,.25)':'rgba(255,255,255,.05)',
+                        border:'2px solid '+(oppSpeaking?'#f1c40f':'rgba(255,255,255,.1)'),
+                        display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,
+                        boxShadow:oppSpeaking?'0 0 14px rgba(241,196,15,.4)':'none',
+                        transition:'all .15s'}}>
+                        {oppSpeaking?'🔊':'🔈'}
+                      </div>
+                      <div style={{color:oppSpeaking?'#f1c40f':'#444',fontSize:9,fontWeight:700,letterSpacing:1,transition:'color .15s'}}>
+                        ADV
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Volume slider adversário */}
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 12px 10px'}}>
+                    <span style={{fontSize:13,color:'#555'}}>🔈</span>
+                    <input type="range" min={0} max={1} step={0.05} value={oppVolume}
+                      onChange={e=>setVolume(parseFloat(e.target.value))}
+                      style={{flex:1,accentColor:'#f1c40f',cursor:'pointer',height:4}}/>
+                    <span style={{fontSize:13,color:'#555'}}>🔊</span>
+                    <span style={{color:'rgba(255,255,255,.3)',fontSize:10,minWidth:28,textAlign:'right'}}>
+                      {Math.round(oppVolume*100)}%
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* CALLING state */}
+              {callState==='calling'&&(
+                <div style={{margin:'6px 8px',padding:'9px 12px',background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:7}}>
+                    <span style={{animation:'mic-pulse 1s ease-in-out infinite',fontSize:16}}>📞</span>
+                    <span style={{color:'#f1c40f',fontSize:11,fontWeight:700,letterSpacing:1}}>CHAMANDO...</span>
+                  </div>
+                  <button onClick={()=>{socket.emit('webrtc_call_end',{roomId:myRoom.id});encerrarChamada();}}
+                    style={{padding:'4px 10px',background:'rgba(231,76,60,.12)',border:'1px solid rgba(231,76,60,.35)',borderRadius:6,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:11}}>
+                    Cancelar
+                  </button>
+                </div>
+              )}
+
               <div style={{display:"flex",gap:5,padding:"6px 8px",borderTop:"1px solid rgba(255,255,255,.04)",alignItems:"center"}}>
                 <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&enviarMsg()}
                   placeholder="Mensagem..." maxLength={120}
@@ -3698,6 +4007,14 @@ function OnlineLobby({socket,chips,userData,onChange}){
                     animation:recording?"mic-pulse 1s ease-in-out infinite":"none"}}>
                   🎙️
                 </button>
+                {callState==='idle'&&myRoom?.started&&myRoom?.players?.length>=2&&(
+                  <button onClick={iniciarChamada}
+                    title="Chamada de voz"
+                    style={{padding:"6px 9px",borderRadius:7,fontSize:14,cursor:"pointer",transition:"all .15s",
+                      background:"rgba(46,204,113,.1)",border:"1px solid rgba(46,204,113,.3)",color:"#2ecc71"}}>
+                    📞
+                  </button>
+                )}
               </div>
             </div>
 
