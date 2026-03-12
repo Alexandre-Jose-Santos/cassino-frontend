@@ -2544,6 +2544,7 @@ function DamaOnline({socket,room,userData,onGameOver}){
   const [status,setStatus]=useState('Conectando...');
   const [result,setResult]=useState(null);
   const [chain,setChain]=useState(false); // em cadeia de captura
+  const [stalemate,setStalemate]=useState(false); // trancado sem movimentos
 
   // Refs para evitar stale closure
   const boardRef=useRef(null);
@@ -2574,7 +2575,31 @@ function DamaOnline({socket,room,userData,onGameOver}){
         if(chainRef.current) return;
         syncBoard(data.board); syncSel(null); syncLegal([]); syncChain(false);
         setTurn(data.turn);
-        setStatus(data.turn===myColorRef.current?'Sua vez':'Vez do adversário');
+        // Detecta bloqueio — quem recebeu o turno não tem movimentos?
+        const myCol=myColorRef.current;
+        const isMyTurn=data.turn===myCol;
+        const myMoves=getAllMoves(data.board,data.turn);
+        if(myMoves.length===0&&isMyTurn){
+          setStalemate(true);
+          setStatus('⚠️ Sem movimentos! Passe a vez ou declare derrota.');
+        } else {
+          setStalemate(false);
+          setStatus(isMyTurn?'Sua vez':'Vez do adversário');
+        }
+      }
+      if(action==='dama_pass'){
+        if(chainRef.current) return;
+        syncBoard(data.board); syncSel(null); syncLegal([]); syncChain(false);
+        setStalemate(false);
+        setTurn(data.turn);
+        const isMyTurn=data.turn===myColorRef.current;
+        const myMoves=getAllMoves(data.board,data.turn);
+        if(myMoves.length===0&&isMyTurn){
+          setStalemate(true);
+          setStatus('⚠️ Sem movimentos novamente — derrota por bloqueio.');
+        } else {
+          setStatus(isMyTurn?'Sua vez':'Adversário passou a vez');
+        }
       }
       if(action==='dama_win'){
         setResult({win:data.winnerId===userData?.uid}); onGameOver?.();
@@ -2589,6 +2614,20 @@ function DamaOnline({socket,room,userData,onGameOver}){
     // Só muda o turn localmente DEPOIS de emitir — o dama_update do server vai confirmar
     socket.emit('game_action',{roomId:room.id,action:'dama_move',data:{board:nb,nextTurn:nt}});
     setTurn(nt); setStatus('Vez do adversário');
+    setStalemate(false);
+  };
+
+  const passarVez=()=>{
+    if(!stalemate) return;
+    const b=boardRef.current||board;
+    const nt=myColorRef.current==='w'?'b':'w';
+    socket.emit('game_action',{roomId:room.id,action:'dama_pass',data:{board:b,nextTurn:nt}});
+    setTurn(nt); setStalemate(false); setStatus('Vez do adversário');
+  };
+
+  const declararDerrota=()=>{
+    if(!stalemate) return;
+    socket.emit('game_action',{roomId:room.id,action:'dama_forfeit',data:{uid:userData?.uid}});
   };
 
   const handleCell=(r,c)=>{
@@ -2715,6 +2754,22 @@ function DamaOnline({socket,room,userData,onGameOver}){
         {myColor==='w'?'⬜ Você — brancas':myColor==='b'?'⬛ Você — pretas':'Aguardando...'}
         {turn===myColor&&myColor?<span style={{color:'#2ecc71',marginLeft:6,fontWeight:700}}>● sua vez</span>:null}
       </div>
+      {/* Stalemate buttons */}
+      {stalemate&&(
+        <div style={{marginTop:8,padding:'10px 12px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.3)',borderRadius:10,textAlign:'center'}}>
+          <div style={{color:'#e67e22',fontSize:11,fontWeight:700,marginBottom:8}}>⚠️ Sem movimentos disponíveis</div>
+          <div style={{display:'flex',gap:7,justifyContent:'center',flexWrap:'wrap'}}>
+            <button onClick={passarVez}
+              style={{padding:'7px 16px',background:'rgba(52,152,219,.2)',border:'1px solid rgba(52,152,219,.5)',borderRadius:8,color:'#3498db',fontWeight:700,cursor:'pointer',fontSize:12}}>
+              ⏭ Passar a Vez
+            </button>
+            <button onClick={declararDerrota}
+              style={{padding:'7px 16px',background:'rgba(231,76,60,.15)',border:'1px solid rgba(231,76,60,.4)',borderRadius:8,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:12}}>
+              🏳 Declarar Derrota
+            </button>
+          </div>
+        </div>
+      )}
       {chain&&<div style={{textAlign:'center',marginTop:4,color:'#f1c40f',fontSize:11,fontWeight:700}}>⚡ Continue capturando!</div>}
     </div>
   );
@@ -3242,10 +3297,15 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.on('player_offline',({uid:offUid,room})=>{
       setMyRoom(room);
     });
+    socket.on('player_online',({uid:onUid,name})=>{
+      setMsg(`🟢 ${name} voltou!`);
+      setMyRoom(r=>r?{...r,players:r.players.map(p=>p.uid===onUid?{...p,online:true}:p)}:r);
+    });
     socket.on('game_start',({room,matchId})=>{
-      // Jogo começa — fica na tela da sala, não navega para outro jogo
+      // Jogo começa — salva ID da sala para poder reconectar se cair
       setMyRoom(r=>({...r,...room,matchId,started:true}));
-      localStorage.removeItem('cassino_my_room');
+      // Mantém no localStorage para reconectar se o app fechar durante a partida
+      localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount}));
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
       const eu = userData?.uid;
@@ -3331,6 +3391,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('room_update');
       socket.off('room_joined');
       socket.off('player_offline');
+      socket.off('player_online');
       socket.off('game_start');
       socket.off('player_unready');
       socket.off('bet_proposal');
@@ -4611,12 +4672,20 @@ function Dama({chips,onChange,log}){
       }
       syncBoard(curr); setLastMove(last);
       if(!getAllMoves(curr,'w').length){ endGame(false); setAiThinking(false); return; }
+      // Verifica empate por bloqueio (brancas sem movimentos)
+      const wMoves=getAllMoves(curr,'w');
+      if(!wMoves.length){
+        // Brancas estão trancadas — empate ou derrota dependendo das regras
+        // Nas regras brasileiras: quem não pode mover perde
+        endGame(false); setAiThinking(false); return;
+      }
       setTurn('w'); setStatus('Sua vez ⬜'); setAiThinking(false);
     },400);
   };
 
   const handleCell=(r,c)=>{
     if(over||!started||aiThinking) return;
+    // Se jogador não tiver movimentos -> já devia ter encerrado (tratado no doAI)
     const b=boardRef.current||board;
     const curSel=selRef.current;
     const curLegal=legalRef.current;
@@ -4641,6 +4710,14 @@ function Dama({chips,onChange,log}){
     }
 
     if(turn!=='w') return;
+
+    // Verificação de bloqueio — jogador sem movimentos
+    const wMvs=getAllMoves(b,'w');
+    if(!wMvs.length){
+      // Nas regras brasileiras: quem está bloqueado perde
+      endGame(false);
+      return;
+    }
 
     // ── Peça selecionada — tenta mover ──
     if(curSel){
