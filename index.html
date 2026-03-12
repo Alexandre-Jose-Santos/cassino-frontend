@@ -12,6 +12,9 @@
 <link rel="apple-touch-icon" href="/icon-192.png"/>
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"/>
 <title>🎰 Cassino AR</title>
+<!-- Capacitor é injetado automaticamente após `npx cap sync` -->
+<!-- AdMob App ID — substitua com o seu após criar no AdMob console -->
+<meta name="admob-app-id" content="ca-app-pub-XXXXXXXXXX~XXXXXXXXXX"/>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -277,6 +280,80 @@ select option{background:#111;color:#fff;}
 
 
 </style>
+
+<script>
+// ── AdMob helper — funciona dentro do Capacitor, no-op no browser ──
+window.AdMobHelper = (function(){
+  const IDS = {
+    // Substitua pelos seus Ad Unit IDs do console AdMob
+    banner:        'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
+    interstitial:  'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
+    rewarded:      'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
+    // IDs de TESTE (use durante desenvolvimento)
+    // banner:       'ca-app-pub-3940256099942544/6300978111',
+    // interstitial: 'ca-app-pub-3940256099942544/1033173712',
+    // rewarded:     'ca-app-pub-3940256099942544/5224354917',
+  };
+
+  function getPlugin(){
+    try{ return window.Capacitor?.Plugins?.AdMob; } catch(e){ return null; }
+  }
+
+  async function init(){
+    const p = getPlugin(); if(!p) return;
+    try {
+      await p.initialize({
+        requestTrackingAuthorization: true,
+        testingDevices: [],
+        initializeForTesting: false,
+      });
+    } catch(e){ console.warn('AdMob init:', e); }
+  }
+
+  async function showBanner(){
+    const p = getPlugin(); if(!p) return;
+    try {
+      await p.showBanner({
+        adId: IDS.banner,
+        adSize: 'BANNER',
+        position: 'BOTTOM_CENTER',
+        margin: 56, // acima da nav bar
+        isTesting: false,
+      });
+    } catch(e){ console.warn('AdMob banner:', e); }
+  }
+
+  async function hideBanner(){
+    const p = getPlugin(); if(!p) return;
+    try { await p.hideBanner(); } catch(e){}
+  }
+
+  async function showInterstitial(){
+    const p = getPlugin(); if(!p) return false;
+    try {
+      await p.prepareInterstitial({ adId: IDS.interstitial, isTesting: false });
+      await p.showInterstitial();
+      return true;
+    } catch(e){ console.warn('AdMob interstitial:', e); return false; }
+  }
+
+  // Rewarded: retorna true se o usuário assistiu até o fim
+  function showRewarded(){
+    return new Promise(async resolve => {
+      const p = getPlugin(); if(!p){ resolve(false); return; }
+      try {
+        await p.prepareRewardVideoAd({ adId: IDS.rewarded, isTesting: false });
+        p.addListener('onRewardedVideoAdRewarded', () => resolve(true));
+        p.addListener('onRewardedVideoAdClosed',   () => resolve(false));
+        await p.showRewardVideoAd();
+      } catch(e){ console.warn('AdMob rewarded:', e); resolve(false); }
+    });
+  }
+
+  init();
+  return { showBanner, hideBanner, showInterstitial, showRewarded };
+})();
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -303,9 +380,10 @@ const SUITS=["♠","♥","♦","♣"],RANKS=["A","2","3","4","5","6","7","8","9"
 const RED=new Set(["♥","♦"]);
 const PIP={1:[[50,50]],2:[[28,25],[72,75]],3:[[28,25],[50,50],[72,75]],4:[[28,25],[72,25],[28,75],[72,75]],5:[[28,25],[72,25],[50,50],[28,75],[72,75]],6:[[28,20],[72,20],[28,50],[72,50],[28,75],[72,75]]};
 const CHIP_COLORS={1:"#e8e8e8",5:"#c0392b",10:"#2471a3",25:"#1e8449",50:"#7d3c98",100:"#ca6f1e",200:"#148f77",500:"#111"};
-// 1 ficha = R$1,00
-const CHIP_TO_BRL = v => v.toFixed(2);
-const BRL_TO_CHIPS = r => Math.round(r);
+// 1 ficha = R$0,10
+const CHIP_RATE = 0.10; // R$ por ficha
+const CHIP_TO_BRL = v => (v * CHIP_RATE).toFixed(2);
+const BRL_TO_CHIPS = r => Math.round(r / CHIP_RATE);
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
 function cVal(r){if(["J","Q","K"].includes(r))return 10;if(r==="A")return 11;return+r;}
@@ -642,32 +720,32 @@ function ShopScreen({user,userData,token,chips,onClose}){
   const [selectedPkg,setSelectedPkg]=useState(null);
   const [msg,setMsg]=useState('');
 
-  // 1 ficha = R$1,00 — valor direto
+  // 1 ficha = R$0,10
   // Campo livre de compra
   const [buyQty,setBuyQty]=useState('');
   const buyAmount=parseInt(buyQty)||0;
 
   const createPixCustom=async()=>{
-    if(buyAmount<1){setMsg('❌ Mínimo de 1 ficha (R$1,00).');return;}
-    if(buyAmount>10000){setMsg('❌ Máximo de 10.000 fichas por vez.');return;}
+    if(buyAmount<1){setMsg('❌ Mínimo de 1 ficha (R$0,10).');return;}
+    if(buyAmount>100000){setMsg('❌ Máximo de 100.000 fichas por vez (R$10.000).');return;}
     setLoading(true);setMsg('');
     try{
       const res=await fetch(`${BACKEND_URL}/api/payment/create`,{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-        body:JSON.stringify({packageId:'custom',chips:buyAmount,brl:buyAmount}),
+        body:JSON.stringify({packageId:'custom',chips:buyAmount,brl:parseFloat((buyAmount*0.10).toFixed(2))}),
       });
       const data=await res.json();
       if(!res.ok)throw new Error(data.error||'Erro ao gerar PIX');
-      setPixData(data);setSelectedPkg({chips:buyAmount,brl:buyAmount});
+      setPixData(data);setSelectedPkg({chips:buyAmount,brl:parseFloat((buyAmount*0.10).toFixed(2))});
     }catch(e){setMsg('❌ '+e.message);}
     setLoading(false);
   };
 
   const sellAmount=parseInt(sellQty)||0;
-  const sellBrl=sellAmount;
-  const sellFee=sellBrl*0.10;
-  const sellNet=sellBrl-sellFee;
+  const sellBrl=parseFloat((sellAmount*0.10).toFixed(2));
+  const sellFee=parseFloat((sellBrl*0.10).toFixed(2));
+  const sellNet=parseFloat((sellBrl-sellFee).toFixed(2));
 
   const createPix=async(pkg)=>{
     setLoading(true);setSelectedPkg(pkg);setMsg('');
@@ -685,7 +763,7 @@ function ShopScreen({user,userData,token,chips,onClose}){
   };
 
   const doSell=async()=>{
-    if(sellAmount<1){setMsg('❌ Mínimo de 1 ficha para vender.');return;}
+    if(sellAmount<10){setMsg('❌ Mínimo de 10 fichas para vender (R$1,00).');return;}
     if(sellAmount>chips){setMsg('❌ Saldo insuficiente.');return;}
     setMsg('🔒 Saques serão liberados após obtermos a licença de operação. Em breve!');
   };
@@ -701,7 +779,7 @@ function ShopScreen({user,userData,token,chips,onClose}){
           <button onClick={()=>{if(pixData)setPixData(null);else onClose();}} style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:18}}>←</button>
           <div>
             <h2 style={{color:"#f1c40f",fontFamily:"Georgia,serif",fontSize:20}}>💰 Caixa</h2>
-            <p style={{color:"#555",fontSize:11}}>1 ficha = R$1,00  •  Valor direto sem taxa de conversão</p>
+            <p style={{color:"#555",fontSize:11}}>1 ficha = R$0,10  •  10 fichas = R$1,00</p>
           </div>
         </div>
 
@@ -733,15 +811,15 @@ function ShopScreen({user,userData,token,chips,onClose}){
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div>
                       <div style={{color:"#f1c40f",fontSize:24,fontWeight:900,fontFamily:"Georgia,serif"}}>{buyAmount} fichas</div>
-                      <div style={{color:"#2ecc71",fontSize:13,fontWeight:700}}>= R${buyAmount},00</div>
-                      <div style={{color:"#555",fontSize:10}}>1 ficha = R$1,00 — valor direto</div>
+                      <div style={{color:"#2ecc71",fontSize:13,fontWeight:700}}>= R${(buyAmount*0.10).toFixed(2)}</div>
+                      <div style={{color:"#555",fontSize:10}}>1 ficha = R$0,10 — 10 fichas = R$1,00</div>
                     </div>
                     <div style={{fontSize:36}}>🎰</div>
                   </div>
                 </div>
               )}
               <Btn full onClick={createPixCustom} loading={loading} disabled={buyAmount<1} c="#2ecc71" tc="#000">
-                💳 Gerar PIX — R${buyAmount>0?buyAmount:'0'},00
+                💳 Gerar PIX — R${buyAmount>0?(buyAmount*0.10).toFixed(2):'0,00'}
               </Btn>
             </div>
             <div style={{background:"rgba(255,255,255,.02)",borderRadius:10,padding:10,textAlign:"center"}}>
@@ -757,7 +835,7 @@ function ShopScreen({user,userData,token,chips,onClose}){
         {tab==='buy'&&pixData&&(
           <div style={{animation:"fadeIn .3s ease",textAlign:"center"}}>
             <div style={{color:"#2ecc71",fontSize:15,fontWeight:700,marginBottom:4}}>✅ PIX gerado!</div>
-            <div style={{color:"#fff",fontSize:14,marginBottom:16}}>Pague R${selectedPkg?.brl},00 e receba {selectedPkg?.chips} fichas</div>
+            <div style={{color:"#fff",fontSize:14,marginBottom:16}}>Pague R${selectedPkg?.brl} e receba {selectedPkg?.chips} fichas</div>
             {pixData.qrCodeB64&&<div style={{background:"#fff",borderRadius:12,padding:16,display:"inline-block",marginBottom:14}}>
               <img src={`data:image/png;base64,${pixData.qrCodeB64}`} alt="QR PIX" style={{width:200,height:200}}/>
             </div>}
@@ -803,7 +881,7 @@ function ShopScreen({user,userData,token,chips,onClose}){
             <Btn full onClick={doSell} c="#e74c3c" tc="#fff" disabled={sellAmount<1||sellAmount>chips}>
               💸 Solicitar Venda
             </Btn>
-            <div style={{color:"#555",fontSize:10,textAlign:"center",marginTop:8}}>Mínimo: 1 ficha (R$1,00) • Pagamento via PIX em até 24h</div>
+            <div style={{color:"#555",fontSize:10,textAlign:"center",marginTop:8}}>Mínimo: 10 fichas (R$1,00) • Pagamento via PIX em até 24h</div>
           </div>
         )}
       </div>
@@ -2545,6 +2623,8 @@ function DamaOnline({socket,room,userData,onGameOver}){
   const [result,setResult]=useState(null);
   const [chain,setChain]=useState(false); // em cadeia de captura
   const [stalemate,setStalemate]=useState(false); // trancado sem movimentos
+  const [drawOffer,setDrawOffer]=useState(null);   // null | 'sent' | 'received'
+  const [pieceCounts,setPieceCounts]=useState({w:12,b:12});
 
   // Refs para evitar stale closure
   const boardRef=useRef(null);
@@ -2575,6 +2655,10 @@ function DamaOnline({socket,room,userData,onGameOver}){
         if(chainRef.current) return;
         syncBoard(data.board); syncSel(null); syncLegal([]); syncChain(false);
         setTurn(data.turn);
+        // Conta peças
+        let wc=0,bc=0;
+        data.board.forEach(row=>row.forEach(c=>{if(c?.color==='w')wc++;else if(c?.color==='b')bc++;}));
+        setPieceCounts({w:wc,b:bc});
         // Detecta bloqueio — quem recebeu o turno não tem movimentos?
         const myCol=myColorRef.current;
         const isMyTurn=data.turn===myCol;
@@ -2602,7 +2686,13 @@ function DamaOnline({socket,room,userData,onGameOver}){
         }
       }
       if(action==='dama_win'){
-        setResult({win:data.winnerId===userData?.uid}); onGameOver?.();
+        setResult({win:data.winnerId===userData?.uid,draw:data.draw||false}); onGameOver?.();
+      }
+      if(action==='dama_draw_offer'){
+        if(data.fromUid!==userData?.uid) setDrawOffer('received');
+      }
+      if(action==='dama_draw_declined'){
+        setDrawOffer(null);
       }
     };
     socket.on('game_action',h);
@@ -2629,6 +2719,28 @@ function DamaOnline({socket,room,userData,onGameOver}){
     if(!stalemate) return;
     socket.emit('game_action',{roomId:room.id,action:'dama_forfeit',data:{uid:userData?.uid}});
   };
+
+  const desistir=()=>{
+    socket.emit('game_action',{roomId:room.id,action:'dama_forfeit',data:{uid:userData?.uid}});
+  };
+
+  const oferecerEmpate=()=>{
+    socket.emit('game_action',{roomId:room.id,action:'dama_draw_offer',data:{fromUid:userData?.uid}});
+    setDrawOffer('sent');
+  };
+
+  const aceitarEmpate=()=>{
+    socket.emit('game_action',{roomId:room.id,action:'dama_draw_accept',data:{uid:userData?.uid}});
+    setDrawOffer(null);
+  };
+
+  const recusarEmpate=()=>{
+    socket.emit('game_action',{roomId:room.id,action:'dama_draw_decline',data:{uid:userData?.uid}});
+    setDrawOffer(null);
+  };
+
+  // Auto-oferta de empate quando ambos ficam com 1 peça
+  const canOfferDraw=pieceCounts.w<=2&&pieceCounts.b<=2;
 
   const handleCell=(r,c)=>{
     const mc=myColorRef.current;
@@ -2697,10 +2809,11 @@ function DamaOnline({socket,room,userData,onGameOver}){
 
   if(result)return(
     <div style={{textAlign:'center',padding:'24px 16px'}}>
-      <div style={{fontSize:48,marginBottom:8}}>{result.win?'🏆':'😔'}</div>
-      <div style={{color:result.win?'#2ecc71':'#e74c3c',fontSize:18,fontWeight:900,fontFamily:"'Cinzel',serif"}}>
-        {result.win?'VOCÊ GANHOU!':'VOCÊ PERDEU!'}
+      <div style={{fontSize:48,marginBottom:8}}>{result.draw?'🤝':result.win?'🏆':'😔'}</div>
+      <div style={{color:result.draw?'#f1c40f':result.win?'#2ecc71':'#e74c3c',fontSize:18,fontWeight:900,fontFamily:"'Cinzel',serif"}}>
+        {result.draw?'EMPATE!':result.win?'VOCÊ GANHOU!':'VOCÊ PERDEU!'}
       </div>
+      {result.draw&&<div style={{color:'rgba(255,255,255,.4)',fontSize:12,marginTop:6}}>Fichas devolvidas</div>}
     </div>
   );
 
@@ -2754,6 +2867,49 @@ function DamaOnline({socket,room,userData,onGameOver}){
         {myColor==='w'?'⬜ Você — brancas':myColor==='b'?'⬛ Você — pretas':'Aguardando...'}
         {turn===myColor&&myColor?<span style={{color:'#2ecc71',marginLeft:6,fontWeight:700}}>● sua vez</span>:null}
       </div>
+      {/* Draw offer received */}
+      {drawOffer==='received'&&(
+        <div style={{margin:'8px 0',padding:'10px 12px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.35)',borderRadius:10}}>
+          <div style={{color:'#f1c40f',fontSize:12,fontWeight:700,marginBottom:8,textAlign:'center'}}>🤝 Adversário propôs empate</div>
+          <div style={{display:'flex',gap:7,justifyContent:'center'}}>
+            <button onClick={aceitarEmpate}
+              style={{padding:'7px 16px',background:'rgba(46,204,113,.2)',border:'1px solid rgba(46,204,113,.5)',borderRadius:8,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:12}}>
+              ✅ Aceitar
+            </button>
+            <button onClick={recusarEmpate}
+              style={{padding:'7px 16px',background:'rgba(231,76,60,.15)',border:'1px solid rgba(231,76,60,.4)',borderRadius:8,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:12}}>
+              ❌ Recusar
+            </button>
+          </div>
+        </div>
+      )}
+      {drawOffer==='sent'&&(
+        <div style={{margin:'8px 0',padding:'8px',background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:8,textAlign:'center',color:'rgba(241,196,15,.6)',fontSize:11}}>
+          🤝 Proposta de empate enviada...
+        </div>
+      )}
+
+      {/* Resign + Draw offer buttons */}
+      {!result&&myColor&&(
+        <div style={{display:'flex',gap:6,justifyContent:'center',marginTop:8,flexWrap:'wrap'}}>
+          <button onClick={desistir}
+            style={{padding:'6px 14px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.3)',borderRadius:8,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:11}}>
+            🏳 Desistir
+          </button>
+          {(canOfferDraw||drawOffer===null)&&drawOffer!=='sent'&&(
+            <button onClick={oferecerEmpate}
+              title={canOfferDraw?'Poucos peças — empate disponível':'Propor empate ao adversário'}
+              style={{padding:'6px 14px',
+                background:canOfferDraw?'rgba(241,196,15,.18)':'rgba(255,255,255,.05)',
+                border:'1px solid '+(canOfferDraw?'rgba(241,196,15,.6)':'rgba(255,255,255,.12)'),
+                borderRadius:8,color:canOfferDraw?'#f1c40f':'#666',fontWeight:700,cursor:'pointer',fontSize:11,
+                animation:canOfferDraw?'mic-pulse 2s ease-in-out infinite':'none'}}>
+              🤝 {canOfferDraw?'Empate (poucas peças)':'Propor Empate'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Stalemate buttons */}
       {stalemate&&(
         <div style={{marginTop:8,padding:'10px 12px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.3)',borderRadius:10,textAlign:'center'}}>
@@ -6611,6 +6767,10 @@ function App(){
   const [gameMode,setGameMode]=useState('offline'); // offline | online
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
+  const showInterstitialAd=React.useCallback(async()=>{
+    if(window.AdMobHelper) await window.AdMobHelper.showInterstitial();
+  },[]);
+
   const log=useCallback(m=>setFeed(f=>[m,...f.slice(0,29)]),[]);
 
   useEffect(()=>{
@@ -6704,7 +6864,7 @@ function App(){
   const chips=Math.max(0,userData?.chips||0);
 
   // ── Sistema de fichas ÚNICO — online e offline usam o mesmo saldo ──
-  const FREE_CHIPS_PER_AD = 1;
+  const FREE_CHIPS_PER_AD = 10; // 10 fichas = R$1,00 por anúncio
   const [showAdModal, setShowAdModal] = useState(false);
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
@@ -6723,8 +6883,24 @@ function App(){
     });
   },[]);
 
-  const watchAd = () => {
+  const watchAd = async () => {
     setAdWatching(true);
+    // Tenta anúncio real via AdMob (Capacitor)
+    const helper = window.AdMobHelper;
+    if(helper){
+      try {
+        const rewarded = await helper.showRewarded();
+        setAdWatching(false);
+        setShowAdModal(false);
+        if(rewarded){
+          onChange(FREE_CHIPS_PER_AD);
+        } else {
+          // Usuário fechou antes do fim — não recompensa
+        }
+        return;
+      } catch(e){ console.warn('AdMob rewarded error:', e); }
+    }
+    // Fallback: simulação (browser/dev)
     setAdTimer(30);
     const interval = setInterval(()=>{
       setAdTimer(t=>{
@@ -6757,6 +6933,12 @@ function App(){
     </div>
   );
 
+  // Exibe banner AdMob ao entrar no app
+  React.useEffect(()=>{
+    if(authUser) window.AdMobHelper?.showBanner();
+    else window.AdMobHelper?.hideBanner();
+  },[authUser]);
+
   if(!authUser)return <LoginScreen/>;
 
   const GAMES={
@@ -6767,6 +6949,7 @@ function App(){
     poker:<Poker chips={displayChips} onChange={onChange} log={log}/>,
     go:<Go chips={displayChips} onChange={onChange} log={log}/>,
     lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange}/>,
+    privacidade:<PrivacyPolicy onClose={()=>setPage('home')}/>,
   };
 
   const nav=[
@@ -6783,6 +6966,14 @@ function App(){
 
   return(
     <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#050505 0%,#0a1a0a 50%,#050a14 100%)",fontFamily:"Georgia,serif",color:"#fff",display:"flex",flexDirection:"column"}}>
+
+      {/* Política de Privacidade — link fixo no rodapé */}
+      <div style={{position:'fixed',bottom:52,left:0,right:0,zIndex:50,pointerEvents:'none',display:'flex',justifyContent:'center'}}>
+        <a href="/privacidade" onClick={(e)=>{e.preventDefault();setPage('privacidade');}}
+          style={{pointerEvents:'all',color:'rgba(255,255,255,.18)',fontSize:9,letterSpacing:1,textDecoration:'none',padding:'2px 8px'}}>
+          Política de Privacidade
+        </a>
+      </div>
 
       {/* Toast */}
       {toast&&<div style={{position:"fixed",top:65,left:"50%",transform:"translateX(-50%)",zIndex:9999,background:toast.type==='success'?"rgba(46,204,113,.95)":"rgba(231,76,60,.95)",color:"#fff",padding:"10px 20px",borderRadius:10,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.5)",animation:"fadeIn .3s ease",whiteSpace:"nowrap",maxWidth:"90vw",textAlign:"center"}}>{toast.msg}</div>}
@@ -6928,16 +7119,16 @@ function App(){
           <div style={{color:"#f1c40f",fontSize:18,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif",marginBottom:4,letterSpacing:1}}>GANHE 1 FICHA</div>
           <div style={{color:"rgba(255,255,255,.4)",fontSize:11,marginBottom:14,fontFamily:"'Rajdhani',sans-serif"}}>grátis assistindo um anúncio</div>
           <div style={{background:"rgba(46,204,113,.08)",border:"1px solid rgba(46,204,113,.2)",borderRadius:12,padding:"12px",marginBottom:14}}>
-            <div style={{color:"#2ecc71",fontSize:30,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>+1 🎰</div>
+            <div style={{color:"#2ecc71",fontSize:30,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>+10 🎰</div>
             <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>CREDITADO AUTOMATICAMENTE</div>
           </div>
           <div style={{color:"rgba(255,255,255,.3)",fontSize:11,marginBottom:14,lineHeight:1.6,textAlign:"left",background:"rgba(255,255,255,.03)",borderRadius:8,padding:"10px 12px"}}>
             1️⃣ Clique no botão abaixo<br/>
             2️⃣ Assista o anúncio até o final<br/>
-            3️⃣ Receba <strong style={{color:"#2ecc71"}}>+1 ficha</strong> automaticamente!
+            3️⃣ Receba <strong style={{color:"#2ecc71"}}>+10 fichas</strong> automaticamente!
           </div>
           <button onClick={watchAd} style={{width:"100%",padding:"16px",background:"linear-gradient(135deg,#d4ac0d,#a07d08)",border:"none",borderRadius:12,color:"#000",fontSize:15,fontWeight:900,cursor:"pointer",fontFamily:"'Cinzel',Georgia,serif",marginBottom:10,boxShadow:"0 4px 20px rgba(212,172,13,.4)",letterSpacing:1}}>
-            📺 ASSISTIR E GANHAR +1 FICHA
+            📺 ASSISTIR E GANHAR +10 FICHAS
           </button>
           <button onClick={()=>setShowAdModal(false)} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,color:"#444",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
             AGORA NÃO
