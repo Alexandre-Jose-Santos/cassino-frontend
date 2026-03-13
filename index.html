@@ -1728,7 +1728,7 @@ function DadosOnline({socket,room,userData}){
         <div style={{textAlign:"center",padding:"12px",marginBottom:10,background:result==='win'?"rgba(46,204,113,.1)":result==='lose'?"rgba(231,76,60,.1)":"rgba(255,255,255,.05)",border:`1px solid ${result==='win'?"rgba(46,204,113,.3)":result==='lose'?"rgba(231,76,60,.3)":"rgba(255,255,255,.1)"}`,borderRadius:10}}>
           <div style={{fontSize:28}}>{result==='win'?'🏆':result==='lose'?'😔':'🤝'}</div>
           <div style={{color:result==='win'?"#2ecc71":result==='lose'?"#e74c3c":"#aaa",fontWeight:900,fontSize:14,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1,marginTop:4}}>
-            {result==='win'?'VOCÊ GANHOU!':result==='lose'?'VOCÊ PERDEU! fichas`:'EMPATE!'}
+            {result==='win'?'VOCÊ GANHOU!':result==='lose'?'VOCÊ PERDEU!':'EMPATE!'}
           </div>
         </div>
       )}
@@ -1954,14 +1954,14 @@ function DominoOnline({socket,room,userData,onGameOver}){
           <div style={{color:won?'#2ecc71':'#e74c3c',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1,marginBottom:4}}>
             {won?'VOCÊ GANHOU!':'VOCÊ PERDEU!'}
           </div>
-          <div style={{color:'rgba(255,255,255,.4)',fontSize:13}}>{won?'Vitória':'DerrotatAmount}`} fichas</div>
+          <div style={{color:'rgba(255,255,255,.4)',fontSize:13}}>{won?'Vitória!':'Derrota!'}</div>
         </div>
         {result.nojada&&(
           <div style={{textAlign:'center',padding:'10px',marginBottom:8,
             background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10}}>
             <div style={{color:'#f1c40f',fontWeight:900,fontSize:16}}>{result.nojada.label}</div>
             <div style={{color:'#aaa',fontSize:11,marginTop:2}}>
-              {result.nojada.mult}x {result.outcome==='win'?'— você venceu fichas!':''}
+              {result.nojada.mult}x {result.outcome==='win'?'— você venceu!':''}
             </div>
           </div>
         )}
@@ -3932,7 +3932,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             <div>
               <div style={{color:"rgba(255,255,255,.4)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:2}}>APOSTA DA PARTIDA</div>
               <div style={{color:"#f1c40f",fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{myRoom.betAmount} fichas</div>
-              <div style={{color:"rgba(255,255,255,.2)",fontSize:10,marginTop:1}}>Boa sorte!chas</div>
+              <div style={{color:"rgba(255,255,255,.2)",fontSize:10,marginTop:1}}>Boa sorte!</div>
             </div>
             {myRoom.started&&(
               <button onClick={()=>setShowBetMenu(v=>!v)}
@@ -3946,7 +3946,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,.06)",paddingTop:10}}>
               <div style={{color:"rgba(255,255,255,.3)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,marginBottom:6}}>PROPOR NOVA APOSTA</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {[].map(v=>(
+                {/* no bet selector */ [].map(v=>(
                   <button key={v} onClick={()=>proporAposta(v)}
                     style={{padding:"6px 12px",background:v===myRoom.betAmount?"rgba(241,196,15,.2)":"rgba(255,255,255,.04)",border:`1px solid ${v===myRoom.betAmount?"#f1c40f":"rgba(255,255,255,.1)"}`,borderRadius:6,color:v===myRoom.betAmount?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>
                     {v}
