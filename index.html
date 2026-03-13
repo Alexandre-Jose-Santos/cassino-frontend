@@ -5429,614 +5429,613 @@ function pkAI(hand,community,stage,aiBet,curBet){
   return toCall===0?(Math.random()<.12?'raise':'check'):Math.random()<.1?'call':'fold';
 }
 
+
+// ══════════════════════════════════════════════════════════════
+//  POKER — Texas Hold'em Heads-Up vs IA (regras corretas)
+// ══════════════════════════════════════════════════════════════
+
+// ── Avaliador de mãos ─────────────────────────────────────────
+function pkMakeDeck(){
+  var suits=['s','h','d','c'],ranks=['2','3','4','5','6','7','8','9','10','J','Q','K','A'],d=[];
+  suits.forEach(function(s){ranks.forEach(function(r){d.push({r,s,id:r+s+Math.random().toString(36).slice(2)});});});
+  return d.sort(function(){return Math.random()-.5;});
+}
+
+function pkRankIdx(r){return['2','3','4','5','6','7','8','9','10','J','Q','K','A'].indexOf(r);}
+
+function pkEval7(cards){
+  // Retorna {rank:0-8, tiebreak:[...]} — maior é melhor
+  var best=null;
+  function choose5(arr,k,start,cur,cb){
+    if(cur.length===k){cb(cur.slice());return;}
+    for(var i=start;i<=arr.length-(k-cur.length);i++){cur.push(arr[i]);choose5(arr,k,i+1,cur,cb);cur.pop();}
+  }
+  choose5(cards,5,0,[],function(hand){
+    var v=pkEval5(hand);
+    if(!best||pkCmpVal(v,best)>0)best=v;
+  });
+  return best;
+}
+
+function pkEval5(h){
+  var ri=h.map(function(c){return pkRankIdx(c.r);}).sort(function(a,b){return b-a;});
+  var si=h.map(function(c){return c.s;});
+  var flush=si.every(function(s){return s===si[0];});
+  var counts={};ri.forEach(function(r){counts[r]=(counts[r]||0)+1;});
+  var pairs=Object.entries(counts).sort(function(a,b){return b[1]-a[1]||b[0]-a[0];});
+  var grouped=pairs.map(function(p){return parseInt(p[0]);});
+  var groupSizes=pairs.map(function(p){return p[1];});
+  // Sequência
+  var straight=false,strHigh=ri[0];
+  var uniq=[...new Set(ri)];
+  if(uniq.length>=5){
+    for(var i=0;i<=uniq.length-5;i++){
+      if(uniq[i]-uniq[i+4]===4){straight=true;strHigh=uniq[i];break;}
+    }
+    // Roda A-2-3-4-5
+    if(!straight&&uniq.includes(12)&&uniq.includes(0)&&uniq.includes(1)&&uniq.includes(2)&&uniq.includes(3)){
+      straight=true;strHigh=3;
+    }
+  }
+  if(straight&&flush){
+    return strHigh===12?{rank:8,tb:[12]}:{rank:7,tb:[strHigh]};
+  }
+  if(groupSizes[0]===4)return{rank:6,tb:[grouped[0],grouped[1]]};
+  if(groupSizes[0]===3&&groupSizes[1]===2)return{rank:5,tb:[grouped[0],grouped[1]]};
+  if(flush)return{rank:4,tb:ri.slice(0,5)};
+  if(straight)return{rank:3,tb:[strHigh]};
+  if(groupSizes[0]===3)return{rank:2,tb:[grouped[0],grouped[1],grouped[2]]};
+  if(groupSizes[0]===2&&groupSizes[1]===2)return{rank:1,tb:[grouped[0],grouped[1],grouped[2]]};
+  if(groupSizes[0]===2)return{rank:0,tb:[grouped[0],grouped[1],grouped[2],grouped[3]]};
+  return{rank:-1,tb:ri.slice(0,5)};
+}
+
+function pkCmpVal(a,b){
+  if(a.rank!==b.rank)return a.rank-b.rank;
+  for(var i=0;i<Math.max(a.tb.length,b.tb.length);i++){
+    var d=(a.tb[i]||0)-(b.tb[i]||0);
+    if(d!==0)return d;
+  }
+  return 0;
+}
+
+var PK_HAND_NAMES=['Par','Dois Pares','Trinca','Sequência','Flush','Full House','Quadra','Straight Flush','Royal Flush'];
+function pkHandName(v){if(v.rank===8)return'Royal Flush';if(v.rank<0)return'Carta Alta';return PK_HAND_NAMES[v.rank];}
+
+// ── Componente principal ──────────────────────────────────────
 function Poker({chips,onChange,log,mode}){
   const COST=mode==='online'?5:1;
-  var SUITS=['spade','heart','diam','club'];
-  var SUIT_CHAR={spade:'spades',heart:'hearts',diam:'diams',club:'clubs'};
-  var SUIT_SYM={spade:'♠',heart:'♥',diam:'♦',club:'♣'};
-  var SUIT_COL={spade:'#ccc',heart:'#e74c3c',diam:'#e74c3c',club:'#ccc'};
-  var RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+  const SB_AMT=5, BB_AMT=10;
 
-  function makeDeck(){
-    var d=[];
-    SUITS.forEach(function(s){
-      RANKS.forEach(function(r){
-        d.push({rank:r,suit:s,id:r+s+Math.random().toString(36).slice(2)});
-      });
-    });
-    return d.sort(function(){return Math.random()-.5;});
-  }
+  // ── Estado da mesa ──
+  const [screen,setScreen]=useState('idle'); // idle | playing
+  const [deck,setDeck]=useState([]);
+  const [playerHole,setPlayerHole]=useState([]);
+  const [aiHole,setAiHole]=useState([]);
+  const [community,setCommunity]=useState([]);
+  const [pot,setPot]=useState(0);
+  const [playerStack,setPlayerStack]=useState(0);
+  const [aiStack,setAiStack]=useState(0);
+  const [playerBetRound,setPlayerBetRound]=useState(0); // quanto apostou nesta rua
+  const [aiBetRound,setAiBetRound]=useState(0);
+  const [currentBet,setCurrentBet]=useState(0); // maior aposta na rua atual
+  const [street,setStreet]=useState('preflop'); // preflop|flop|turn|river|showdown
+  const [actingPlayer,setActingPlayer]=useState('player'); // player|ai
+  const [dealerSeat,setDealerSeat]=useState('player'); // quem é o dealer/SB nesta mão
+  const [result,setResult]=useState(null); // {winner,reason,playerHand,aiHand}
+  const [aiThinking,setAiThinking]=useState(false);
+  const [raiseInput,setRaiseInput]=useState(BB_AMT*2);
+  const [showRaise,setShowRaise]=useState(false);
+  const [handCount,setHandCount]=useState(0);
+  const [deckRef,setDeckRef]=useState([]);
 
-  var [gs,setGs]=useState('idle');
-  var [bet,setBet]=useState(1);
-  var [deck,setDeck]=useState([]);
-  var [ph,setPh]=useState([]);
-  var [ah,setAh]=useState([]);
-  var [comm,setComm]=useState([]);
-  var [pot,setPot]=useState(0);
-  var [pc,setPc]=useState(0);
-  var [ac,setAc]=useState(0);
-  var [stage,setStage]=useState('pre');
-  var [curBet,setCurBet]=useState(0);
-  var [pBet,setPBet]=useState(0);
-  var [aBet,setABet]=useState(0);
-  var [status,setStatus]=useState('');
-  var [reveal,setReveal]=useState(false);
-  var [result,setResult]=useState(null);
-  var [thinking,setThinking]=useState(false);
-  var [raiseAmt,setRaiseAmt]=useState(20);
-  var [showRaise,setShowRaise]=useState(false);
-  var [lastAct,setLastAct]=useState(null);
-  var pcRef=useRef(0);
-  var gsRef=useRef('idle');
-
-  var BB=10;
-  var SB=5;
-
-  function updPc(v){ pcRef.current=typeof v==='function'?v(pcRef.current):v; setPc(v); }
-  function updGs(v){ gsRef.current=v; setGs(v); }
-
-  function startGame(){
-    if(chips<COST)return;
-    var sc=100; // stack interno fixo
-    updPc(sc); setAc(sc); setResult(null);
-    dealHand(sc,sc);
-    updGs('playing');
-    onChange(-COST); // débito após estado local confirmado
-  }
-
-  function dealHand(p,a){
-    var d=makeDeck();
-    var newPh=[d.pop(),d.pop()];
-    var newAh=[d.pop(),d.pop()];
-    var newDeck=d.slice();
-    setDeck(newDeck); setPh(newPh); setAh(newAh);
-    setComm([]); setReveal(false); setResult(null);
-    setStage('pre'); setLastAct(null); setShowRaise(false);
-    var newPc=p-BB; var newAc=a-SB;
-    var newPot=BB+SB;
-    updPc(newPc); setAc(newAc); setPot(newPot);
-    setPBet(BB); setABet(SB); setCurBet(BB);
-    setRaiseAmt(BB*2);
-    setStatus('Você pagou o BB. Call, Raise ou Fold?');
-  }
-
-  function doShowdown(p,a,pot2,community,playerH,aiH){
-    setReveal(true); setStage('showdown');
-    var ps=pkEval(playerH.concat(community));
-    var as=pkEval(aiH.concat(community));
-    var cmp=pkCmp(ps,as);
-    var outcome,reason,won;
-    if(cmp>0){outcome='win';reason=pkHandName(ps)+' bate '+pkHandName(as);won=pot2;}
-    else if(cmp<0){outcome='lose';reason=pkHandName(as)+' bate '+pkHandName(ps);won=0;}
-    else{outcome='tie';reason='Empate! '+pkHandName(ps);won=Math.floor(pot2/2);}
-    var np=p+(outcome==='win'?pot2:outcome==='tie'?won:0);
-    var na=a+(outcome==='lose'?pot2:outcome==='tie'?pot2-won:0);
-    updPc(np); setAc(na); setPot(0);
-    setResult({outcome,reason,chips:outcome==='win'?pot2:outcome==='lose'?0:won,ps,as,ph:playerH,ch:community});
-    updGs('over');
-  }
-
-  function advance(p,a,pot2,community,deckRef,curStage,playerH,aiH){
-    setPBet(0); setABet(0); setCurBet(0); setRaiseAmt(BB*2); setShowRaise(false);
-    if(curStage==='pre'){
-      var nd=deckRef.slice();
-      var c1=nd.pop(),c2=nd.pop(),c3=nd.pop();
-      var flop=community.concat([c1,c2,c3]);
-      setDeck(nd); setComm(flop); setStage('flop');
-      setStatus('Flop! Sua vez — Check ou Bet?');
-    } else if(curStage==='flop'){
-      var nd2=deckRef.slice(); var c=nd2.pop();
-      var turn=community.concat([c]);
-      setDeck(nd2); setComm(turn); setStage('turn');
-      setStatus('Turn! Sua vez — Check ou Bet?');
-    } else if(curStage==='turn'){
-      var nd3=deckRef.slice(); var c2=nd3.pop();
-      var river=community.concat([c2]);
-      setDeck(nd3); setComm(river); setStage('river');
-      setStatus('River! Ultima aposta — Check ou Bet?');
-    } else {
-      doShowdown(p,a,pot2,community,playerH,aiH);
-    }
-  }
-
-  function runAI(p,a,pot2,deckRef,community,curStage,curBetVal,aBetVal,playerH,aiH){
-    setThinking(true);
-    var action=pkAI(aiH,community,curStage,aBetVal,curBetVal);
-    if(action==='bluff')action='raise';
-    setTimeout(function(){
-      setLastAct({who:'ai',act:action});
-      if(action==='fold'){
-        setReveal(true); setAc(a); updPc(p+pot2); setPot(0);
-        setResult({outcome:'win',reason:'IA desistiu',chips:pot2,ps:null,as:null});
-        updGs('over');
-      } else if(action==='call'||action==='check'){
-        var toCall=Math.min(curBetVal-aBetVal,a);
-        var na=a-toCall; var np2=pot2+toCall;
-        setAc(na); setPot(np2); setABet(aBetVal+toCall);
-        setStatus(toCall===0?'IA deu check':'IA chamou');
-        setTimeout(function(){advance(p,na,np2,community,deckRef,curStage,playerH,aiH);},400);
-      } else {
-        var rSize=Math.min(Math.max(curBetVal*2,BB*3),a+aBetVal);
-        var toAdd=Math.min(rSize-aBetVal,a);
-        var na2=a-toAdd; var np3=pot2+toAdd;
-        var nb=aBetVal+toAdd;
-        setAc(na2); setPot(np3); setABet(nb); setCurBet(nb);
-        setStatus('IA aumentou para '+nb+'! Call, Raise ou Fold?');
-        setRaiseAmt(nb*2);
-      }
-      setThinking(false);
-    },800+Math.random()*600);
-  }
-
-  function pFold(){
-    if(thinking)return;
-    setReveal(true); setAc(ac+pot); setPot(0);
-    setLastAct({who:'player',act:'fold'});
-    setResult({outcome:'lose',reason:'Voce desistiu',chips:0,ps:null,as:null});
-    updGs('over');
-  }
-  function pCall(){
-    if(thinking)return;
-    var toCall=Math.min(curBet-pBet,pc);
-    if(toCall<0)return;
-    var np=pc-toCall; var pot2=pot+toCall; var npBet=pBet+toCall;
-    updPc(np); setPot(pot2); setPBet(npBet);
-    setLastAct({who:'player',act:'call'});
-    advance(np,ac,pot2,comm,deck,stage,ph,ah);
-  }
-  function pCheck(){
-    if(thinking||curBet>pBet)return;
-    setLastAct({who:'player',act:'check'});
-    setStatus('Voce deu check');
-    runAI(pc,ac,pot,deck,comm,stage,curBet,aBet,ph,ah);
-  }
-  function pRaise(amt){
-    if(thinking)return;
-    var toAdd=Math.min(amt-pBet,pc);
-    if(toAdd<=0)return;
-    var np=pc-toAdd; var pot2=pot+toAdd;
-    updPc(np); setPot(pot2); setPBet(amt); setCurBet(amt);
+  // ── Iniciar mão ──
+  function startHand(dealer,pStack,aStack){
+    var d=pkMakeDeck();
+    var pSB=dealer==='player'; // player é SB/dealer?
+    var pBlind=pSB?SB_AMT:BB_AMT;
+    var aBlind=pSB?BB_AMT:SB_AMT;
+    var newPStack=pStack-pBlind;
+    var newAStack=aStack-aBlind;
+    var newPot=pBlind+aBlind;
+    // Distribui cartas: BB recebe primeiro no heads-up
+    var ph=[d.pop(),d.pop()];
+    var ah=[d.pop(),d.pop()];
+    setDeck(d); setDeckRef(d);
+    setPlayerHole(ph); setAiHole(ah);
+    setCommunity([]);
+    setPot(newPot);
+    setPlayerStack(newPStack); setAiStack(newAStack);
+    setPlayerBetRound(pBlind); setAiBetRound(aBlind);
+    setCurrentBet(BB_AMT);
+    setStreet('preflop');
+    setResult(null);
     setShowRaise(false);
-    setLastAct({who:'player',act:pc===0?'allin':'raise'});
-    setStatus(pc===0?'ALL IN!':'Voce aumentou para '+amt);
-    runAI(np,ac,pot2,deck,comm,stage,amt,aBet,ph,ah);
-  }
-  function pAllIn(){pRaise(pc+pBet);}
-
-  function nextHand(){
-    if(pc<=0||ac<=0){
-      gsRef.current='idle'; onChange(pc); log('Poker: terminou com '+pc+' fichas');
-      updGs('idle'); return;
-    }
-    updGs('playing');
-    dealHand(pc,ac);
+    setRaiseInput(BB_AMT*2);
+    // No preflop, SB/Dealer age primeiro
+    var firstAct=pSB?'player':'ai';
+    setActingPlayer(firstAct);
+    if(firstAct==='ai') setTimeout(()=>doAiAction('preflop',newPot,newPStack,newAStack,pBlind,aBlind,d,[]),600);
   }
 
-  var canCall=curBet>pBet&&pc>0;
-  var canCheck=curBet<=pBet;
-  var toCall2=Math.max(0,Math.min(curBet-pBet,pc));
-  var stLabel={pre:'Pre-Flop',flop:'Flop',turn:'Turn',river:'River',showdown:'Showdown'};
-  var actColor={fold:'#e74c3c',call:'#3498db',check:'#2ecc71',raise:'#f1c40f',allin:'#e74c3c'};
+  function beginGame(){
+    if(chips<COST)return;
+    onChange(-COST);
+    var startStack=100;
+    setPlayerStack(startStack); setAiStack(startStack);
+    setDealerSeat('player');
+    setHandCount(1);
+    setScreen('playing');
+    startHand('player',startStack,startStack);
+  }
 
-  function PCard(props){
-    var r=props.rank; var s=props.suit; var fd=props.faceDown; var hl=props.hl;
-    var sym=SUIT_SYM[s]||s;
-    var col=SUIT_COL[s]||'#ccc';
-    if(fd){
-      return React.createElement('div',{style:{width:50,height:72,borderRadius:7,flexShrink:0,
-        background:'linear-gradient(145deg,#1a0836,#0d0418)',
-        border:'1.5px solid rgba(138,43,226,.4)',
-        boxShadow:'0 4px 12px rgba(0,0,0,.7)',
-        display:'flex',alignItems:'center',justifyContent:'center'}},
-        React.createElement('div',{style:{width:'70%',height:'70%',
-          border:'1px solid rgba(138,43,226,.25)',borderRadius:3,
-          background:'repeating-linear-gradient(45deg,rgba(138,43,226,.05) 0,rgba(138,43,226,.05) 1px,transparent 0,transparent 50%)',
-          backgroundSize:'6px 6px'}})
-      );
+  function nextHand(pStack,aStack,newDealer){
+    if(pStack<=0||aStack<=0){
+      setScreen('idle');
+      return;
     }
-    return React.createElement('div',{style:{
-      width:50,height:72,borderRadius:7,flexShrink:0,
-      background:hl?'linear-gradient(145deg,#fffbe0,#fff8c0)':'linear-gradient(145deg,#fff,#f0ebfa)',
-      border:hl?'2px solid #f1c40f':'1.5px solid rgba(0,0,0,.15)',
-      boxShadow:hl?'0 0 14px rgba(241,196,15,.6),0 4px 12px rgba(0,0,0,.5)':'0 4px 12px rgba(0,0,0,.5)',
-      display:'flex',flexDirection:'column',alignItems:'center',
-      justifyContent:'space-between',padding:'4px 5px',
-      transform:hl?'translateY(-5px)':'none',
-      transition:'transform .2s',
-    }},
-      React.createElement('div',{style:{alignSelf:'flex-start',color:col,fontWeight:900,fontSize:12,lineHeight:1,fontFamily:"'Cinzel',serif"}},r),
-      React.createElement('div',{style:{color:col,fontSize:26,lineHeight:1,
-        filter:(s==='heart'||s==='diam')?'drop-shadow(0 0 3px rgba(231,76,60,.5))':'drop-shadow(0 1px 3px rgba(0,0,0,.3))'}},sym),
-      React.createElement('div',{style:{alignSelf:'flex-end',color:col,fontWeight:900,fontSize:12,lineHeight:1,transform:'rotate(180deg)',fontFamily:"'Cinzel',serif"}},r)
+    setHandCount(function(h){return h+1;});
+    setDealerSeat(newDealer);
+    startHand(newDealer,pStack,aStack);
+  }
+
+  // ── Avança a rua (flop/turn/river/showdown) ──
+  function advanceStreet(currentStreet,currentPot,pStack,aStack,d){
+    var newComm=[];
+    var nextStreet;
+    var nd=[...d];
+    if(currentStreet==='preflop'){
+      nd.pop(); // burn
+      newComm=[nd.pop(),nd.pop(),nd.pop()];
+      nextStreet='flop';
+    } else if(currentStreet==='flop'){
+      nd.pop(); // burn
+      newComm=[nd.pop()];
+      nextStreet='turn';
+    } else if(currentStreet==='turn'){
+      nd.pop(); // burn
+      newComm=[nd.pop()];
+      nextStreet='river';
+    } else {
+      nextStreet='showdown';
+    }
+    setDeck(nd); setDeckRef(nd);
+    if(nextStreet==='showdown'){
+      doShowdown(currentPot,pStack,aStack);
+      return;
+    }
+    setCommunity(function(prev){return prev.concat(newComm);});
+    setStreet(nextStreet);
+    setPlayerBetRound(0); setAiBetRound(0); setCurrentBet(0);
+    setShowRaise(false);
+    // Pós-flop: BB age primeiro
+    // dealerSeat é o SB — então BB é o outro
+    var bbIsPlayer=dealerSeat!=='player';
+    var firstAct=bbIsPlayer?'player':'ai';
+    setActingPlayer(firstAct);
+    if(firstAct==='ai'){
+      var newComFull;
+      setCommunity(function(prev){
+        newComFull=prev.concat(newComm);
+        return newComFull;
+      });
+      setTimeout(()=>doAiAction(nextStreet,currentPot,pStack,aStack,0,0,nd,newComFull||[]),800);
+    }
+  }
+
+  // ── Showdown ──
+  function doShowdown(pot2,pStack,aStack){
+    setStreet('showdown');
+    setActingPlayer(null);
+    // Cartas comunitárias finais
+    setCommunity(function(comm){
+      setPlayerHole(function(ph){
+        setAiHole(function(ah){
+          var pVal=pkEval7(ph.concat(comm));
+          var aVal=pkEval7(ah.concat(comm));
+          var cmp=pkCmpVal(pVal,aVal);
+          var winner,reason,newPS,newAS;
+          if(cmp>0){winner='player';reason='Sua mão: '+pkHandName(pVal)+' bate '+pkHandName(aVal);newPS=pStack+pot2;newAS=aStack;}
+          else if(cmp<0){winner='ai';reason='IA: '+pkHandName(aVal)+' bate '+pkHandName(pVal);newPS=pStack;newAS=aStack+pot2;}
+          else{winner='tie';reason='Empate! '+pkHandName(pVal);newPS=pStack+Math.floor(pot2/2);newAS=aStack+Math.floor(pot2/2);}
+          setPlayerStack(newPS); setAiStack(newAS);
+          setResult({winner,reason,playerHand:pkHandName(pVal),aiHand:pkHandName(aVal),newPS,newAS});
+          if(winner==='player')log('♠ Poker — vitória: '+pkHandName(pVal));
+          else if(winner==='ai')log('♠ Poker — derrota: '+pkHandName(pVal));
+          else log('♠ Poker — empate');
+          return ah;
+        });
+        return ph;
+      });
+      return comm;
+    });
+  }
+
+  // ── Ação do jogador ──
+  function playerFold(){
+    // IA ganha o pote
+    var newAS=aiStack+pot;
+    setAiStack(newAS);
+    setResult({winner:'ai',reason:'Você desistiu.',playerHand:null,aiHand:null,newPS:playerStack,newAS});
+    setStreet('showdown'); setActingPlayer(null);
+    log('♠ Poker — fold');
+  }
+
+  function playerCall(){
+    var toCall=currentBet-playerBetRound;
+    toCall=Math.min(toCall,playerStack);
+    var newPS=playerStack-toCall;
+    var newPot=pot+toCall;
+    var newPBR=playerBetRound+toCall;
+    setPlayerStack(newPS); setPot(newPot); setPlayerBetRound(newPBR);
+    // Verifica se a rodada de apostas fechou
+    afterPlayerAction(newPot,newPS,aiStack,newPBR,aiBetRound,deck);
+  }
+
+  function playerCheck(){
+    afterPlayerAction(pot,playerStack,aiStack,playerBetRound,aiBetRound,deck);
+  }
+
+  function playerBet(amount){
+    var amt=Math.max(BB_AMT,Math.min(amount,playerStack));
+    var newPS=playerStack-amt;
+    var newPot=pot+amt;
+    var newCB=playerBetRound+amt;
+    setPlayerStack(newPS); setPot(newPot);
+    setPlayerBetRound(newCB); setCurrentBet(newCB);
+    setShowRaise(false);
+    setActingPlayer('ai');
+    setAiThinking(true);
+    setTimeout(()=>doAiAction(street,newPot,newPS,aiStack,newCB,aiBetRound,deck,null,newCB),800);
+  }
+
+  function playerRaise(amount){
+    var total=Math.min(amount,playerStack);
+    var extra=total-playerBetRound;
+    if(extra<=0)return;
+    var newPS=playerStack-extra;
+    var newPot=pot+extra;
+    setPlayerStack(newPS); setPot(newPot);
+    setPlayerBetRound(total); setCurrentBet(total);
+    setShowRaise(false);
+    setActingPlayer('ai');
+    setAiThinking(true);
+    setTimeout(()=>doAiAction(street,newPot,newPS,aiStack,total,aiBetRound,deck,null,total),800);
+  }
+
+  // Após ação do jogador: verifica se IA age ou avança a rua
+  function afterPlayerAction(newPot,newPS,newAS,newPBR,newABR,d){
+    // Se apostas iguais → avança a rua
+    if(newPBR>=currentBet&&newABR>=currentBet&&(newPBR===newABR)){
+      setActingPlayer(null);
+      setTimeout(()=>advanceStreet(street,newPot,newPS,newAS,d),600);
+    } else {
+      // IA precisa agir
+      setActingPlayer('ai');
+      setAiThinking(true);
+      setTimeout(()=>doAiAction(street,newPot,newPS,newAS,newPBR,newABR,d,null,currentBet),800);
+    }
+  }
+
+  // ── IA ──
+  function doAiAction(currentStreet,curPot,pStack,aStack,pBet,aBet,d,comm,curBet2){
+    setAiThinking(false);
+    var cb=curBet2||currentBet||BB_AMT;
+    var toCall=cb-aBet;
+    // IA simples: 70% call/check, 20% raise, 10% fold (só fold se tiver que pagar muito)
+    var r=Math.random();
+    var action;
+    if(toCall<=0){
+      // pode check ou bet
+      action=r<0.35?'bet':'check';
+    } else {
+      if(r<0.10&&toCall>SB_AMT){action='fold';}
+      else if(r<0.25){action='raise';}
+      else{action='call';}
+    }
+    var newAS=aStack, newPot=curPot, newABR=aBet, newCB=cb;
+    if(action==='fold'){
+      newAS=aStack;
+      var newPS2=pStack+curPot;
+      setPlayerStack(newPS2); setAiStack(newAS);
+      setResult({winner:'player',reason:'IA desistiu.',playerHand:null,aiHand:null,newPS:newPS2,newAS});
+      setStreet('showdown'); setActingPlayer(null);
+      log('♠ Poker — IA foldou');
+      return;
+    } else if(action==='call'){
+      var paid=Math.min(toCall,aStack);
+      newAS=aStack-paid; newPot=curPot+paid; newABR=aBet+paid;
+    } else if(action==='check'){
+      // nada
+    } else if(action==='bet'){
+      var betAmt=Math.min(BB_AMT,aStack);
+      newAS=aStack-betAmt; newPot=curPot+betAmt; newABR=aBet+betAmt; newCB=newABR;
+    } else if(action==='raise'){
+      var raiseAmt=Math.min(cb*2,aStack);
+      var raiseExtra=raiseAmt-aBet;
+      if(raiseExtra>0){
+        newAS=aStack-raiseExtra; newPot=curPot+raiseExtra; newABR=raiseAmt; newCB=raiseAmt;
+      } else {
+        action='call';
+        var paid2=Math.min(toCall,aStack);
+        newAS=aStack-paid2; newPot=curPot+paid2; newABR=aBet+paid2;
+      }
+    }
+    setAiStack(newAS); setPot(newPot); setAiBetRound(newABR); setCurrentBet(newCB);
+    // Após ação da IA
+    var pBetFinal=pBet;
+    if(newABR>pBetFinal){
+      // IA apostou mais — jogador precisa agir
+      setActingPlayer('player');
+    } else {
+      // Rua fechada
+      setActingPlayer(null);
+      setTimeout(()=>advanceStreet(currentStreet,newPot,pStack,newAS,d),600);
+    }
+  }
+
+  // ── Helpers visuais ──
+  var SUIT_SYM={s:'♠',h:'♥',d:'♦',c:'♣'};
+  var SUIT_COL={s:'#e8e8e8',h:'#e74c3c',d:'#e74c3c',c:'#e8e8e8'};
+
+  function CardView({card,hidden}){
+    if(!card)return <div style={{width:44,height:62,borderRadius:6,background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)'}}/>;
+    if(hidden)return(
+      <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🂠</div>
+    );
+    return(
+      <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,boxShadow:'0 2px 6px rgba(0,0,0,.4)'}}>
+        <div style={{fontSize:12,fontWeight:900,color:SUIT_COL[card.s],lineHeight:1}}>{card.r}</div>
+        <div style={{fontSize:16,color:SUIT_COL[card.s],lineHeight:1}}>{SUIT_SYM[card.s]}</div>
+      </div>
     );
   }
 
-  if(gs==='idle'){
-    return (
+  function Cards({cards,hidden}){
+    return(
+      <div style={{display:'flex',gap:5,justifyContent:'center',flexWrap:'wrap'}}>
+        {cards.map(function(c,i){return <CardView key={c?c.id:i} card={c} hidden={hidden}/>;}) }
+      </div>
+    );
+  }
+
+  // ── Tela idle ──
+  if(screen==='idle'){
+    return(
       <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
         <div style={{textAlign:'center',padding:'28px 20px 24px',
           background:'radial-gradient(ellipse at 50% 0%,rgba(20,80,20,.5),rgba(3,12,3,.95))',
           border:'1px solid rgba(46,204,113,.18)',borderRadius:24,
           boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
           <div style={{display:'flex',justifyContent:'center',gap:10,marginBottom:16}}>
-            <span style={{fontSize:32,color:'#ccc'}}>♠</span>
+            <span style={{fontSize:32,color:'#e8e8e8'}}>♠</span>
             <span style={{fontSize:32,color:'#e74c3c'}}>♥</span>
             <span style={{fontSize:32,color:'#e74c3c'}}>♦</span>
-            <span style={{fontSize:32,color:'#ccc'}}>♣</span>
+            <span style={{fontSize:32,color:'#e8e8e8'}}>♣</span>
           </div>
           <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>POKER</div>
-          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:24}}>TEXAS HOLDEM vs IA</div>
-          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:12,padding:'14px',marginBottom:20}}>
-            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:4}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
-            <div style={{color:'#f1c40f',fontSize:28,fontWeight:900,fontFamily:"'Cinzel',serif"}}>{COST} 🎰</div>
-            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
+          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:20}}>TEXAS HOLD'EM HEADS-UP VS IA</div>
+          <div style={{color:'rgba(255,255,255,.3)',fontSize:11,marginBottom:6,lineHeight:1.8}}>
+            Blinds: SB {SB_AMT} / BB {BB_AMT}<br/>
+            Stack inicial: 100 fichas<br/>
+            Dealer/SB alterna a cada mão
           </div>
-          <button onClick={startGame} disabled={chips<COST}
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:12,padding:'12px 14px',marginBottom:20}}>
+            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+            <div style={{color:'#f1c40f',fontSize:26,fontWeight:900,fontFamily:"'Cinzel',serif"}}>{COST} 🎰</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR SESSÃO</div>
+          </div>
+          <button onClick={beginGame} disabled={chips<COST}
             style={{padding:'13px 36px',
               background:chips>=COST?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',
               border:'1px solid rgba(46,204,113,.4)',borderRadius:14,
               color:chips>=COST?'#2ecc71':'#444',fontWeight:900,fontSize:15,
               cursor:chips>=COST?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
-            {chips>=COST?`ENTRAR NA MESA — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
+            {chips>=COST?`ENTRAR NA MESA — ${COST} 🎰`:'SALDO INSUFICIENTE'}
           </button>
         </div>
       </div>
     );
   }
 
-  var isOver=gs==='over';
+  // ── Mesa de jogo ──
+  var isShowdown=street==='showdown';
+  var myTurn=actingPlayer==='player'&&!isShowdown&&!aiThinking;
+  var toCall=Math.max(0,currentBet-playerBetRound);
+  var canCheck=toCall===0;
+  var canCall=toCall>0&&playerStack>0;
+  var canBetRaise=playerStack>0;
+  var newDealer=dealerSeat==='player'?'ai':'player';
 
-  return (
-    <div style={{padding:'6px',maxWidth:460,margin:'0 auto',userSelect:'none'}}>
-
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-        padding:'8px 12px',background:'rgba(0,0,0,.5)',borderRadius:12,
-        border:'1px solid rgba(255,255,255,.04)',marginBottom:6}}>
-        <div style={{textAlign:'center',minWidth:70}}>
-          <div style={{color:'#2ecc71',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>VOCE</div>
-          <div style={{color:'#fff',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif"}}>{pc}</div>
-        </div>
-        <div style={{textAlign:'center'}}>
-          <div style={{color:'rgba(255,255,255,.25)',fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:1}}>{stLabel[stage]||''}</div>
-          <div style={{color:'#f1c40f',fontWeight:900,fontSize:20,fontFamily:"'Cinzel',serif",textShadow:'0 0 16px rgba(241,196,15,.5)'}}>{pot>0?pot+' fichas':'—'}</div>
-        </div>
-        <div style={{textAlign:'center',minWidth:70}}>
-          <div style={{color:'#e74c3c',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>IA</div>
-          <div style={{color:'#fff',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif"}}>{ac}</div>
+  return(
+    <div style={{padding:'10px 8px',maxWidth:480,margin:'0 auto',fontFamily:"Georgia,serif"}}>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif"}}>♠ POKER</div>
+        <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>MÃO #{handCount}</div>
+        <div style={{color:'rgba(255,255,255,.5)',fontSize:10,textAlign:'right'}}>
+          <span style={{color:'#f1c40f',fontWeight:700}}>Você:</span> {playerStack} | <span style={{color:'#aaa'}}>IA:</span> {aiStack}
         </div>
       </div>
 
-      <div style={{
-        background:'radial-gradient(ellipse at 50% 40%,#17521a 0%,#0c3010 45%,#060f06 100%)',
-        border:'3px solid #6b3e1a',borderRadius:22,padding:'12px 10px',
-        boxShadow:'0 16px 48px rgba(0,0,0,.85)',
-        marginBottom:6,position:'relative',minHeight:230}}>
+      {/* Mesa */}
+      <div style={{background:'radial-gradient(ellipse at 50% 50%,#1a5a1a 0%,#0a3a0a 60%,#051a05 100%)',
+        border:'6px solid #3a2a1a',borderRadius:24,padding:'16px 12px',marginBottom:10,
+        boxShadow:'inset 0 2px 10px rgba(0,0,0,.5),0 8px 32px rgba(0,0,0,.7)'}}>
 
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-          <div style={{display:'flex',gap:5}}>
-            {ah.length>0 ? ah.map(function(c,i){
-              var hl=isOver&&result&&result.as&&reveal;
-              return React.createElement(PCard,{key:c.id,rank:c.rank,suit:c.suit,faceDown:!reveal,hl:false});
-            }) : [0,1].map(function(i){return <div key={i} style={{width:50,height:72,borderRadius:7,border:'1px dashed rgba(255,255,255,.08)',background:'rgba(0,0,0,.2)'}}/>;}) }
+        {/* IA */}
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{fontSize:14}}>🤖</div>
+              <div>
+                <div style={{color:'#aaa',fontSize:11,fontWeight:700}}>IA {dealerSeat==='ai'?'🔘 Dealer/SB':'⬤ Big Blind'}</div>
+                <div style={{color:'rgba(255,255,255,.3)',fontSize:10}}>Stack: {aiStack}</div>
+              </div>
+            </div>
+            {aiBetRound>0&&<div style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:6,padding:'2px 8px',color:'#f1c40f',fontSize:11,fontWeight:700}}>Apostou: {aiBetRound}</div>}
           </div>
-          <div style={{textAlign:'right',paddingRight:4}}>
-            <div style={{color:'#e74c3c',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>IA</div>
-            {reveal&&result&&result.as&&<div style={{color:'#aaa',fontSize:9,marginTop:2}}>{pkHandName(result.as)}</div>}
-            {lastAct&&lastAct.who==='ai' && <div style={{color:actColor[lastAct.act]||'#aaa',fontSize:10,fontWeight:900,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{lastAct.act.toUpperCase()}</div>}
-            {thinking && <div style={{color:'#f1c40f',fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>PENSANDO...</div>}
+          <Cards cards={isShowdown?aiHole:aiHole.map(function(){return null;})} hidden={!isShowdown}/>
+          {aiThinking&&<div style={{textAlign:'center',color:'#f1c40f',fontSize:11,marginTop:6,animation:'fadeIn .3s ease'}}>⏳ IA pensando...</div>}
+        </div>
+
+        {/* Cartas comunitárias + pot */}
+        <div style={{borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 0',marginBottom:12,textAlign:'center'}}>
+          <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",marginBottom:8,textTransform:'uppercase'}}>{street}</div>
+          <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:8}}>
+            {Array.from({length:5}).map(function(_,i){
+              return <CardView key={i} card={community[i]||null} hidden={false}/>;
+            })}
+          </div>
+          <div style={{display:'inline-block',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.25)',borderRadius:8,padding:'4px 14px'}}>
+            <span style={{color:'rgba(255,255,255,.4)',fontSize:9,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>POTE </span>
+            <span style={{color:'#f1c40f',fontWeight:900,fontSize:16}}>{pot}</span>
           </div>
         </div>
 
-        <div style={{display:'flex',justifyContent:'center',gap:5,padding:'6px 0',minHeight:78}}>
-          {[0,1,2,3,4].map(function(i){
-            var c=comm[i];
-            if(c) return React.createElement(PCard,{key:c.id||i,rank:c.rank,suit:c.suit,faceDown:false,hl:false});
-            return <div key={i} style={{width:50,height:72,borderRadius:7,border:'1px dashed rgba(255,255,255,.08)',background:'rgba(0,0,0,.15)'}}/>;
-          })}
-        </div>
-
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10}}>
-          <div style={{paddingLeft:4}}>
-            <div style={{color:'#2ecc71',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>VOCE</div>
-            {isOver&&result&&result.ps&&<div style={{color:'#aaa',fontSize:9,marginTop:2}}>{pkHandName(result.ps)}</div>}
-            {lastAct&&lastAct.who==='player' && <div style={{color:actColor[lastAct.act]||'#aaa',fontSize:10,fontWeight:900,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{lastAct.act==='allin'?'ALL IN':lastAct.act.toUpperCase()}</div>}
-          </div>
-          <div style={{display:'flex',gap:5}}>
-            {ph.length>0 ? ph.map(function(c){
-              return React.createElement(PCard,{key:c.id,rank:c.rank,suit:c.suit,faceDown:false,hl:false});
-            }) : [0,1].map(function(i){return <div key={i} style={{width:50,height:72,borderRadius:7,border:'1px dashed rgba(255,255,255,.08)',background:'rgba(0,0,0,.2)'}}/>;}) }
+        {/* Jogador */}
+        <div>
+          <Cards cards={playerHole} hidden={false}/>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{fontSize:14}}>👤</div>
+              <div>
+                <div style={{color:'#2ecc71',fontSize:11,fontWeight:700}}>VOCÊ {dealerSeat==='player'?'🔘 Dealer/SB':'⬤ Big Blind'}</div>
+                <div style={{color:'rgba(255,255,255,.3)',fontSize:10}}>Stack: {playerStack}</div>
+              </div>
+            </div>
+            {playerBetRound>0&&<div style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:6,padding:'2px 8px',color:'#f1c40f',fontSize:11,fontWeight:700}}>Apostado: {playerBetRound}</div>}
           </div>
         </div>
-
-        {stage==='pre'&&!isOver && (
-          <div style={{position:'absolute',top:10,right:10,display:'flex',gap:4}}>
-            <div style={{background:'rgba(231,76,60,.75)',borderRadius:20,padding:'2px 7px',fontSize:8,color:'#fff',fontWeight:900}}>SB {SB}</div>
-            <div style={{background:'rgba(52,152,219,.75)',borderRadius:20,padding:'2px 7px',fontSize:8,color:'#fff',fontWeight:900}}>BB {BB}</div>
-          </div>
-        )}
       </div>
 
-      <div style={{textAlign:'center',minHeight:16,marginBottom:6,
-        color:status.indexOf('IA')>=0?'#e74c3c':status.indexOf('Voce')>=0?'#2ecc71':'rgba(255,255,255,.4)',
-        fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-        {status}
-      </div>
-
-      {isOver&&result && (
-        <div style={{
-          background:result.outcome==='win'?'rgba(46,204,113,.1)':result.outcome==='lose'?'rgba(231,76,60,.08)':'rgba(241,196,15,.08)',
-          border:'1px solid rgba(255,255,255,.1)',
-          borderRadius:14,padding:'14px',textAlign:'center',marginBottom:8}}>
-          <div style={{fontSize:30,marginBottom:6}}>
-            {result.outcome==='win'?'🏆':result.outcome==='lose'?'😔':'🤝'}
+      {/* Resultado do showdown */}
+      {isShowdown&&result&&(
+        <div style={{background:result.winner==='player'?'rgba(46,204,113,.1)':result.winner==='tie'?'rgba(241,196,15,.08)':'rgba(231,76,60,.1)',
+          border:`1px solid ${result.winner==='player'?'rgba(46,204,113,.4)':result.winner==='tie'?'rgba(241,196,15,.3)':'rgba(231,76,60,.4)'}`,
+          borderRadius:14,padding:'14px',marginBottom:10,textAlign:'center'}}>
+          <div style={{fontSize:24,marginBottom:4}}>
+            {result.winner==='player'?'🏆':result.winner==='tie'?'🤝':'😔'}
           </div>
-          <div style={{color:result.outcome==='win'?'#2ecc71':result.outcome==='lose'?'#e74c3c':'#f1c40f',
-            fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif",marginBottom:4}}>
-            {result.outcome==='win'?'+'+result.chips+' fichas':result.outcome==='lose'?'Perdeu a rodada':'Empate'}
+          <div style={{color:result.winner==='player'?'#2ecc71':result.winner==='tie'?'#f1c40f':'#e74c3c',fontWeight:900,fontSize:15,marginBottom:4,fontFamily:"'Cinzel',serif"}}>
+            {result.winner==='player'?'VOCÊ VENCEU!':result.winner==='tie'?'EMPATE!':'IA VENCEU!'}
           </div>
-          <div style={{color:'#666',fontSize:11}}>{result.reason}</div>
-          <div style={{display:'flex',gap:8,marginTop:12,justifyContent:'center'}}>
-            {pc>0&&ac>0 && (
-              <button onClick={nextHand}
-                style={{padding:'10px 24px',background:'rgba(46,204,113,.15)',
-                  border:'1px solid rgba(46,204,113,.4)',borderRadius:11,
-                  color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:13,fontFamily:"'Cinzel',serif"}}>
-                Proxima Mao
+          <div style={{color:'rgba(255,255,255,.5)',fontSize:11,marginBottom:12}}>{result.reason}</div>
+          {result.playerHand&&(
+            <div style={{display:'flex',justifyContent:'center',gap:14,marginBottom:12}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{color:'#2ecc71',fontSize:10,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif"}}>SUA MÃO</div>
+                <div style={{color:'#fff',fontSize:12,fontWeight:700}}>{result.playerHand}</div>
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={{color:'#aaa',fontSize:10,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif"}}>MÃO DA IA</div>
+                <div style={{color:'#fff',fontSize:12,fontWeight:700}}>{result.aiHand}</div>
+              </div>
+            </div>
+          )}
+          <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+            {result.newPS>0&&result.newAS>0?(
+              <button onClick={()=>nextHand(result.newPS,result.newAS,newDealer)}
+                style={{padding:'10px 24px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                ▶ PRÓXIMA MÃO
+              </button>
+            ):(
+              <button onClick={()=>setScreen('idle')}
+                style={{padding:'10px 24px',background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.12)',borderRadius:10,color:'#aaa',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>
+                SAIR DA MESA
               </button>
             )}
-            <button onClick={function(){gsRef.current='idle';onChange(pc);log('Poker: saiu com '+pc+' fichas');updGs('idle');}}
-              style={{padding:'10px 20px',background:'rgba(255,255,255,.04)',
-                border:'1px solid rgba(255,255,255,.1)',borderRadius:11,
-                color:'#888',fontWeight:700,cursor:'pointer',fontSize:12}}>
+            <button onClick={()=>setScreen('idle')}
+              style={{padding:'10px 16px',background:'rgba(231,76,60,.08)',border:'1px solid rgba(231,76,60,.2)',borderRadius:10,color:'#e74c3c',fontWeight:700,fontSize:12,cursor:'pointer'}}>
               Sair
             </button>
           </div>
-          {(pc<=0||ac<=0) && (
-            <div style={{marginTop:8,color:ac<=0?'#f1c40f':'#e74c3c',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-              {ac<=0?'Voce venceu a sessao!':'Suas fichas acabaram'}
-            </div>
-          )}
         </div>
       )}
 
-      {!isOver&&!thinking && (
-        <div>
-          {showRaise && (
-            <div style={{background:'rgba(0,0,0,.5)',border:'1px solid rgba(241,196,15,.18)',borderRadius:14,padding:'12px',marginBottom:6}}>
-              <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:10}}>RAISE / BET</div>
-              <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
-                {[
-                  {l:'Min',v:Math.max(curBet*2||BB*2,BB*2)},
-                  {l:'Meio Pot',v:Math.floor(pot*.5)},
-                  {l:'Pot',v:pot},
-                ].map(function(item){
-                  var capped=Math.min(item.v,pc+pBet);
-                  return (
-                    <button key={item.l} onClick={()=>setRaiseAmt(capped)}
-                      style={{padding:'5px 10px',
-                        background:raiseAmt===capped?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
-                        border:'1px solid rgba(255,255,255,.1)',
-                        borderRadius:8,color:raiseAmt===capped?'#f1c40f':'#666',
-                        cursor:'pointer',fontSize:11,fontWeight:700}}>
-                      {item.l}
+      {/* Ações do jogador */}
+      {myTurn&&!isShowdown&&(
+        <div style={{background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.06)',borderRadius:14,padding:'12px'}}>
+          <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",textAlign:'center',marginBottom:10}}>
+            {canCheck?'SUA VEZ — CHECK OU BET':'SUA VEZ — CALL ('+toCall+') OU RAISE'}
+          </div>
+
+          {/* Raise input */}
+          {showRaise&&(
+            <div style={{marginBottom:10}}>
+              <div style={{color:'rgba(255,255,255,.4)',fontSize:10,marginBottom:6,textAlign:'center',fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>VALOR DO RAISE TOTAL</div>
+              <div style={{display:'flex',gap:6,alignItems:'center',justifyContent:'center',marginBottom:8}}>
+                <button onClick={()=>setRaiseInput(function(v){return Math.max(currentBet+BB_AMT,v-BB_AMT);})}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.1)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>−</button>
+                <div style={{color:'#f1c40f',fontWeight:900,fontSize:20,minWidth:60,textAlign:'center',fontFamily:"'Cinzel',serif"}}>{raiseInput}</div>
+                <button onClick={()=>setRaiseInput(function(v){return Math.min(playerStack+playerBetRound,v+BB_AMT);})}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.1)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>+</button>
+              </div>
+              <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap',marginBottom:8}}>
+                {[currentBet+BB_AMT,currentBet*2,Math.floor(pot/2),pot,playerStack+playerBetRound].filter(function(v,i,a){return v>currentBet&&v<=playerStack+playerBetRound&&a.indexOf(v)===i;}).slice(0,4).map(function(v){
+                  return(
+                    <button key={v} onClick={()=>setRaiseInput(v)}
+                      style={{padding:'4px 10px',fontSize:10,fontWeight:700,cursor:'pointer',borderRadius:6,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,
+                        background:raiseInput===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
+                        border:'1px solid '+(raiseInput===v?'rgba(241,196,15,.5)':'rgba(255,255,255,.1)'),
+                        color:raiseInput===v?'#f1c40f':'#666'}}>
+                      {v===pot?'Pote':v===playerStack+playerBetRound?'All-In':v}
                     </button>
                   );
                 })}
               </div>
-              <input type="range" min={Math.max(curBet*2||BB*2,BB*2)} max={pc+pBet} value={raiseAmt} step={BB}
-                onChange={e=>setRaiseAmt(+e.target.value)}
-                style={{width:'100%',accentColor:'#f1c40f',marginBottom:10}}/>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>pRaise(raiseAmt)}
-                  style={{flex:1,padding:'10px',background:'rgba(241,196,15,.15)',
-                    border:'1px solid rgba(241,196,15,.4)',borderRadius:10,
-                    color:'#f1c40f',fontWeight:900,cursor:'pointer',fontSize:13,fontFamily:"'Cinzel',serif"}}>
-                  {curBet>0?'RAISE':'BET'} {raiseAmt}
+              <div style={{display:'flex',gap:6}}>
+                <button onClick={()=>{canCheck?playerBet(raiseInput-playerBetRound):playerRaise(raiseInput);}}
+                  style={{flex:1,padding:'10px',background:'linear-gradient(135deg,rgba(241,196,15,.2),rgba(241,196,15,.08))',border:'1px solid rgba(241,196,15,.5)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                  {canCheck?'BET '+raiseInput:'RAISE '+raiseInput}
                 </button>
-                <button onClick={pAllIn}
-                  style={{padding:'10px 14px',background:'rgba(231,76,60,.15)',
-                    border:'1px solid rgba(231,76,60,.4)',borderRadius:10,
-                    color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-                  ALL IN
+                <button onClick={()=>setShowRaise(false)}
+                  style={{padding:'10px 14px',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:10,color:'#555',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                  ✕
                 </button>
               </div>
             </div>
           )}
-          <div style={{display:'flex',gap:5}}>
-            <button onClick={pFold}
-              style={{flex:1,padding:'13px 4px',background:'rgba(231,76,60,.08)',
-                border:'2px solid rgba(231,76,60,.3)',borderRadius:13,
-                color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-              FOLD
-            </button>
-            {canCheck ? (
-              <button onClick={pCheck}
-                style={{flex:1.6,padding:'13px 4px',background:'rgba(46,204,113,.1)',
-                  border:'2px solid rgba(46,204,113,.35)',borderRadius:13,
-                  color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-                CHECK
+
+          {!showRaise&&(
+            <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+              <button onClick={playerFold}
+                style={{padding:'10px 18px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.35)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                FOLD
               </button>
-            ) : (
-              <button onClick={pCall} disabled={!canCall}
-                style={{flex:1.6,padding:'13px 4px',background:'rgba(52,152,219,.1)',
-                  border:'2px solid rgba(52,152,219,.4)',borderRadius:13,
-                  color:canCall?'#3498db':'#444',fontWeight:900,
-                  cursor:canCall?'pointer':'not-allowed',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-                CALL {toCall2>0?'('+toCall2+')':''}
-              </button>
-            )}
-            <button onClick={()=>setShowRaise(function(v){return !v;})}
-              style={{flex:1,padding:'13px 4px',
-                background:showRaise?'rgba(241,196,15,.15)':'rgba(241,196,15,.06)',
-                border:'2px solid rgba(241,196,15,.3)',borderRadius:13,
-                color:'#f1c40f',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-              BET
-            </button>
-          </div>
+              {canCheck&&(
+                <button onClick={playerCheck}
+                  style={{padding:'10px 18px',background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.18)',borderRadius:10,color:'#fff',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                  CHECK
+                </button>
+              )}
+              {canCall&&(
+                <button onClick={playerCall}
+                  style={{padding:'10px 18px',background:'rgba(52,152,219,.15)',border:'1px solid rgba(52,152,219,.4)',borderRadius:10,color:'#3498db',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                  CALL {toCall}
+                </button>
+              )}
+              {canBetRaise&&(
+                <button onClick={()=>{setRaiseInput(canCheck?BB_AMT:Math.min(currentBet*2,playerStack+playerBetRound));setShowRaise(true);}}
+                  style={{padding:'10px 18px',background:'linear-gradient(135deg,rgba(241,196,15,.15),rgba(241,196,15,.05))',border:'1px solid rgba(241,196,15,.4)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                  {canCheck?'BET':'RAISE'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {!isOver&&thinking && (
-        <div style={{textAlign:'center',padding:'14px',color:'#e74c3c',fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3}}>
-          IA PENSANDO...
+      {/* Aguardando IA */}
+      {actingPlayer==='ai'&&!isShowdown&&(
+        <div style={{textAlign:'center',padding:'12px',background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.05)',borderRadius:12,color:'rgba(255,255,255,.3)',fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>
+          ⏳ AGUARDANDO IA...
         </div>
       )}
-
     </div>
   );
 }
 
-
-// ══════════════════════════════════════════════════════════════
-// GO — 19x19, offline vs IA + online 1v1
-// ══════════════════════════════════════════════════════════════
-
-// ── Go engine helpers ──────────────────────────────────────────
-function goNeighbors(r,c,N){
-  var nb=[];
-  if(r>0)nb.push([r-1,c]);
-  if(r<N-1)nb.push([r+1,c]);
-  if(c>0)nb.push([r,c-1]);
-  if(c<N-1)nb.push([r,c+1]);
-  return nb;
-}
-
-function goGroup(board,r,c,N){
-  var color=board[r][c];
-  if(!color)return{stones:[],liberties:[]};
-  var visited=new Set();
-  var stones=[];
-  var libs=new Set();
-  var queue=[[r,c]];
-  while(queue.length){
-    var cur=queue.pop();
-    var key=cur[0]+','+cur[1];
-    if(visited.has(key))continue;
-    visited.add(key);
-    stones.push(cur);
-    var nb=goNeighbors(cur[0],cur[1],N);
-    for(var i=0;i<nb.length;i++){
-      var nr=nb[i][0],nc=nb[i][1];
-      var nk=nr+','+nc;
-      if(!visited.has(nk)){
-        if(!board[nr][nc])libs.add(nk);
-        else if(board[nr][nc]===color)queue.push([nr,nc]);
-      }
-    }
-  }
-  return{stones:stones,liberties:Array.from(libs)};
-}
-
-function goCapture(board,r,c,N){
-  // Place stone at r,c (board already updated), capture opponent groups with 0 liberties
-  var opp=board[r][c]==='B'?'W':'B';
-  var captured=[];
-  var nb=goNeighbors(r,c,N);
-  for(var i=0;i<nb.length;i++){
-    var nr=nb[i][0],nc=nb[i][1];
-    if(board[nr][nc]===opp){
-      var g=goGroup(board,nr,nc,N);
-      if(g.liberties.length===0){
-        captured=captured.concat(g.stones);
-        for(var j=0;j<g.stones.length;j++)board[g.stones[j][0]][g.stones[j][1]]=null;
-      }
-    }
-  }
-  return captured;
-}
-
-function goLegal(board,r,c,color,prevBoard,N){
-  if(board[r][c])return false;
-  var nb=board.map(function(row){return row.slice();});
-  nb[r][c]=color;
-  var caps=goCapture(nb,r,c,N);
-  // Suicide check
-  var g=goGroup(nb,r,c,N);
-  if(g.liberties.length===0&&caps.length===0)return false;
-  // Ko check
-  if(prevBoard){
-    var same=true;
-    outer: for(var i=0;i<N;i++)for(var j=0;j<N;j++)if(nb[i][j]!==prevBoard[i][j]){same=false;break outer;}
-    if(same)return false;
-  }
-  return true;
-}
-
-function goScore(board,N,komi,method){
-  // Territory scoring (Japanese) or Area scoring (Chinese)
-  var bScore=0,wScore=komi;
-  var visited=new Array(N).fill(null).map(function(){return new Array(N).fill(false);});
-  for(var i=0;i<N;i++){
-    for(var j=0;j<N;j++){
-      if(board[i][j]==='B')bScore+=(method==='area'?1:0);
-      else if(board[i][j]==='W')wScore+=(method==='area'?1:0);
-      else if(!visited[i][j]){
-        // flood fill empty region
-        var region=[],borders=new Set();
-        var q=[[i,j]];
-        while(q.length){
-          var cur=q.pop();
-          var rk=cur[0]+','+cur[1];
-          if(visited[cur[0]][cur[1]])continue;
-          visited[cur[0]][cur[1]]=true;
-          region.push(cur);
-          var nb=goNeighbors(cur[0],cur[1],N);
-          for(var k=0;k<nb.length;k++){
-            if(board[nb[k][0]][nb[k][1]])borders.add(board[nb[k][0]][nb[k][1]]);
-            else if(!visited[nb[k][0]][nb[k][1]])q.push([nb[k][0],nb[k][1]]);
-          }
-        }
-        if(borders.size===1){
-          var owner=Array.from(borders)[0];
-          if(owner==='B')bScore+=region.length;
-          else wScore+=region.length;
-        }
-      }
-    }
-  }
-  return{black:Math.round(bScore*10)/10,white:Math.round(wScore*10)/10};
-}
-
-// Simple Go AI — Monte Carlo + heuristics
-function goAI(board,color,N,caps){
-  var opp=color==='B'?'W':'B';
-  var best=null,bestScore=-Infinity;
-  var moves=[];
-  for(var i=0;i<N;i++)for(var j=0;j<N;j++)
-    if(!board[i][j])moves.push([i,j]);
-  // Shuffle
-  for(var i=moves.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=moves[i];moves[i]=moves[j];moves[j]=t;}
-  // Score each move heuristically
-  var sampled=moves.slice(0,Math.min(60,moves.length));
-  for(var m=0;m<sampled.length;m++){
-    var r=sampled[m][0],c=sampled[m][1];
-    if(!goLegal(board,r,c,color,null,N))continue;
-    var nb2=board.map(function(row){return row.slice();});
-    nb2[r][c]=color;
-    var capd=goCapture(nb2,r,c,N);
-    var sc=0;
-    sc+=capd.length*3;
-    // Protect own groups in atari
-    var myNbs=goNeighbors(r,c,N);
-    for(var k=0;k<myNbs.length;k++){
-      if(board[myNbs[k][0]][myNbs[k][1]]===color){
-        var g=goGroup(board,myNbs[k][0],myNbs[k][1],N);
-        if(g.liberties.length<=2)sc+=4;
-      }
-      if(board[myNbs[k][0]][myNbs[k][1]]===opp){
-        var og=goGroup(nb2,myNbs[k][0],myNbs[k][1],N);
-        if(og.liberties.length===1)sc+=5;
-      }
-    }
-    // Prefer center early
-    var dr=r-Math.floor(N/2),dc=c-Math.floor(N/2);
-    sc-=Math.sqrt(dr*dr+dc*dc)*0.15;
-    sc+=Math.random()*0.5;
-    if(sc>bestScore){bestScore=sc;best=[r,c];}
-  }
-  return best;
-}
 
 function Go({chips,onChange,log,mode}){
   const COST=mode==='online'?5:1;
