@@ -2889,22 +2889,23 @@ function DamaOnline({socket,room,userData,onGameOver}){
         </div>
       )}
 
-      {/* Resign + Draw offer buttons */}
-      {!result&&myColor&&(
+      {/* Botões situacionais — só aparecem quando jogo preso ou poucas peças */}
+      {!result&&myColor&&(stalemate||canOfferDraw)&&(
         <div style={{display:'flex',gap:6,justifyContent:'center',marginTop:8,flexWrap:'wrap'}}>
+          {/* Desistir — aparece quando preso OU poucas peças */}
           <button onClick={desistir}
             style={{padding:'6px 14px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.3)',borderRadius:8,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:11}}>
             🏳 Desistir
           </button>
-          {(canOfferDraw||drawOffer===null)&&drawOffer!=='sent'&&(
+          {/* Propor Empate — só quando ambos com poucas peças */}
+          {canOfferDraw&&drawOffer!=='sent'&&(
             <button onClick={oferecerEmpate}
-              title={canOfferDraw?'Poucos peças — empate disponível':'Propor empate ao adversário'}
               style={{padding:'6px 14px',
-                background:canOfferDraw?'rgba(241,196,15,.18)':'rgba(255,255,255,.05)',
-                border:'1px solid '+(canOfferDraw?'rgba(241,196,15,.6)':'rgba(255,255,255,.12)'),
-                borderRadius:8,color:canOfferDraw?'#f1c40f':'#666',fontWeight:700,cursor:'pointer',fontSize:11,
-                animation:canOfferDraw?'mic-pulse 2s ease-in-out infinite':'none'}}>
-              🤝 {canOfferDraw?'Empate (poucas peças)':'Propor Empate'}
+                background:'rgba(241,196,15,.18)',
+                border:'1px solid rgba(241,196,15,.6)',
+                borderRadius:8,color:'#f1c40f',fontWeight:700,cursor:'pointer',fontSize:11,
+                animation:'mic-pulse 2s ease-in-out infinite'}}>
+              🤝 Empate (poucas peças)
             </button>
           )}
         </div>
