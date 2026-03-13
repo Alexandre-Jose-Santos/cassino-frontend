@@ -889,7 +889,7 @@ function ShopScreen({user,userData,token,chips,onClose}){
 function Blackjack({chips,onChange,log,mode}){
   const [deck,setDeck]=useState([]);
   const [player,setPlayer]=useState([]),[ dealer,setDealer]=useState([]);
-  const [bet,setBet]=useState(0),[phase,setPhase]=useState("bet"),[result,setResult]=useState(""),[revealed,setRevealed]=useState(false);
+  const [bet,setBet]=useState(1),[phase,setPhase]=useState("play"),[result,setResult]=useState(""),[revealed,setRevealed]=useState(false);
   const [newCardIdx,setNewCardIdx]=useState(null);
   const BET_OPTS=[10,20,50,100,200,500];
   useEffect(()=>{setDeck(mkDeck(2));},[]);
@@ -914,7 +914,7 @@ function Blackjack({chips,onChange,log,mode}){
       setResult(r);setPhase("result");
     },700);
   };
-  const reset=()=>{setPlayer([]);setDealer([]);setBet(0);setPhase("bet");setResult("");setRevealed(false);setNewCardIdx(null);if(deck.length<26)setDeck(mkDeck(2));};
+  const reset=()=>{setPlayer([]);setDealer([]);setBet(1);setPhase("play");setResult("");setRevealed(false);setNewCardIdx(null);if(deck.length<26)setDeck(mkDeck(2));};
   const Hand=({cards,hidden,label,isPlayer,newIdx})=>{
     const n=cards.length,W=64,H=90,spread=Math.min(20,180/Math.max(n,1));
     return(<div style={{position:"relative"}}>
@@ -943,7 +943,7 @@ function Blackjack({chips,onChange,log,mode}){
         <div style={{marginTop:6}}><Hand cards={player} isPlayer label={`Você ${player.length?`(${hVal(player)})`:"— faça sua aposta"}`} newIdx={newCardIdx}/></div>
       </Table>
       <div style={{marginTop:12}}>
-        {phase==="bet"&&<>
+        {false&&<>
           <div style={{color:"rgba(255,255,255,.6)",textAlign:"center",marginBottom:8,fontSize:13}}>Aposta: <span style={{color:"#f1c40f",fontWeight:700,fontSize:16}}>{bet} fichas</span></div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:10}}>
             {BET_OPTS.map(v=><button key={v} onClick={()=>addBet(v)} disabled={chips<v} style={{padding:"6px 12px",background:chips>=v?"rgba(241,196,15,.1)":"rgba(255,255,255,.02)",border:`1px solid ${chips>=v?"rgba(241,196,15,.4)":"rgba(255,255,255,.05)"}`,borderRadius:7,color:chips>=v?"#f1c40f":"#444",fontWeight:700,cursor:chips>=v?"pointer":"not-allowed",fontSize:12}}>{v}</button>)}
@@ -993,8 +993,8 @@ function DiceSVG({value,rolling}){
 }
 
 function Dados({chips,onChange,log}){
-  const [bet,setBet]=useState(0);
-  const [phase,setPhase]=useState('bet'); // bet | choose | rolling | result
+  const [bet,setBet]=useState(1);
+  const [phase,setPhase]=useState('choose'); // bet | choose | rolling | result
   const [myChoice,setMyChoice]=useState(null); // 'high'|'low'|'exact'
   const [exactNum,setExactNum]=useState(null);
   const [dice,setDice]=useState([1,1]);
@@ -1038,7 +1038,7 @@ function Dados({chips,onChange,log}){
     },80);
   };
 
-  const reset=()=>{setBet(0);setPhase('bet');setMyChoice(null);setExactNum(null);setResult('');setTotal(null);setDice([1,1]);};
+  const reset=()=>{setBet(1);setPhase('choose');setMyChoice(null);setExactNum(null);setResult('');setTotal(null);setDice([1,1]);};
 
   return(
     <div style={{padding:"12px 10px",maxWidth:500,margin:"0 auto"}}>
@@ -1053,7 +1053,7 @@ function Dados({chips,onChange,log}){
 
       {result&&<div style={{textAlign:"center",padding:"10px 16px",background:"rgba(0,0,0,.55)",borderRadius:10,color:"#f1c40f",fontWeight:700,fontSize:14,marginBottom:12}}>{result}</div>}
 
-      {phase==='bet'&&<>
+      {false&&<>
         <div style={{textAlign:"center",marginBottom:12}}>
           <div style={{color:"rgba(255,255,255,.3)",fontSize:9,letterSpacing:4,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:4}}>SUA APOSTA</div>
           <div style={{color:"#f1c40f",fontWeight:900,fontSize:28,fontFamily:"'Cinzel',Georgia,serif"}}>{bet} <span style={{fontSize:14,opacity:.5}}>fichas</span></div>
@@ -1063,7 +1063,7 @@ function Dados({chips,onChange,log}){
         </div>
         <div style={{display:"flex",gap:8,justifyContent:"center"}}>
           <Btn c="#555" tc="#fff" sm onClick={clearBet} disabled={!bet}>Limpar</Btn>
-          <Btn onClick={()=>setPhase('choose')} disabled={!bet}>Escolher Aposta</Btn>
+          <Btn onClick={()=>setPhase('choose')}>Escolher Aposta</Btn>
         </div>
       </>}
 
@@ -1199,7 +1199,7 @@ function Pife({chips,onChange,log}){
   const grpSet=new Set(groups.flatMap(g=>g.idxs));
 
   const [pifeDecks,setPifeDecks]=React.useState(1);
-  const [pifeBet,setPifeBet]=React.useState(10);
+  const [pifeBet,setPifeBet]=React.useState(1);
   const BET_OPTS_PIFE=[10,25,50,100];
 
   if(phase==="idle")return(
@@ -1229,7 +1229,7 @@ function Pife({chips,onChange,log}){
       </div>
 
       {/* Aposta */}
-      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:16}}>
+      <div style={{display:'none',background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:16}}>
         <div style={{color:"rgba(255,255,255,.4)",fontSize:9,fontWeight:700,marginBottom:12,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif"}}>VALOR DA APOSTA</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
           {BET_OPTS_PIFE.map(v=>(
@@ -1246,14 +1246,14 @@ function Pife({chips,onChange,log}){
             </button>
           ))}
         </div>
-        <button onClick={()=>start(pifeBet,pifeDecks)} disabled={chips<pifeBet}
+        <button onClick={()=>start(1,pifeDecks)}
           style={{width:"100%",padding:"14px",
             background:chips>=pifeBet?"linear-gradient(135deg,#1a4a1a,#0d2e0d)":"rgba(255,255,255,.02)",
             border:`1px solid ${chips>=pifeBet?"rgba(46,204,113,.4)":"rgba(255,255,255,.05)"}`,
             borderRadius:12,color:chips>=pifeBet?"#2ecc71":"#333",
             fontWeight:900,fontSize:14,cursor:chips>=pifeBet?"pointer":"not-allowed",
             fontFamily:"'Cinzel',Georgia,serif",letterSpacing:2,transition:"all .2s"}}>
-          {chips>=pifeBet?`▶ JOGAR — ${pifeBet} FICHAS`:"SALDO INSUFICIENTE"}
+          ▶ JOGAR
         </button>
       </div>
     </div>
@@ -4929,8 +4929,8 @@ function Dama({chips,onChange,log}){
           <div style={{fontSize:48,marginBottom:8}}>♟</div>
           <div style={{color:'#aaa',fontSize:13,marginBottom:20}}>Jogue contra a IA</div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
-            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
-            <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
+            <span style={{display:'none'}}>Aposta:</span>
+            <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))} style={{display:'none'}} 
               style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
             <span style={{color:'#555',fontSize:11}}>fichas</span>
           </div>
@@ -5191,8 +5191,8 @@ function Xadrez({chips,onChange,log}){
             <span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span>
           </div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
-            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
-            <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
+            <span style={{display:'none'}}>Aposta:</span>
+            <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))} style={{display:'none'}} 
               style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
             <span style={{color:'#555',fontSize:11}}>fichas</span>
           </div>
@@ -5628,7 +5628,7 @@ function Poker({chips,onChange,log}){
           </div>
           <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>POKER</div>
           <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:24}}>TEXAS HOLDEM vs IA</div>
-          <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'16px',marginBottom:20,border:'1px solid rgba(255,255,255,.04)'}}>
+          <div style={{display:'none',background:'rgba(0,0,0,.35)',borderRadius:14,padding:'16px',marginBottom:20,border:'1px solid rgba(255,255,255,.04)'}}>
             <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:10}}>APOSTA (BIG BLIND)</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}}>
               {[10,25,50,100,200].map(v=>(
@@ -5644,15 +5644,15 @@ function Poker({chips,onChange,log}){
             </div>
             <div style={{color:'#444',fontSize:10,marginTop:8}}>Stack inicial: {bet*4} fichas</div>
           </div>
-          <button onClick={startGame} disabled={chips<bet*2}
+          <button onClick={startGame}
             style={{padding:'13px 36px',
-              background:chips>=bet*2?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',
+              background:'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))',//rgba(255,255,255,.04)',
               border:'1px solid rgba(46,204,113,.4)',borderRadius:14,
-              color:chips>=bet*2?'#2ecc71':'#444',fontWeight:900,fontSize:15,
-              cursor:chips>=bet*2?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+              color:'#2ecc71',fontWeight:900,fontSize:15,
+              cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
             ENTRAR NA MESA
           </button>
-          {chips<bet*2 && <div style={{color:'#c0392b',fontSize:10,marginTop:8}}>Precisa de {bet*2} fichas minimo</div>}
+          {false && <div style={{color:'#c0392b',fontSize:10,marginTop:8}}>Precisa de fichas minimo</div>}
         </div>
       </div>
     );
