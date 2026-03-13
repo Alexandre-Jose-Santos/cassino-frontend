@@ -3526,10 +3526,17 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setTimeout(()=>chatEndRef.current?.scrollIntoView({behavior:'smooth'}),50);
     });
     socket.on('error',({message})=>{
-      setMsg('❌ '+message);
-      if(message.includes('não encontrada')||message.includes('cheia')||message.includes('iniciado')){
+      // Sala antiga/expirada — limpa silenciosamente sem mostrar erro
+      if(message.includes('não encontrada')||message.includes('iniciado')){
         setMyRoom(null);
         localStorage.removeItem('cassino_my_room');
+        setMsg('');
+      } else {
+        setMsg('❌ '+message);
+        if(message.includes('cheia')){
+          setMyRoom(null);
+          localStorage.removeItem('cassino_my_room');
+        }
       }
     });
     // Reconecta automaticamente se tinha sala salva
@@ -3538,6 +3545,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       try{
         const{roomId}=JSON.parse(savedRoom);
         setMsg('🔄 Reconectando à sala...');
+        // Tenta reconectar — se der erro "iniciado" ou "não encontrada" limpa silenciosamente
         socket.emit('join_room',{roomId});
       }catch{localStorage.removeItem('cassino_my_room');}
     }
