@@ -6051,7 +6051,6 @@ function Go({chips,onChange,log}){
 
   function startGame(){
     if(chips<bet)return;
-    onChange(-bet);
     setBoard(emptyBoard());
     setPrevBoard(null);
     setTurn('B');
@@ -6181,7 +6180,7 @@ function Go({chips,onChange,log}){
     var sc=goScore(b,N,komi,countMethod);
     var won=sc.black>sc.white;
     var diff=Math.abs(sc.black-sc.white);
-    if(won)onChange(bet*2);
+    if(won)onChange(bet); else onChange(-bet);
     setResult({black:sc.black,white:sc.white,won:won,diff:diff,caps:extraCaps});
     setBoard(b);
     setPhase('over');
@@ -6189,6 +6188,7 @@ function Go({chips,onChange,log}){
   }
 
   function resign(){
+    onChange(-bet);
     setPhase('over');
     setResult({black:0,white:0,won:false,resigned:true});
     log('Go: Resignou');
