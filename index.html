@@ -5476,6 +5476,28 @@ function pkCmpV(a,b){
 var PKN=['Par','Dois Pares','Trinca','Sequência','Flush','Full House','Quadra','Straight Flush','Royal Flush'];
 function pkHN(v){if(!v)return'?';if(v.rank===8)return'Royal Flush';if(v.rank<0)return'Carta Alta';return PKN[v.rank];}
 
+// Constantes e componente de carta — FORA do Poker para evitar recriação a cada render
+var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣'};
+var PK_SC={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd'};
+function CardV({card,hidden}){
+  if(hidden)return(
+    <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',
+      border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🂠</div>
+  );
+  if(!card)return(
+    <div style={{width:42,height:60,borderRadius:6,background:'rgba(255,255,255,.03)',
+      border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>
+  );
+  return(
+    <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',
+      border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',
+      justifyContent:'center',gap:1,boxShadow:'0 2px 6px rgba(0,0,0,.5)',flexShrink:0}}>
+      <div style={{fontSize:11,fontWeight:900,color:PK_SC[card.s],lineHeight:1}}>{card.r}</div>
+      <div style={{fontSize:15,color:PK_SC[card.s],lineHeight:1}}>{PK_SS[card.s]}</div>
+    </div>
+  );
+}
+
 function Poker({chips,onChange,log,mode}){
   var COST=mode==='online'?5:1;
   var SB=5,BB=10,START=100;
@@ -5633,29 +5655,7 @@ function Poker({chips,onChange,log,mode}){
     if(!needsPlayerAction)setTimeout(advStreet,400);
   }
 
-  // ── Visuais ──
-  var SS={s:'♠',h:'♥',d:'♦',c:'♣'};
-  var SC={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd'};
-
-  function CardV({card,hidden}){
-    if(hidden)return(
-      <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',
-        border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🂠</div>
-    );
-    if(!card)return(
-      <div style={{width:42,height:60,borderRadius:6,background:'rgba(255,255,255,.03)',
-        border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>
-    );
-    return(
-      <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',
-        border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',
-        justifyContent:'center',gap:1,boxShadow:'0 2px 6px rgba(0,0,0,.5)',flexShrink:0}}>
-        <div style={{fontSize:11,fontWeight:900,color:SC[card.s],lineHeight:1}}>{card.r}</div>
-        <div style={{fontSize:15,color:SC[card.s],lineHeight:1}}>{SS[card.s]}</div>
-      </div>
-    );
-  }
-
+  // ── Visuais (referências estáveis — definidas no render) ──
   var g=G.current;
   var isSD=g.street==='showdown';
   var myTurn=g.acting==='player'&&!isSD;
