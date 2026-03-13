@@ -3594,6 +3594,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const oppVadRef=React.useRef(null);
   const vadTimerRef=React.useRef(null);
   const pttTrackRef=React.useRef(null); // AudioTrack do mic local
+  const pttGainRef=React.useRef(null);  // GainNode para PTT (mais confiável no Android)
   const [gameOver,setGameOver]=useState(false);
   const [rematchCountdown,setRematchCountdown]=useState(null);
   const [rematchMsg,setRematchMsg]=useState('');
@@ -3639,6 +3640,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     if(pcRef.current){pcRef.current.close();pcRef.current=null;}
     if(localStreamRef.current){localStreamRef.current.getTracks().forEach(t=>t.stop());localStreamRef.current=null;}
     pttTrackRef.current=null;
+    pttGainRef.current=null;
     remoteGainRef.current=null;
     oppAnalyserRef.current=null;
     setCallState('idle');
@@ -3650,15 +3652,23 @@ function OnlineLobby({socket,chips,userData,onChange}){
   // Push-to-talk: pressionar = habilita mic; soltar = desabilita
   const pttPress=()=>{
     if(callState!=='connected')return;
-    const track=pttTrackRef.current;
-    if(track){track.enabled=true;}
+    if(pttGainRef.current){
+      pttGainRef.current.gain.value=1; // GainNode (confiável no Android)
+    } else {
+      const track=pttTrackRef.current;
+      if(track)track.enabled=true; // fallback
+    }
     setPttActive(true);
     setSpeaking(true);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:true});
   };
   const pttRelease=()=>{
-    const track=pttTrackRef.current;
-    if(track){track.enabled=false;}
+    if(pttGainRef.current){
+      pttGainRef.current.gain.value=0;
+    } else {
+      const track=pttTrackRef.current;
+      if(track)track.enabled=false;
+    }
     setPttActive(false);
     setSpeaking(false);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
@@ -3693,13 +3703,29 @@ function OnlineLobby({socket,chips,userData,onChange}){
   };
 
   const setupLocalStream=async()=>{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
-    // PTT começa com mic MUDO — só ativa ao pressionar
-    const track=stream.getAudioTracks()[0];
-    if(track)track.enabled=false;
-    pttTrackRef.current=track;
-    localStreamRef.current=stream;
-    return stream;
+    const rawStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
+    // Usa GainNode para PTT — mais confiável no Android que track.enabled
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const src=ctx.createMediaStreamSource(rawStream);
+      const gain=ctx.createGain();
+      gain.gain.value=0; // começa mudo
+      const dest=ctx.createMediaStreamDestination();
+      src.connect(gain);
+      gain.connect(dest);
+      pttGainRef.current=gain;
+      pttTrackRef.current=dest.stream.getAudioTracks()[0];
+      localStreamRef.current=dest.stream;
+      return dest.stream;
+    }catch(e){
+      // Fallback: track.enabled (browsers sem AudioContext)
+      const track=rawStream.getAudioTracks()[0];
+      if(track)track.enabled=false;
+      pttTrackRef.current=track;
+      pttGainRef.current=null;
+      localStreamRef.current=rawStream;
+      return rawStream;
+    }
   };
 
   const iniciarChamada=async()=>{
