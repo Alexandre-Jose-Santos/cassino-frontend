@@ -5432,6 +5432,8 @@ function Poker({chips,onChange,log,mode}){
   var [raiseAmt,setRaiseAmt]=useState(20);
   var [showRaise,setShowRaise]=useState(false);
   var [lastAct,setLastAct]=useState(null);
+  var pcRef=useRef(0);
+  var gsRef=useRef('idle');
 
   var BB=10;
   var SB=5;
