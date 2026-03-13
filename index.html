@@ -889,7 +889,7 @@ function ShopScreen({user,userData,token,chips,onClose}){
 function Blackjack({chips,onChange,log,mode}){
   const [deck,setDeck]=useState([]);
   const [player,setPlayer]=useState([]),[ dealer,setDealer]=useState([]);
-  const [bet,setBet]=useState(0),[phase,setPhase]=useState("play"),[result,setResult]=useState(""),[revealed,setRevealed]=useState(false);
+  const [bet,setBet]=useState(0),[phase,setPhase]=useState("bet"),[result,setResult]=useState(""),[revealed,setRevealed]=useState(false);
   const [newCardIdx,setNewCardIdx]=useState(null);
   const BET_OPTS=[10,20,50,100,200,500];
   useEffect(()=>{setDeck(mkDeck(2));},[]);
@@ -943,6 +943,16 @@ function Blackjack({chips,onChange,log,mode}){
         <div style={{marginTop:6}}><Hand cards={player} isPlayer label={`Você ${player.length?`(${hVal(player)})`:"— faça sua aposta"}`} newIdx={newCardIdx}/></div>
       </Table>
       <div style={{marginTop:12}}>
+        {phase==="bet"&&<>
+          <div style={{color:"rgba(255,255,255,.6)",textAlign:"center",marginBottom:8,fontSize:13}}>Aposta: <span style={{color:"#f1c40f",fontWeight:700,fontSize:16}}>{bet} fichas</span></div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:10}}>
+            {BET_OPTS.map(v=><button key={v} onClick={()=>addBet(v)} disabled={chips<v} style={{padding:"6px 12px",background:chips>=v?"rgba(241,196,15,.1)":"rgba(255,255,255,.02)",border:`1px solid ${chips>=v?"rgba(241,196,15,.4)":"rgba(255,255,255,.05)"}`,borderRadius:7,color:chips>=v?"#f1c40f":"#444",fontWeight:700,cursor:chips>=v?"pointer":"not-allowed",fontSize:12}}>{v}</button>)}
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+            <Btn c="#555" tc="#fff" sm onClick={clearBet} disabled={!bet}>Limpar</Btn>
+            <Btn onClick={deal} disabled={!bet}>🃏 Distribuir</Btn>
+          </div>
+        </>}
         {phase==="play"&&<div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
           <Btn c="#e74c3c" tc="#fff" onClick={hit}>Pedir Carta</Btn>
           <Btn c="#2ecc71" tc="#fff" onClick={stand}>Parar</Btn>
@@ -993,7 +1003,7 @@ function Dados({chips,onChange,log}){
   const [total,setTotal]=useState(null);
   const BET_OPTS=[5,10,25,50,100,200];
 
-  const addBet=v=>{if(chips<v)return;setBet(b=>b+v);};
+  const addBet=v=>{setBet(b=>b+v);};
   const clearBet=()=>{setBet(0);};
 
   const rolarDados=()=>{
@@ -1022,14 +1032,13 @@ function Dados({chips,onChange,log}){
           if(sum===7){r=`🎰 SETE! — Pagou 4x!`;win=bet*4;}
           else{r=`😔 Foi ${sum}. Perdeu.`;}
         }
-        // sem aposta
         log('🎲 Dados jogado');
         setResult(r);setPhase('result');
       }
     },80);
   };
 
-  const reset=()=>{setBet(0);setPhase('choose');setMyChoice(null);setExactNum(null);setResult('');setTotal(null);setDice([1,1]);};
+  const reset=()=>{setBet(0);setPhase('bet');setMyChoice(null);setExactNum(null);setResult('');setTotal(null);setDice([1,1]);};
 
   return(
     <div style={{padding:"12px 10px",maxWidth:500,margin:"0 auto"}}>
@@ -1044,6 +1053,19 @@ function Dados({chips,onChange,log}){
 
       {result&&<div style={{textAlign:"center",padding:"10px 16px",background:"rgba(0,0,0,.55)",borderRadius:10,color:"#f1c40f",fontWeight:700,fontSize:14,marginBottom:12}}>{result}</div>}
 
+      {phase==='bet'&&<>
+        <div style={{textAlign:"center",marginBottom:12}}>
+          <div style={{color:"rgba(255,255,255,.3)",fontSize:9,letterSpacing:4,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:4}}>SUA APOSTA</div>
+          <div style={{color:"#f1c40f",fontWeight:900,fontSize:28,fontFamily:"'Cinzel',Georgia,serif"}}>{bet} <span style={{fontSize:14,opacity:.5}}>fichas</span></div>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:10}}>
+          {BET_OPTS.map(v=><button key={v} onClick={()=>addBet(v)} disabled={chips<v} style={{padding:"6px 12px",background:chips>=v?"rgba(241,196,15,.1)":"rgba(255,255,255,.02)",border:`1px solid ${chips>=v?"rgba(241,196,15,.4)":"rgba(255,255,255,.05)"}`,borderRadius:7,color:chips>=v?"#f1c40f":"#444",fontWeight:700,cursor:chips>=v?"pointer":"not-allowed",fontSize:12}}>{v}</button>)}
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+          <Btn c="#555" tc="#fff" sm onClick={clearBet} disabled={!bet}>Limpar</Btn>
+          <Btn onClick={()=>setPhase('choose')} disabled={!bet}>Escolher Aposta</Btn>
+        </div>
+      </>}
 
       {phase==='choose'&&<>
         <div style={{textAlign:"center",marginBottom:14}}>
@@ -1178,6 +1200,7 @@ function Pife({chips,onChange,log}){
 
   const [pifeDecks,setPifeDecks]=React.useState(1);
   const [pifeBet,setPifeBet]=React.useState(10);
+  const BET_OPTS_PIFE=[10,25,50,100];
 
   if(phase==="idle")return(
     <div style={{padding:"16px 12px",maxWidth:500,margin:"0 auto"}}>
@@ -1205,6 +1228,47 @@ function Pife({chips,onChange,log}){
         </div>
       </div>
 
+      {/* Aposta */}
+      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:16}}>
+        <div style={{color:"rgba(255,255,255,.4)",fontSize:9,fontWeight:700,marginBottom:12,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif"}}>VALOR DA APOSTA</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {BET_OPTS_PIFE.map(v=>(
+            <button key={v} onClick={()=>setPifeBet(v)} disabled={chips<v}
+              style={{padding:"12px",
+                background:pifeBet===v?"linear-gradient(135deg,rgba(241,196,15,.15),rgba(241,196,15,.05))":"rgba(255,255,255,.02)",
+                border:`2px solid ${pifeBet===v?"#f1c40f":chips<v?"rgba(255,255,255,.03)":"rgba(255,255,255,.08)"}`,
+                borderRadius:12,color:pifeBet===v?"#f1c40f":chips<v?"#2a2a2a":"#666",
+                cursor:chips<v?"not-allowed":"pointer",fontWeight:700,fontSize:16,
+                fontFamily:"'Rajdhani',sans-serif",transition:"all .2s",
+                boxShadow:pifeBet===v?"0 4px 16px rgba(241,196,15,.15)":"none"}}>
+              {v}
+              <div style={{fontSize:9,letterSpacing:1,marginTop:2,opacity:.6}}>FICHAS</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={()=>start(pifeBet,pifeDecks)} disabled={chips<pifeBet}
+          style={{width:"100%",padding:"14px",
+            background:chips>=pifeBet?"linear-gradient(135deg,#1a4a1a,#0d2e0d)":"rgba(255,255,255,.02)",
+            border:`1px solid ${chips>=pifeBet?"rgba(46,204,113,.4)":"rgba(255,255,255,.05)"}`,
+            borderRadius:12,color:chips>=pifeBet?"#2ecc71":"#333",
+            fontWeight:900,fontSize:14,cursor:chips>=pifeBet?"pointer":"not-allowed",
+            fontFamily:"'Cinzel',Georgia,serif",letterSpacing:2,transition:"all .2s"}}>
+          {chips>=pifeBet?`▶ JOGAR — ${pifeBet} FICHAS`:"SALDO INSUFICIENTE"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{padding:"12px 10px",maxWidth:560,margin:"0 auto"}}>
+      <h2 style={{color:"#f1c40f",fontFamily:"Georgia,serif",textAlign:"center",fontSize:22,margin:"0 0 10px"}}>🃏 Pife ({config?.decks} baralho{config?.decks>1?"s":""})</h2>
+      <div style={{color:"#f1c40f",textAlign:"center",marginBottom:8,fontSize:12,minHeight:18}}>{msg}</div>
+      <Table label="PIFE">
+        {/* Nome e cartas da IA */}
+        <div style={{textAlign:"center",marginBottom:6}}>
+          <span style={{color:"rgba(255,255,255,.3)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:2}}>{aiName}</span>
+          <span style={{color:"rgba(255,255,255,.15)",fontSize:9,marginLeft:6}}>({ai.length} cartas)</span>
+        </div>
         <div style={{display:"flex",justifyContent:"center",flexWrap:"wrap",gap:2,marginBottom:8}}>
           {ai.map((_,i)=><div key={i} style={{width:16,height:22,background:"linear-gradient(135deg,#1a3a6b,#2255a0)",borderRadius:3,border:"1px solid #0d2045"}}/>)}
         </div>
@@ -1393,10 +1457,9 @@ function Dominoes({chips,onChange,log}){
       const nojada=detectNojada(t,nc,rules);
       const mult=nojada?nojada.mult:1;
       const prize=bet*numPlayers*mult;
-      onChange(prize);
       setLastWin(nojada);
       setPhase("over");
-      const winMsg=nojada?`🎉 ${nojada.label}!`:"🎉 Você venceu!";
+      const winMsg=nojada?`🎉 ${nojada.label} +${prize} fichas!`:"🎉 Você venceu!";
       setMsg(winMsg);
       log(`🁣 Dominó +${prize}`);
       return;
@@ -3865,6 +3928,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
               <div style={{color:"rgba(255,255,255,.4)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:2}}>APOSTA DA PARTIDA</div>
+              <div style={{color:"#f1c40f",fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{myRoom.betAmount} fichas</div>
               <div style={{color:"rgba(255,255,255,.2)",fontSize:10,marginTop:1}}>Boa sorte!</div>
             </div>
             {myRoom.started&&(
@@ -3967,6 +4031,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
                 🎮 JOGO EM ANDAMENTO
               </div>
               <div style={{color:"rgba(255,255,255,.4)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+                {GAMES_INFO[myRoom.game]?.i} {GAMES_INFO[myRoom.game]?.n} 
               </div>
             </div>
 
@@ -4285,6 +4350,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
                 <div style={{fontSize:11}}>
                   <span style={{color:cheia?"#e74c3c":"#2ecc71"}}>{room.players}/{room.maxPlayers||4} jogadores</span>
                   <span style={{color:"#555"}}> • </span>
+                  <span style={{color:"#f1c40f"}}>{room.betAmount} fichas</span>
                 </div>
               </div>
               <Btn sm onClick={()=>!cheia&&entrarSala(room)} disabled={cheia} c="#f1c40f" tc="#000">
@@ -4863,6 +4929,7 @@ function Dama({chips,onChange,log}){
           <div style={{fontSize:48,marginBottom:8}}>♟</div>
           <div style={{color:'#aaa',fontSize:13,marginBottom:20}}>Jogue contra a IA</div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
+            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
             <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
               style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
             <span style={{color:'#555',fontSize:11}}>fichas</span>
@@ -5124,6 +5191,7 @@ function Xadrez({chips,onChange,log}){
             <span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span>
           </div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
+            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
             <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
               style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
             <span style={{color:'#555',fontSize:11}}>fichas</span>
@@ -5499,7 +5567,7 @@ function Poker({chips,onChange,log}){
 
   function nextHand(){
     if(pc<=0||ac<=0){
-      gsRef.current='idle'; onChange(pc); log('Poker: terminou com '+pc+' fichas');
+      gsRef.current='idle'; log('Poker: partida encerrada');
       updGs('idle'); return;
     }
     updGs('playing');
@@ -5690,7 +5758,7 @@ function Poker({chips,onChange,log}){
                 Proxima Mao
               </button>
             )}
-            <button onClick={function(){gsRef.current='idle';onChange(pc);log('Poker: saiu com '+pc+' fichas');updGs('idle');}}
+            <button onClick={function(){gsRef.current='idle';log('Poker: saiu da partida');updGs('idle');}}
               style={{padding:'10px 20px',background:'rgba(255,255,255,.04)',
                 border:'1px solid rgba(255,255,255,.1)',borderRadius:11,
                 color:'#888',fontWeight:700,cursor:'pointer',fontSize:12}}>
@@ -6596,6 +6664,7 @@ function GoOnline({socket,room,userData,onGameOver}){
             </div>
           </div>
         )}
+        {result.won&&<div style={{color:'#2ecc71',fontSize:14,marginBottom:8}}>+{room.betAmount} fichas</div>}
       </div>
     </div>
   );
