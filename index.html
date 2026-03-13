@@ -792,44 +792,38 @@ function ShopScreen({user,userData,token,chips,onClose}){
 
         {msg&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(241,196,15,.08)",border:"1px solid rgba(241,196,15,.2)",color:"#f1c40f",fontSize:12,marginBottom:14,textAlign:"center"}}>{msg}</div>}
 
-        {/* COMPRAR — campo livre */}
+        {/* COMPRAR — pacotes fixos */}
         {tab==='buy'&&!pixData&&(
           <div style={{animation:"fadeIn .3s ease"}}>
-            <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:12,padding:16,marginBottom:14}}>
-              <div style={{color:"#888",fontSize:12,marginBottom:8}}>Quantas fichas quer comprar?</div>
-              <input type="number" placeholder="Ex: 50" value={buyQty} onChange={e=>setBuyQty(e.target.value)} min={1} max={10000}
-                style={{fontSize:22,fontWeight:700,color:"#f1c40f",textAlign:"center",background:"rgba(241,196,15,.05)",border:"1px solid rgba(241,196,15,.3)",marginBottom:8}}/>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                {[10,20,50,100,200,500].map(v=>(
-                  <button key={v} onClick={()=>setBuyQty(String(v))} style={{flex:1,padding:"6px 4px",background:"rgba(241,196,15,.08)",border:"1px solid rgba(241,196,15,.2)",borderRadius:6,color:"#f1c40f",cursor:"pointer",fontSize:11,fontWeight:700,minWidth:44}}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-              {buyAmount>0&&(
-                <div style={{background:"rgba(46,204,113,.06)",border:"1px solid rgba(46,204,113,.2)",borderRadius:10,padding:12,marginBottom:12}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div>
-                      <div style={{color:"#f1c40f",fontSize:24,fontWeight:900,fontFamily:"Georgia,serif"}}>{buyAmount} fichas</div>
-                      <div style={{color:"#2ecc71",fontSize:13,fontWeight:700}}>= R${(buyAmount*0.10).toFixed(2)}</div>
-                      <div style={{color:"#555",fontSize:10}}>1 ficha = R$0,10 — 10 fichas = R$1,00</div>
-                    </div>
-                    <div style={{fontSize:36}}>🎰</div>
-                  </div>
-                </div>
-              )}
-              <Btn full onClick={createPixCustom} loading={loading} disabled={buyAmount<1} c="#2ecc71" tc="#000">
-                💳 Gerar PIX — R${buyAmount>0?(buyAmount*0.10).toFixed(2):'0,00'}
-              </Btn>
+            <div style={{color:"#888",fontSize:11,marginBottom:10,textAlign:"center"}}>Escolha um pacote</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              {[
+                {id:'pkg_1',  chips:10,   brl:1.00,   label:'Iniciante', bonus:''},
+                {id:'pkg_2',  chips:20,   brl:2.00,   label:'Bronze',    bonus:''},
+                {id:'pkg_3',  chips:50,   brl:5.00,   label:'Prata',     bonus:''},
+                {id:'pkg_4',  chips:100,  brl:10.00,  label:'Ouro',      bonus:''},
+                {id:'pkg_5',  chips:200,  brl:20.00,  label:'Platina',   bonus:'+10 bônus'},
+                {id:'pkg_6',  chips:500,  brl:50.00,  label:'Diamante',  bonus:'+30 bônus'},
+                {id:'pkg_7',  chips:1000, brl:100.00, label:'Elite',     bonus:'+100 bônus'},
+              ].map(pkg=>(
+                <button key={pkg.id} onClick={()=>createPix(pkg)} disabled={loading}
+                  style={{padding:"12px 8px",background:selectedPkg?.id===pkg.id?"rgba(241,196,15,.15)":"rgba(255,255,255,.03)",
+                    border:"1px solid "+(selectedPkg?.id===pkg.id?"rgba(241,196,15,.5)":"rgba(255,255,255,.08)"),
+                    borderRadius:10,cursor:"pointer",textAlign:"center",transition:"all .2s"}}>
+                  <div style={{color:"#f1c40f",fontSize:20,fontWeight:900,fontFamily:"Georgia,serif"}}>{pkg.chips} 🎰</div>
+                  {pkg.bonus&&<div style={{color:"#2ecc71",fontSize:9,marginBottom:2}}>{pkg.bonus}</div>}
+                  <div style={{color:"#fff",fontSize:13,fontWeight:700}}>R$ {pkg.brl.toFixed(2)}</div>
+                  <div style={{color:"#555",fontSize:10}}>{pkg.label}</div>
+                </button>
+              ))}
             </div>
-            <div style={{background:"rgba(255,255,255,.02)",borderRadius:10,padding:10,textAlign:"center"}}>
-              <div style={{color:"#444",fontSize:11,lineHeight:1.7}}>
-                🔒 Pagamento 100% via PIX • Seguro pelo Mercado Pago<br/>
-                Fichas creditadas em até 1 minuto após confirmação
-              </div>
+            <div style={{color:"#555",fontSize:10,textAlign:"center",marginTop:4}}>
+              🔒 Pagamento 100% via PIX • Seguro pelo Mercado Pago<br/>
+              Fichas creditadas em até 1 minuto após confirmação
             </div>
           </div>
         )}
+
 
         {/* PIX GERADO */}
         {tab==='buy'&&pixData&&(
@@ -900,8 +894,8 @@ function Blackjack({chips,onChange,log,mode}){
   const BET_OPTS=[10,20,50,100,200,500];
   useEffect(()=>{setDeck(mkDeck(2));},[]);
   const flashNew=idx=>{setNewCardIdx(idx);setTimeout(()=>setNewCardIdx(null),1500);};
-  const addBet=v=>{if(chips<v)return;setBet(b=>b+v);onChange(-v);};
-  const clearBet=()=>{onChange(bet);setBet(0);};
+  const addBet=v=>{setBet(b=>b+v);};
+  const clearBet=()=>{setBet(0);};
   const deal=()=>{if(!bet)return;const d=[...deck];const p=[d.pop(),d.pop()],dl=[d.pop(),d.pop()];setDeck(d);setPlayer(p);setDealer(dl);setRevealed(false);flashNew(1);if(hVal(p)===21){setTimeout(()=>resolve(d,p,dl),400);setPhase("dealer");}else setPhase("play");};
   const hit=()=>{const d=[...deck],p=[...player,d.pop()];setDeck(d);setPlayer(p);flashNew(p.length-1);if(hVal(p)>21){setResult("💥 Bust!");setPhase("result");log("❌ BJ Bust!");}};
   const stand=()=>{setPhase("dealer");resolve(deck,player,dealer);};
@@ -912,10 +906,10 @@ function Blackjack({chips,onChange,log,mode}){
     const pv=hVal(p),dv=hVal(hand);
     setTimeout(()=>{
       let r="";
-      if(pv===21&&p.length===2){r="🎰 BLACKJACK! +150%";onChange(Math.floor(bet*2.5));log(`🎰 BJ +${Math.floor(bet*1.5)}`);}
-      else if(dv>21){r="🎉 Dealer passou!";onChange(bet*2);log(`✅ BJ +${bet}`);}
-      else if(pv>dv){r="🎉 Você venceu!";onChange(bet*2);log(`✅ BJ +${bet}`);}
-      else if(pv===dv){r="🤝 Empate!";onChange(bet);log("🤝 BJ empate");}
+      if(pv===21&&p.length===2){r="🎰 BLACKJACK! +150%";/* sem aposta */;log(`🎰 BJ +${Math.floor(bet*1.5)}`);}
+      else if(dv>21){r="🎉 Dealer passou!";/* sem aposta */}
+      else if(pv>dv){r="🎉 Você venceu!";/* sem aposta */;}
+      else if(pv===dv){r="🤝 Empate!";/* sem aposta */;}
       else{r="😔 Dealer venceu.";log(`❌ BJ -${bet}`);}
       setResult(r);setPhase("result");
     },700);
@@ -962,7 +956,7 @@ function Blackjack({chips,onChange,log,mode}){
         {phase==="play"&&<div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
           <Btn c="#e74c3c" tc="#fff" onClick={hit}>Pedir Carta</Btn>
           <Btn c="#2ecc71" tc="#fff" onClick={stand}>Parar</Btn>
-          {player.length===2&&chips>=bet&&<Btn c="#f39c12" tc="#fff" onClick={()=>{onChange(-bet);setBet(b=>b*2);const d=[...deck],p=[...player,d.pop()];setDeck(d);setPlayer(p);flashNew(p.length-1);if(hVal(p)>21){setResult("💥 Bust!");setPhase("result");}else{setPhase("dealer");resolve(d,p,dealer);}}}>Double Down</Btn>}
+          {player.length===2&&chips>=bet&&<Btn c="#f39c12" tc="#fff" onClick={()=>{setBet(b=>b*2);const d=[...deck],p=[...player,d.pop()];setDeck(d);setPlayer(p);flashNew(p.length-1);if(hVal(p)>21){setResult("💥 Bust!");setPhase("result");}else{setPhase("dealer");resolve(d,p,dealer);}}}>Double Down</Btn>}
         </div>}
         {phase==="result"&&<div style={{textAlign:"center"}}><Btn onClick={reset}>Nova Rodada</Btn></div>}
       </div>
@@ -1010,7 +1004,7 @@ function Dados({chips,onChange,log}){
   const BET_OPTS=[5,10,25,50,100,200];
 
   const addBet=v=>{if(chips<v)return;setBet(b=>b+v);onChange(-v);};
-  const clearBet=()=>{onChange(bet);setBet(0);};
+  const clearBet=()=>{setBet(0);};
 
   const rolarDados=()=>{
     setRolling(true);setResult('');setTotal(null);
@@ -1162,7 +1156,7 @@ function Pife({chips,onChange,log}){
 
   const start=(bet,decks)=>{
     if(chips<bet)return;
-    onChange(-bet);setConfig({bet,decks});
+    setConfig({bet,decks});
     const d=mkDeck(decks);
     setPh(d.slice(0,9));setAi(d.slice(9,18));setDisc([d[18]]);setDeck(d.slice(19));
     setPhase("draw");setMsg("Sua vez: compre do monte ou do descarte.");
@@ -1174,7 +1168,7 @@ function Pife({chips,onChange,log}){
     if(phase!=="meld")return;
     const c=ph[idx],nh=ph.filter((_,i)=>i!==idx);
     setPh(nh);setDisc(d=>[...d,c]);setNewCardIdx(null);
-    if(groupHand(nh).dead.length===0){onChange(config.bet*2);setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife +${config.bet}`);return;}
+    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife +${config.bet}`);return;}
     setPhase("draw");setMsg("Vez da IA...");
     setTimeout(()=>{
       let a=[...ai],d=[...deck],ds=[...disc,c];
@@ -1445,7 +1439,7 @@ function Dominoes({chips,onChange,log}){
 
   const start=(b,np)=>{
     if(chips<b)return;
-    onChange(-b);setBet(b);setNumPlayers(np);
+    setBet(1);setNumPlayers(np);
     const s=mkDomSet();
     const tilesPerPlayer=Math.min(7,Math.floor(28/np));
     const hands=Array.from({length:np},(_,i)=>s.slice(i*tilesPerPlayer,(i+1)*tilesPerPlayer));
@@ -1486,7 +1480,7 @@ function Dominoes({chips,onChange,log}){
       const nc=addToChain(t,ch);
       a[idx]=hand.filter(x=>x.id!==t.id);
       setChain(nc);
-      if(a[idx].length===0){onChange(bet*numPlayers);setPhase("over");setMsg(`😔 IA ${idx+1} venceu!`);cb(a);return;}
+      if(a[idx].length===0){setPhase("over");setMsg(`😔 IA ${idx+1} venceu!`);cb(a);return;}
       cb(a);return nc;
     } else {
       // compra
@@ -1509,7 +1503,7 @@ function Dominoes({chips,onChange,log}){
         const t=playable[0];newCh=addToChain(t,ch);
         newAis[idx]=hand.filter(x=>x.id!==t.id);
         setChain(newCh);setAis(newAis);
-        if(newAis[idx].length===0){onChange(bet*numPlayers);setPhase("over");setMsg(`😔 IA ${idx+1} venceu!`);return;}
+        if(newAis[idx].length===0){setPhase("over");setMsg(`😔 IA ${idx+1} venceu!`);return;}
       } else {
         const b=[...by];if(b.length){const d=b.shift();newAis[idx]=[...hand,d];setBy(b);}
         setAis(newAis);
@@ -1568,7 +1562,7 @@ function Dominoes({chips,onChange,log}){
           ))}
         </div>
         {numPlayers>=2&&<>
-          <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
+          
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[10,25,50,100].map(v=><Btn key={v} sm onClick={()=>start(v,numPlayers)} disabled={chips<v}>{v} fichas</Btn>)}
           </div>
@@ -1734,7 +1728,7 @@ function DadosOnline({socket,room,userData}){
         <div style={{textAlign:"center",padding:"12px",marginBottom:10,background:result==='win'?"rgba(46,204,113,.1)":result==='lose'?"rgba(231,76,60,.1)":"rgba(255,255,255,.05)",border:`1px solid ${result==='win'?"rgba(46,204,113,.3)":result==='lose'?"rgba(231,76,60,.3)":"rgba(255,255,255,.1)"}`,borderRadius:10}}>
           <div style={{fontSize:28}}>{result==='win'?'🏆':result==='lose'?'😔':'🤝'}</div>
           <div style={{color:result==='win'?"#2ecc71":result==='lose'?"#e74c3c":"#aaa",fontWeight:900,fontSize:14,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1,marginTop:4}}>
-            {result==='win'?`VOCÊ GANHOU! +${room.betAmount} fichas`:result==='lose'?`VOCÊ PERDEU! -${room.betAmount} fichas`:'EMPATE!'}
+            {result==='win'?'VOCÊ GANHOU!':result==='lose'?'VOCÊ PERDEU! fichas`:'EMPATE!'}
           </div>
         </div>
       )}
@@ -1960,14 +1954,14 @@ function DominoOnline({socket,room,userData,onGameOver}){
           <div style={{color:won?'#2ecc71':'#e74c3c',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1,marginBottom:4}}>
             {won?'VOCÊ GANHOU!':'VOCÊ PERDEU!'}
           </div>
-          <div style={{color:'rgba(255,255,255,.4)',fontSize:13}}>{won?`+${room.betAmount*(result.mult||1)}`:`-${room.betAmount}`} fichas</div>
+          <div style={{color:'rgba(255,255,255,.4)',fontSize:13}}>{won?'Vitória':'DerrotatAmount}`} fichas</div>
         </div>
         {result.nojada&&(
           <div style={{textAlign:'center',padding:'10px',marginBottom:8,
             background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10}}>
             <div style={{color:'#f1c40f',fontWeight:900,fontSize:16}}>{result.nojada.label}</div>
             <div style={{color:'#aaa',fontSize:11,marginTop:2}}>
-              {result.nojada.mult}x a aposta {result.outcome==='win'?'— você levou '+room.betAmount*result.nojada.mult+' fichas!':''}
+              {result.nojada.mult}x {result.outcome==='win'?'— você venceu fichas!':''}
             </div>
           </div>
         )}
@@ -2420,7 +2414,7 @@ function PifeOnline({socket,room,userData,onGameOver}){
             {won?'VOCÊ FEZ PIFE!':'ADVERSÁRIO FEZ PIFE!'}
           </div>
           <div style={{color:'rgba(255,255,255,.5)',fontSize:13}}>
-            {won?`+${room.betAmount} fichas creditadas`:`-${room.betAmount} fichas debitadas`}
+            {won?'Vitória!':'Derrota!'}
           </div>
         </div>
 
@@ -3101,7 +3095,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
 
   var opp=room.players.find(function(p){return p.uid!==userData?.uid;});
   var oppName=opp?opp.name:'Adversario';
-  var BB=room.betAmount||10;
+  var BB=0;
   var SB=Math.max(5,Math.floor(BB/2));
 
   useEffect(function(){
@@ -3886,7 +3880,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
           <button onClick={sairSala} style={{background:"rgba(231,76,60,.1)",border:"1px solid rgba(231,76,60,.3)",borderRadius:8,color:"#e74c3c",padding:"6px 12px",cursor:"pointer",fontSize:12,fontFamily:"Georgia,serif"}}>← Sair</button>
           <div>
             <h2 style={{color:"#f1c40f",fontFamily:"Georgia,serif",fontSize:18}}>{g.i} Sala #{myRoom.id}</h2>
-            <div style={{color:"#555",fontSize:11}}>{myRoom.betAmount} fichas por jogador</div>
+            
           </div>
         </div>
 
@@ -3938,7 +3932,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             <div>
               <div style={{color:"rgba(255,255,255,.4)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:2}}>APOSTA DA PARTIDA</div>
               <div style={{color:"#f1c40f",fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{myRoom.betAmount} fichas</div>
-              <div style={{color:"rgba(255,255,255,.2)",fontSize:10,marginTop:1}}>Quem perder paga {myRoom.betAmount} fichas</div>
+              <div style={{color:"rgba(255,255,255,.2)",fontSize:10,marginTop:1}}>Boa sorte!chas</div>
             </div>
             {myRoom.started&&(
               <button onClick={()=>setShowBetMenu(v=>!v)}
@@ -3952,7 +3946,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,.06)",paddingTop:10}}>
               <div style={{color:"rgba(255,255,255,.3)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,marginBottom:6}}>PROPOR NOVA APOSTA</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {[5,10,25,50,100,200].map(v=>(
+                {[].map(v=>(
                   <button key={v} onClick={()=>proporAposta(v)}
                     style={{padding:"6px 12px",background:v===myRoom.betAmount?"rgba(241,196,15,.2)":"rgba(255,255,255,.04)",border:`1px solid ${v===myRoom.betAmount?"#f1c40f":"rgba(255,255,255,.1)"}`,borderRadius:6,color:v===myRoom.betAmount?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>
                     {v}
@@ -4323,7 +4317,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
           </>}
           {['dama','xadrez','poker','go'].includes(newGame)&&<div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>⚔️ Sempre 1 vs 1 (Head-to-Head)</div>}
           
-          <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
+          
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
             {[10,20,50,100,200,500].map(v=>(
               <button key={v} onClick={()=>setNewBet(v)} style={{padding:"6px 12px",background:newBet===v?"#f1c40f":"rgba(255,255,255,.05)",border:`1px solid ${newBet===v?"#f1c40f":"rgba(255,255,255,.1)"}`,borderRadius:6,color:newBet===v?"#000":"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>{v}</button>
@@ -4815,10 +4809,10 @@ function Dama({chips,onChange,log}){
     setOver(true);
     if(won){
       setStatus('🏆 Você ganhou!');
-      onChange(bet); log(`🏆 Dama: ganhou ${bet} fichas`);
+      log('🏆 Dama: vitória!');
     } else {
       setStatus('😔 IA ganhou!');
-      onChange(-bet); log(`😔 Dama: perdeu ${bet} fichas`);
+      log('😔 Dama: derrota!');
     }
   };
 
@@ -5095,8 +5089,8 @@ function Xadrez({chips,onChange,log}){
         const playerWon=nextCol==='b';
         setStatus(playerWon?'♔ Xeque-mate! Você venceu!':'♚ Xeque-mate! IA venceu!');
         setOver(true);
-        if(playerWon){onChange(bet);log(`♔ Xadrez: ganhou ${bet} fichas`);}
-        else{onChange(-bet);log(`♚ Xadrez: perdeu ${bet} fichas`);}
+        if(playerWon){log('♔ Xadrez: vitória!');}
+        else{log('♚ Xadrez: derrota!');}
       } else {
         setStatus('½ Empate — afogamento!'); setOver(true);
       }
@@ -5113,7 +5107,7 @@ function Xadrez({chips,onChange,log}){
         setBoard(nb2); setCastling(nc3); setEnPassant(ep3); setLastMove(aiMv); setMoveCount(n=>n+1);
         const wMoves=getAllChessMoves(nb2,'w',ep3,nc3);
         if(!wMoves.length){
-          if(isInCheck(nb2,'w')){setStatus('♚ Xeque-mate! IA venceu!');setOver(true);onChange(-bet);log(`♚ Xadrez: perdeu ${bet} fichas`);}
+          if(isInCheck(nb2,'w')){setStatus('♚ Xeque-mate! IA venceu!');setOver(true);log(`♚ Xadrez: perdeu ${bet} fichas`);}
           else{setStatus('½ Empate!');setOver(true);}
         } else {
           setStatus(isInCheck(nb2,'w')?'⚠️ Você está em xeque!':'Sua vez ⬜');
@@ -5421,7 +5415,7 @@ function Poker({chips,onChange,log}){
   }
 
   var [gs,setGs]=useState('idle');
-  var [bet,setBet]=useState(10);
+  var [bet,setBet]=useState(1);
   var [deck,setDeck]=useState([]);
   var [ph,setPh]=useState([]);
   var [ah,setAh]=useState([]);
@@ -5450,7 +5444,7 @@ function Poker({chips,onChange,log}){
   function startGame(){
     var sc=bet*4;
     if(chips<sc)return;
-    onChange(-sc);
+    /* sem aposta */
     updPc(sc); setAc(sc); setResult(null); updGs('playing');
     dealHand(sc,sc);
   }
@@ -6180,7 +6174,7 @@ function Go({chips,onChange,log}){
     var sc=goScore(b,N,komi,countMethod);
     var won=sc.black>sc.white;
     var diff=Math.abs(sc.black-sc.white);
-    if(won)onChange(bet); else onChange(-bet);
+    /* sem aposta */
     setResult({black:sc.black,white:sc.white,won:won,diff:diff,caps:extraCaps});
     setBoard(b);
     setPhase('over');
@@ -6188,7 +6182,6 @@ function Go({chips,onChange,log}){
   }
 
   function resign(){
-    onChange(-bet);
     setPhase('over');
     setResult({black:0,white:0,won:false,resigned:true});
     log('Go: Resignou');
@@ -6211,7 +6204,7 @@ function Go({chips,onChange,log}){
           <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,.04)'}}>
             <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>APOSTA</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}}>
-              {[10,25,50,100,200].map(function(v){return(
+              {[1,5,10,25,50].map(function(v){return(
                 <button key={v} onClick={function(){setBet(v);}}
                   style={{padding:'5px 13px',fontSize:12,fontWeight:900,cursor:'pointer',borderRadius:7,
                     background:bet===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
@@ -6892,6 +6885,36 @@ function App(){
     });
   },[]);
 
+  // ── Streak diário de anúncios ──
+  const getAdStreak = () => {
+    try {
+      const uid = userData?.uid; if(!uid) return {days:0,lastDate:null,weekBonus:false};
+      const saved = localStorage.getItem('ad_streak_'+uid);
+      return saved ? JSON.parse(saved) : {days:0,lastDate:null,weekBonusClaimed:false};
+    } catch { return {days:0,lastDate:null,weekBonusClaimed:false}; }
+  };
+
+  const updateAdStreak = () => {
+    try {
+      const uid = userData?.uid; if(!uid) return 0;
+      const today = new Date().toDateString();
+      const streak = getAdStreak();
+      if(streak.lastDate === today) return 0; // já assistiu hoje
+      const yesterday = new Date(Date.now()-86400000).toDateString();
+      const newDays = streak.lastDate === yesterday ? streak.days + 1 : 1;
+      const newStreak = {days:newDays, lastDate:today, weekBonusClaimed:streak.weekBonusClaimed};
+      // Bônus semanal: 6 dias seguidos
+      let bonus = 0;
+      if(newDays >= 6 && !streak.weekBonusClaimed){
+        bonus = 60;
+        newStreak.days = 0;
+        newStreak.weekBonusClaimed = false;
+      }
+      localStorage.setItem('ad_streak_'+uid, JSON.stringify(newStreak));
+      return bonus;
+    } catch { return 0; }
+  };
+
   const watchAd = async () => {
     setAdWatching(true);
     // Tenta anúncio real via AdMob (Capacitor)
@@ -6918,6 +6941,8 @@ function App(){
           setAdWatching(false);
           setShowAdModal(false);
           onChange(FREE_CHIPS_PER_AD);
+          const wb = updateAdStreak();
+          if(wb > 0) setTimeout(()=>{ onChange(wb); }, 800);
           return 0;
         }
         return t-1;
