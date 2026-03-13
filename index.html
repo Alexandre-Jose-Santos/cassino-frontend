@@ -5433,18 +5433,19 @@ function Poker({chips,onChange,log,mode}){
   var [showRaise,setShowRaise]=useState(false);
   var [lastAct,setLastAct]=useState(null);
 
-  var BB=bet;
-  var SB=Math.max(5,Math.floor(bet/2));
+  var BB=10;
+  var SB=5;
 
   function updPc(v){ pcRef.current=typeof v==='function'?v(pcRef.current):v; setPc(v); }
   function updGs(v){ gsRef.current=v; setGs(v); }
 
   function startGame(){
     if(chips<COST)return;
-    onChange(-COST);
-    var sc=20; // stack fixo de jogo interno
-    updPc(sc); setAc(sc); setResult(null); updGs('playing');
+    var sc=100; // stack interno fixo
+    updPc(sc); setAc(sc); setResult(null);
     dealHand(sc,sc);
+    updGs('playing');
+    onChange(-COST); // débito após estado local confirmado
   }
 
   function dealHand(p,a){
