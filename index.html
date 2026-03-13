@@ -3639,6 +3639,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     if(oppVadRef.current)cancelAnimationFrame(oppVadRef.current);
     if(pcRef.current){pcRef.current.close();pcRef.current=null;}
     if(localStreamRef.current){localStreamRef.current.getTracks().forEach(t=>t.stop());localStreamRef.current=null;}
+    if(localStreamRef._raw){localStreamRef._raw.getTracks().forEach(t=>t.stop());localStreamRef._raw=null;}
     pttTrackRef.current=null;
     pttGainRef.current=null;
     remoteGainRef.current=null;
@@ -3707,6 +3708,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
     // Usa GainNode para PTT — mais confiável no Android que track.enabled
     try{
       const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      // Android exige resume() explícito após gesto do usuário
+      if(ctx.state==='suspended') await ctx.resume();
       const src=ctx.createMediaStreamSource(rawStream);
       const gain=ctx.createGain();
       gain.gain.value=0; // começa mudo
@@ -3716,9 +3719,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
       pttGainRef.current=gain;
       pttTrackRef.current=dest.stream.getAudioTracks()[0];
       localStreamRef.current=dest.stream;
+      // Guarda raw stream para dar stop() no encerramento
+      localStreamRef._raw=rawStream;
       return dest.stream;
     }catch(e){
-      // Fallback: track.enabled (browsers sem AudioContext)
+      // Fallback: track.enabled
       const track=rawStream.getAudioTracks()[0];
       if(track)track.enabled=false;
       pttTrackRef.current=track;
@@ -3762,10 +3767,14 @@ function OnlineLobby({socket,chips,userData,onChange}){
     }catch(e){socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});}
   };
 
+  // Ref estável para uid — evita re-registro de listeners a cada update de chips
+  const myUidRef=React.useRef(null);
+  React.useEffect(()=>{ myUidRef.current=userData?.uid; },[userData]);
+
   React.useEffect(()=>{
     if(!socket)return;
     const onOffer=({offer,uid:callerUid})=>{
-      if(callerUid===userData?.uid)return;
+      if(callerUid===myUidRef.current)return;
       setCallState('incoming');
       socket._pendingOffer={offer,callerUid};
     };
@@ -3775,7 +3784,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     };
     const onEnd=()=>encerrarChamada();
     const onSpeaking=({uid:sUid,speaking:s})=>{
-      if(sUid!==userData?.uid)setOppSpeaking(s);
+      if(sUid!==myUidRef.current)setOppSpeaking(s);
     };
     socket.on('webrtc_call_request',onOffer);
     socket.on('webrtc_ice',onIce);
@@ -3787,7 +3796,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('webrtc_call_end',onEnd);
       socket.off('webrtc_speaking',onSpeaking);
     };
-  },[socket,userData]);
+  },[socket]); // ← só socket, não userData
 
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
