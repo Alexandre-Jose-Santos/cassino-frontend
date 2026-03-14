@@ -802,9 +802,9 @@ function ShopScreen({user,userData,token,chips,onClose}){
                 {id:'pkg_2',  chips:20,   brl:2.00,   label:'Bronze',    bonus:''},
                 {id:'pkg_3',  chips:50,   brl:5.00,   label:'Prata',     bonus:''},
                 {id:'pkg_4',  chips:100,  brl:10.00,  label:'Ouro',      bonus:''},
-                {id:'pkg_5',  chips:200,  brl:20.00,  label:'Platina',   bonus:'+10 bônus'},
-                {id:'pkg_6',  chips:500,  brl:50.00,  label:'Diamante',  bonus:'+30 bônus'},
-                {id:'pkg_7',  chips:1000, brl:100.00, label:'Elite',     bonus:'+100 bônus'},
+                {id:'pkg_5',  chips:200,  brl:20.00,  label:'Platina',   bonus:''},
+                {id:'pkg_6',  chips:500,  brl:50.00,  label:'Diamante',  bonus:''},
+                {id:'pkg_7',  chips:1000, brl:100.00, label:'Elite',     bonus:''},
               ].map(pkg=>(
                 <button key={pkg.id} onClick={()=>createPix(pkg)} disabled={loading}
                   style={{padding:"12px 8px",background:selectedPkg?.id===pkg.id?"rgba(241,196,15,.15)":"rgba(255,255,255,.03)",
@@ -1144,7 +1144,8 @@ function groupHand(h){
 }
 
 const AI_NAMES=["Carlos","Joana","Pedro","Marina","Lucas","Ana","Rafael","Bia"];
-function Pife({chips,onChange,log}){
+function Pife({chips,onChange,log,mode}){
+  const COST=mode==='online'?5:1;
   const [config,setConfig]=useState(null);
   const [deck,setDeck]=useState([]),[ ph,setPh]=useState([]),[ ai,setAi]=useState([]),[ disc,setDisc]=useState([]),[ phase,setPhase]=useState("idle"),[ msg,setMsg]=useState(""),[ newCardIdx,setNewCardIdx]=useState(null);
   const [aiName]=useState(()=>AI_NAMES[Math.floor(Math.random()*AI_NAMES.length)]);
@@ -1154,9 +1155,10 @@ function Pife({chips,onChange,log}){
   const [dragIdx,setDragIdx]=useState(null);
   const [dragOver,setDragOver]=useState(null);
 
-  const start=(bet,decks)=>{
-    if(chips<bet)return;
-    setConfig({bet,decks});
+  const start=(decks)=>{
+    if(chips<COST)return;
+    onChange(-COST);
+    setConfig({bet:COST,decks});
     const d=mkDeck(decks);
     setPh(d.slice(0,9));setAi(d.slice(9,18));setDisc([d[18]]);setDeck(d.slice(19));
     setPhase("draw");setMsg("Sua vez: compre do monte ou do descarte.");
@@ -1168,11 +1170,11 @@ function Pife({chips,onChange,log}){
     if(phase!=="meld")return;
     const c=ph[idx],nh=ph.filter((_,i)=>i!==idx);
     setPh(nh);setDisc(d=>[...d,c]);setNewCardIdx(null);
-    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife +${config.bet}`);return;}
+    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife — vitória`);return;}
     setPhase("draw");setMsg("Vez da IA...");
     setTimeout(()=>{
       let a=[...ai],d=[...deck],ds=[...disc,c];
-      if(!d.length){onChange(config.bet);setPhase("over");setMsg("Monte esgotado. Empate!");return;}
+      if(!d.length){setPhase("over");setMsg("Monte esgotado. Empate!");return;}
       // IA decide: pegar descarte se ajuda, senão pegar do monte
       const topDisc=ds[ds.length-1];
       const testWithDisc=[...a,topDisc];
@@ -1201,16 +1203,21 @@ function Pife({chips,onChange,log}){
   const grpSet=new Set(groups.flatMap(g=>g.idxs));
 
   const [pifeDecks,setPifeDecks]=React.useState(1);
-  const [pifeBet,setPifeBet]=React.useState(10);
-  const BET_OPTS_PIFE=[10,25,50,100];
 
   if(phase==="idle")return(
     <div style={{padding:"16px 12px",maxWidth:500,margin:"0 auto"}}>
       <h2 style={{color:"#f1c40f",fontFamily:"'Cinzel',Georgia,serif",textAlign:"center",fontSize:22,margin:"0 0 6px"}}>🃏 Pife</h2>
       <p style={{color:"rgba(255,255,255,.3)",textAlign:"center",fontSize:11,marginBottom:18,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif"}}>FORME 3 GRUPOS DE 3 CARTAS</p>
 
+      {/* Custo da partida */}
+      <div style={{background:"rgba(241,196,15,.06)",border:"1px solid rgba(241,196,15,.2)",borderRadius:12,padding:"14px 16px",marginBottom:14,textAlign:"center"}}>
+        <div style={{color:"rgba(255,255,255,.4)",fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:4}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+        <div style={{color:"#f1c40f",fontSize:28,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
+        <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
+      </div>
+
       {/* Baralhos */}
-      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:12}}>
+      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:16}}>
         <div style={{color:"rgba(255,255,255,.4)",fontSize:9,fontWeight:700,marginBottom:12,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif"}}>NÚMERO DE BARALHOS</div>
         <div style={{display:"flex",gap:8}}>
           {[1,2].map(n=>(
@@ -1230,34 +1237,15 @@ function Pife({chips,onChange,log}){
         </div>
       </div>
 
-      {/* Aposta */}
-      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:16}}>
-        <div style={{color:"rgba(255,255,255,.4)",fontSize:9,fontWeight:700,marginBottom:12,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif"}}>VALOR DA APOSTA</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-          {BET_OPTS_PIFE.map(v=>(
-            <button key={v} onClick={()=>setPifeBet(v)} disabled={chips<v}
-              style={{padding:"12px",
-                background:pifeBet===v?"linear-gradient(135deg,rgba(241,196,15,.15),rgba(241,196,15,.05))":"rgba(255,255,255,.02)",
-                border:`2px solid ${pifeBet===v?"#f1c40f":chips<v?"rgba(255,255,255,.03)":"rgba(255,255,255,.08)"}`,
-                borderRadius:12,color:pifeBet===v?"#f1c40f":chips<v?"#2a2a2a":"#666",
-                cursor:chips<v?"not-allowed":"pointer",fontWeight:700,fontSize:16,
-                fontFamily:"'Rajdhani',sans-serif",transition:"all .2s",
-                boxShadow:pifeBet===v?"0 4px 16px rgba(241,196,15,.15)":"none"}}>
-              {v}
-              <div style={{fontSize:9,letterSpacing:1,marginTop:2,opacity:.6}}>FICHAS</div>
-            </button>
-          ))}
-        </div>
-        <button onClick={()=>start(pifeBet,pifeDecks)} disabled={chips<pifeBet}
-          style={{width:"100%",padding:"14px",
-            background:chips>=pifeBet?"linear-gradient(135deg,#1a4a1a,#0d2e0d)":"rgba(255,255,255,.02)",
-            border:`1px solid ${chips>=pifeBet?"rgba(46,204,113,.4)":"rgba(255,255,255,.05)"}`,
-            borderRadius:12,color:chips>=pifeBet?"#2ecc71":"#333",
-            fontWeight:900,fontSize:14,cursor:chips>=pifeBet?"pointer":"not-allowed",
-            fontFamily:"'Cinzel',Georgia,serif",letterSpacing:2,transition:"all .2s"}}>
-          {chips>=pifeBet?`▶ JOGAR — ${pifeBet} FICHAS`:"SALDO INSUFICIENTE"}
-        </button>
-      </div>
+      <button onClick={()=>start(pifeDecks)} disabled={chips<COST}
+        style={{width:"100%",padding:"14px",
+          background:chips>=COST?"linear-gradient(135deg,#1a4a1a,#0d2e0d)":"rgba(255,255,255,.02)",
+          border:`1px solid ${chips>=COST?"rgba(46,204,113,.4)":"rgba(255,255,255,.05)"}`,
+          borderRadius:12,color:chips>=COST?"#2ecc71":"#333",
+          fontWeight:900,fontSize:14,cursor:chips>=COST?"pointer":"not-allowed",
+          fontFamily:"'Cinzel',Georgia,serif",letterSpacing:2,transition:"all .2s"}}>
+        {chips>=COST?`▶ JOGAR — ${COST} FICHA${COST>1?'S':''}`:"SALDO INSUFICIENTE"}
+      </button>
     </div>
   );
 
@@ -1419,7 +1407,8 @@ function Domino({a,b,onClick,glow,dim,rotate=false,selected=false,animate=false}
   );
 }
 
-function Dominoes({chips,onChange,log}){
+function Dominoes({chips,onChange,log,mode}){
+  const COST=mode==='online'?5:1;
   const [numPlayers,setNumPlayers]=useState(0);
   const [ph,setPh]=useState([]),[ ais,setAis]=useState([]),[ chain,setChain]=useState([]),[ by,setBy]=useState([]),[ turn,setTurn]=useState("p"),[ phase,setPhase]=useState("idle"),[ bet,setBet]=useState(0),[ msg,setMsg]=useState("");
   const [rules,setRules]=useState({duasPontas:1,bateDe4:1});
@@ -1437,9 +1426,10 @@ function Dominoes({chips,onChange,log}){
     return null;
   };
 
-  const start=(b,np)=>{
-    if(chips<b)return;
-    setBet(1);setNumPlayers(np);
+  const start=(np)=>{
+    if(chips<COST)return;
+    onChange(-COST);
+    setBet(COST);setNumPlayers(np);
     const s=mkDomSet();
     const tilesPerPlayer=Math.min(7,Math.floor(28/np));
     const hands=Array.from({length:np},(_,i)=>s.slice(i*tilesPerPlayer,(i+1)*tilesPerPlayer));
@@ -1561,11 +1551,16 @@ function Dominoes({chips,onChange,log}){
             </button>
           ))}
         </div>
+        {/* Custo da partida */}
+        <div style={{background:"rgba(241,196,15,.06)",border:"1px solid rgba(241,196,15,.2)",borderRadius:10,padding:"10px 14px",marginBottom:12,textAlign:"center"}}>
+          <div style={{color:"rgba(255,255,255,.4)",fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+          <div style={{color:"#f1c40f",fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
+          <div style={{color:"rgba(255,255,255,.35)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
+        </div>
         {numPlayers>=2&&<>
-          
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {[10,25,50,100].map(v=><Btn key={v} sm onClick={()=>start(v,numPlayers)} disabled={chips<v}>{v} fichas</Btn>)}
-          </div>
+          <Btn full onClick={()=>start(numPlayers)} disabled={chips<COST}>
+            {chips>=COST?`▶ JOGAR — ${COST} FICHA${COST>1?'S':''}`:"SALDO INSUFICIENTE"}
+          </Btn>
         </>}
       </div>
     </div>
@@ -3453,9 +3448,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setMyRoom(r=>r?{...r,players:r.players.map(p=>p.uid===onUid?{...p,online:true}:p)}:r);
     });
     socket.on('game_start',({room,matchId})=>{
-      // Jogo começa — salva ID da sala para poder reconectar se cair
+      // Debita 5 fichas de entrada ao iniciar partida online
+      onChange(-5);
       setMyRoom(r=>({...r,...room,matchId,started:true}));
-      // Mantém no localStorage para reconectar se o app fechar durante a partida
       localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount}));
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
@@ -3599,6 +3594,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const oppVadRef=React.useRef(null);
   const vadTimerRef=React.useRef(null);
   const pttTrackRef=React.useRef(null); // AudioTrack do mic local
+  const pttGainRef=React.useRef(null);  // GainNode para PTT (mais confiável no Android)
   const [gameOver,setGameOver]=useState(false);
   const [rematchCountdown,setRematchCountdown]=useState(null);
   const [rematchMsg,setRematchMsg]=useState('');
@@ -3643,7 +3639,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
     if(oppVadRef.current)cancelAnimationFrame(oppVadRef.current);
     if(pcRef.current){pcRef.current.close();pcRef.current=null;}
     if(localStreamRef.current){localStreamRef.current.getTracks().forEach(t=>t.stop());localStreamRef.current=null;}
+    if(localStreamRef._raw){localStreamRef._raw.getTracks().forEach(t=>t.stop());localStreamRef._raw=null;}
     pttTrackRef.current=null;
+    pttGainRef.current=null;
     remoteGainRef.current=null;
     oppAnalyserRef.current=null;
     setCallState('idle');
@@ -3655,15 +3653,23 @@ function OnlineLobby({socket,chips,userData,onChange}){
   // Push-to-talk: pressionar = habilita mic; soltar = desabilita
   const pttPress=()=>{
     if(callState!=='connected')return;
-    const track=pttTrackRef.current;
-    if(track){track.enabled=true;}
+    if(pttGainRef.current){
+      pttGainRef.current.gain.value=1; // GainNode (confiável no Android)
+    } else {
+      const track=pttTrackRef.current;
+      if(track)track.enabled=true; // fallback
+    }
     setPttActive(true);
     setSpeaking(true);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:true});
   };
   const pttRelease=()=>{
-    const track=pttTrackRef.current;
-    if(track){track.enabled=false;}
+    if(pttGainRef.current){
+      pttGainRef.current.gain.value=0;
+    } else {
+      const track=pttTrackRef.current;
+      if(track)track.enabled=false;
+    }
     setPttActive(false);
     setSpeaking(false);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
@@ -3698,13 +3704,33 @@ function OnlineLobby({socket,chips,userData,onChange}){
   };
 
   const setupLocalStream=async()=>{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
-    // PTT começa com mic MUDO — só ativa ao pressionar
-    const track=stream.getAudioTracks()[0];
-    if(track)track.enabled=false;
-    pttTrackRef.current=track;
-    localStreamRef.current=stream;
-    return stream;
+    const rawStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
+    // Usa GainNode para PTT — mais confiável no Android que track.enabled
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      // Android exige resume() explícito após gesto do usuário
+      if(ctx.state==='suspended') await ctx.resume();
+      const src=ctx.createMediaStreamSource(rawStream);
+      const gain=ctx.createGain();
+      gain.gain.value=0; // começa mudo
+      const dest=ctx.createMediaStreamDestination();
+      src.connect(gain);
+      gain.connect(dest);
+      pttGainRef.current=gain;
+      pttTrackRef.current=dest.stream.getAudioTracks()[0];
+      localStreamRef.current=dest.stream;
+      // Guarda raw stream para dar stop() no encerramento
+      localStreamRef._raw=rawStream;
+      return dest.stream;
+    }catch(e){
+      // Fallback: track.enabled
+      const track=rawStream.getAudioTracks()[0];
+      if(track)track.enabled=false;
+      pttTrackRef.current=track;
+      pttGainRef.current=null;
+      localStreamRef.current=rawStream;
+      return rawStream;
+    }
   };
 
   const iniciarChamada=async()=>{
@@ -3741,10 +3767,14 @@ function OnlineLobby({socket,chips,userData,onChange}){
     }catch(e){socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});}
   };
 
+  // Ref estável para uid — evita re-registro de listeners a cada update de chips
+  const myUidRef=React.useRef(null);
+  React.useEffect(()=>{ myUidRef.current=userData?.uid; },[userData]);
+
   React.useEffect(()=>{
     if(!socket)return;
     const onOffer=({offer,uid:callerUid})=>{
-      if(callerUid===userData?.uid)return;
+      if(callerUid===myUidRef.current)return;
       setCallState('incoming');
       socket._pendingOffer={offer,callerUid};
     };
@@ -3754,7 +3784,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     };
     const onEnd=()=>encerrarChamada();
     const onSpeaking=({uid:sUid,speaking:s})=>{
-      if(sUid!==userData?.uid)setOppSpeaking(s);
+      if(sUid!==myUidRef.current)setOppSpeaking(s);
     };
     socket.on('webrtc_call_request',onOffer);
     socket.on('webrtc_ice',onIce);
@@ -3766,7 +3796,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('webrtc_call_end',onEnd);
       socket.off('webrtc_speaking',onSpeaking);
     };
-  },[socket,userData]);
+  },[socket]); // ← só socket, não userData
 
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
@@ -4773,7 +4803,8 @@ function bestChessMove(board,col,ep,castling){
 // ══════════════════════════════════════════════════════
 // DAMA — Offline vs IA
 // ══════════════════════════════════════════════════════
-function Dama({chips,onChange,log}){
+function Dama({chips,onChange,log,mode}){
+  const COST=mode==='online'?5:1;
   const [board,setBoard]=useState(()=>initCheckers());
   const [sel,setSel]=useState(null);       // [r,c] peça selecionada
   const [legal,setLegal]=useState([]);     // movimentos legais da peça sel
@@ -4798,7 +4829,8 @@ function Dama({chips,onChange,log}){
   const syncChain=(v)=>{ chainRef.current=v; setChain(v); };
 
   const startGame=()=>{
-    if(chips<bet){alert('Fichas insuficientes!');return;}
+    if(chips<COST){alert('Fichas insuficientes!');return;}
+    onChange(-COST);
     const b=initCheckers();
     syncBoard(b); syncSel(null); syncLegal([]); syncChain(null);
     setTurn('w'); setStatus('Sua vez ⬜'); setOver(false);
@@ -4930,16 +4962,15 @@ function Dama({chips,onChange,log}){
       {!started?(
         <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(20,14,6,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center'}}>
           <div style={{fontSize:48,marginBottom:8}}>♟</div>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:20}}>Jogue contra a IA</div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
-            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
-            <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
-              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
-            <span style={{color:'#555',fontSize:11}}>fichas</span>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:16}}>Jogue contra a IA</div>
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px 14px',marginBottom:20}}>
+            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+            <div style={{color:'#f1c40f',fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
           </div>
           <button onClick={startGame}
-            style={{padding:'13px 36px',background:'linear-gradient(135deg,#2a5a1a,#1a3a0d)',border:'1px solid rgba(46,204,113,.5)',borderRadius:12,color:'#2ecc71',fontWeight:900,fontSize:14,cursor:'pointer',letterSpacing:1}}>
-            ▶ INICIAR PARTIDA
+            style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,#2a5a1a,#1a3a0d)':'rgba(255,255,255,.03)',border:`1px solid ${chips>=COST?'rgba(46,204,113,.5)':'rgba(255,255,255,.08)'}`,borderRadius:12,color:chips>=COST?'#2ecc71':'#444',fontWeight:900,fontSize:14,cursor:chips>=COST?'pointer':'not-allowed',letterSpacing:1}}>
+            {chips>=COST?`▶ INICIAR — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
           </button>
         </div>
       ):(
@@ -5030,7 +5061,8 @@ function Dama({chips,onChange,log}){
 // ══════════════════════════════════════════════════════
 // XADREZ — Offline vs IA
 // ══════════════════════════════════════════════════════
-function Xadrez({chips,onChange,log}){
+function Xadrez({chips,onChange,log,mode}){
+  const COST=mode==='online'?5:1;
   const [board,setBoard]=useState(()=>initChess());
   const [sel,setSel]=useState(null);
   const [turn,setTurn]=useState('w');
@@ -5050,7 +5082,8 @@ function Xadrez({chips,onChange,log}){
   const CELL=44;
 
   const startGame=()=>{
-    if(chips<bet){alert('Fichas insuficientes!');return;}
+    if(chips<COST){alert('Fichas insuficientes!');return;}
+    onChange(-COST);
     setBoard(initChess()); setSel(null); setTurn('w'); setLegal([]);
     setStatus('Sua vez ⬜'); setOver(false); setStarted(true);
     setEnPassant(null); setCastling({wK:true,wQ:true,bK:true,bQ:true});
@@ -5189,19 +5222,18 @@ function Xadrez({chips,onChange,log}){
       {!started?(
         <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(10,8,20,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center'}}>
           <div style={{fontSize:48,marginBottom:8}}>♔</div>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:20,lineHeight:1.5}}>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:16,lineHeight:1.5}}>
             Jogue contra a IA<br/>
             <span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span>
           </div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:20}}>
-            <span style={{color:'#888',fontSize:12}}>Aposta:</span>
-            <input type="number" value={bet} min={1} onChange={e=>setBet(Math.max(1,+e.target.value))}
-              style={{width:70,background:'rgba(255,255,255,.06)',border:'1px solid rgba(241,196,15,.3)',borderRadius:8,padding:'6px 10px',color:'#f1c40f',fontSize:15,textAlign:'center',outline:'none'}}/>
-            <span style={{color:'#555',fontSize:11}}>fichas</span>
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px 14px',marginBottom:20}}>
+            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+            <div style={{color:'#f1c40f',fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
           </div>
           <button onClick={startGame}
-            style={{padding:'13px 36px',background:'linear-gradient(135deg,#2a1a4a,#1a0d2e)',border:'1px solid rgba(155,89,182,.5)',borderRadius:12,color:'#9b59b6',fontWeight:900,fontSize:14,cursor:'pointer',letterSpacing:1}}>
-            ▶ INICIAR PARTIDA
+            style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,#2a1a4a,#1a0d2e)':'rgba(255,255,255,.03)',border:`1px solid ${chips>=COST?'rgba(155,89,182,.5)':'rgba(255,255,255,.08)'}`,borderRadius:12,color:chips>=COST?'#9b59b6':'#444',fontWeight:900,fontSize:14,cursor:chips>=COST?'pointer':'not-allowed',letterSpacing:1}}>
+            {chips>=COST?`▶ INICIAR — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
           </button>
         </div>
       ):(
@@ -5397,624 +5429,469 @@ function pkAI(hand,community,stage,aiBet,curBet){
   return toCall===0?(Math.random()<.12?'raise':'check'):Math.random()<.1?'call':'fold';
 }
 
-function Poker({chips,onChange,log}){
-  var SUITS=['spade','heart','diam','club'];
-  var SUIT_CHAR={spade:'spades',heart:'hearts',diam:'diams',club:'clubs'};
-  var SUIT_SYM={spade:'♠',heart:'♥',diam:'♦',club:'♣'};
-  var SUIT_COL={spade:'#ccc',heart:'#e74c3c',diam:'#e74c3c',club:'#ccc'};
-  var RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 
-  function makeDeck(){
-    var d=[];
-    SUITS.forEach(function(s){
-      RANKS.forEach(function(r){
-        d.push({rank:r,suit:s,id:r+s+Math.random().toString(36).slice(2)});
-      });
-    });
-    return d.sort(function(){return Math.random()-.5;});
-  }
+// ══════════════════════════════════════════════════════════════
+//  POKER — Texas Hold'em Heads-Up vs IA
+// ══════════════════════════════════════════════════════════════
 
-  var [gs,setGs]=useState('idle');
-  var [bet,setBet]=useState(1);
-  var [deck,setDeck]=useState([]);
-  var [ph,setPh]=useState([]);
-  var [ah,setAh]=useState([]);
-  var [comm,setComm]=useState([]);
-  var [pot,setPot]=useState(0);
-  var [pc,setPc]=useState(0);
-  var [ac,setAc]=useState(0);
-  var [stage,setStage]=useState('pre');
-  var [curBet,setCurBet]=useState(0);
-  var [pBet,setPBet]=useState(0);
-  var [aBet,setABet]=useState(0);
-  var [status,setStatus]=useState('');
-  var [reveal,setReveal]=useState(false);
-  var [result,setResult]=useState(null);
-  var [thinking,setThinking]=useState(false);
-  var [raiseAmt,setRaiseAmt]=useState(20);
-  var [showRaise,setShowRaise]=useState(false);
-  var [lastAct,setLastAct]=useState(null);
+function pkMakeDeck(){
+  var s=['s','h','d','c'],r=['2','3','4','5','6','7','8','9','10','J','Q','K','A'],d=[];
+  s.forEach(function(su){r.forEach(function(ra){d.push({r:ra,s:su,id:ra+su+Math.random().toString(36).slice(2)});});});
+  for(var i=d.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=d[i];d[i]=d[j];d[j]=t;}
+  return d;
+}
+function pkRI(r){return['2','3','4','5','6','7','8','9','10','J','Q','K','A'].indexOf(r);}
+function pkEval5(h){
+  var ri=h.map(function(c){return pkRI(c.r);}).sort(function(a,b){return b-a;});
+  var si=h.map(function(c){return c.s;});
+  var fl=si.every(function(s){return s===si[0];});
+  var cnt={};ri.forEach(function(r){cnt[r]=(cnt[r]||0)+1;});
+  var pairs=Object.entries(cnt).map(function(e){return[+e[0],e[1]];}).sort(function(a,b){return b[1]-a[1]||b[0]-a[0];});
+  var g=pairs.map(function(p){return p[0];});
+  var gs=pairs.map(function(p){return p[1];});
+  var st=false,sh=ri[0],u=[...new Set(ri)];
+  if(u.length>=5){for(var i=0;i<=u.length-5;i++){if(u[i]-u[i+4]===4){st=true;sh=u[i];break;}}
+    if(!st&&u.includes(12)&&u.includes(0)&&u.includes(1)&&u.includes(2)&&u.includes(3)){st=true;sh=3;}}
+  if(st&&fl)return sh===12?{rank:8,tb:[12]}:{rank:7,tb:[sh]};
+  if(gs[0]===4)return{rank:6,tb:[g[0],g[1]]};
+  if(gs[0]===3&&gs[1]===2)return{rank:5,tb:[g[0],g[1]]};
+  if(fl)return{rank:4,tb:ri.slice(0,5)};
+  if(st)return{rank:3,tb:[sh]};
+  if(gs[0]===3)return{rank:2,tb:[g[0],g[1],g[2]]};
+  if(gs[0]===2&&gs[1]===2)return{rank:1,tb:[g[0],g[1],g[2]]};
+  if(gs[0]===2)return{rank:0,tb:[g[0],g[1],g[2],g[3]]};
+  return{rank:-1,tb:ri.slice(0,5)};
+}
+function pkEval7(cards){
+  var best=null;
+  function c5(arr,k,s,cur,cb){if(cur.length===k){cb(cur.slice());return;}for(var i=s;i<=arr.length-(k-cur.length);i++){cur.push(arr[i]);c5(arr,k,i+1,cur,cb);cur.pop();}}
+  c5(cards,5,0,[],function(h){var v=pkEval5(h);if(!best||pkCmpV(v,best)>0)best=v;});
+  return best;
+}
+function pkCmpV(a,b){
+  if(a.rank!==b.rank)return a.rank-b.rank;
+  for(var i=0;i<Math.max(a.tb.length,b.tb.length);i++){var d=(a.tb[i]||0)-(b.tb[i]||0);if(d)return d;}
+  return 0;
+}
+var PKN=['Par','Dois Pares','Trinca','Sequência','Flush','Full House','Quadra','Straight Flush','Royal Flush'];
+function pkHN(v){if(!v)return'?';if(v.rank===8)return'Royal Flush';if(v.rank<0)return'Carta Alta';return PKN[v.rank];}
 
-  var BB=bet;
-  var SB=Math.max(5,Math.floor(bet/2));
-
-  function updPc(v){ pcRef.current=typeof v==='function'?v(pcRef.current):v; setPc(v); }
-  function updGs(v){ gsRef.current=v; setGs(v); }
-
-  function startGame(){
-    var sc=bet*4;
-    if(chips<sc)return;
-    /* sem aposta */
-    updPc(sc); setAc(sc); setResult(null); updGs('playing');
-    dealHand(sc,sc);
-  }
-
-  function dealHand(p,a){
-    var d=makeDeck();
-    var newPh=[d.pop(),d.pop()];
-    var newAh=[d.pop(),d.pop()];
-    var newDeck=d.slice();
-    setDeck(newDeck); setPh(newPh); setAh(newAh);
-    setComm([]); setReveal(false); setResult(null);
-    setStage('pre'); setLastAct(null); setShowRaise(false);
-    var newPc=p-BB; var newAc=a-SB;
-    var newPot=BB+SB;
-    updPc(newPc); setAc(newAc); setPot(newPot);
-    setPBet(BB); setABet(SB); setCurBet(BB);
-    setRaiseAmt(BB*2);
-    setStatus('Você pagou o BB. Call, Raise ou Fold?');
-  }
-
-  function doShowdown(p,a,pot2,community,playerH,aiH){
-    setReveal(true); setStage('showdown');
-    var ps=pkEval(playerH.concat(community));
-    var as=pkEval(aiH.concat(community));
-    var cmp=pkCmp(ps,as);
-    var outcome,reason,won;
-    if(cmp>0){outcome='win';reason=pkHandName(ps)+' bate '+pkHandName(as);won=pot2;}
-    else if(cmp<0){outcome='lose';reason=pkHandName(as)+' bate '+pkHandName(ps);won=0;}
-    else{outcome='tie';reason='Empate! '+pkHandName(ps);won=Math.floor(pot2/2);}
-    var np=p+(outcome==='win'?pot2:outcome==='tie'?won:0);
-    var na=a+(outcome==='lose'?pot2:outcome==='tie'?pot2-won:0);
-    updPc(np); setAc(na); setPot(0);
-    setResult({outcome,reason,chips:outcome==='win'?pot2:outcome==='lose'?0:won,ps,as,ph:playerH,ch:community});
-    updGs('over');
-  }
-
-  function advance(p,a,pot2,community,deckRef,curStage,playerH,aiH){
-    setPBet(0); setABet(0); setCurBet(0); setRaiseAmt(BB*2); setShowRaise(false);
-    if(curStage==='pre'){
-      var nd=deckRef.slice();
-      var c1=nd.pop(),c2=nd.pop(),c3=nd.pop();
-      var flop=community.concat([c1,c2,c3]);
-      setDeck(nd); setComm(flop); setStage('flop');
-      setStatus('Flop! Sua vez — Check ou Bet?');
-    } else if(curStage==='flop'){
-      var nd2=deckRef.slice(); var c=nd2.pop();
-      var turn=community.concat([c]);
-      setDeck(nd2); setComm(turn); setStage('turn');
-      setStatus('Turn! Sua vez — Check ou Bet?');
-    } else if(curStage==='turn'){
-      var nd3=deckRef.slice(); var c2=nd3.pop();
-      var river=community.concat([c2]);
-      setDeck(nd3); setComm(river); setStage('river');
-      setStatus('River! Ultima aposta — Check ou Bet?');
-    } else {
-      doShowdown(p,a,pot2,community,playerH,aiH);
-    }
-  }
-
-  function runAI(p,a,pot2,deckRef,community,curStage,curBetVal,aBetVal,playerH,aiH){
-    setThinking(true);
-    var action=pkAI(aiH,community,curStage,aBetVal,curBetVal);
-    if(action==='bluff')action='raise';
-    setTimeout(function(){
-      setLastAct({who:'ai',act:action});
-      if(action==='fold'){
-        setReveal(true); setAc(a); updPc(p+pot2); setPot(0);
-        setResult({outcome:'win',reason:'IA desistiu',chips:pot2,ps:null,as:null});
-        updGs('over');
-      } else if(action==='call'||action==='check'){
-        var toCall=Math.min(curBetVal-aBetVal,a);
-        var na=a-toCall; var np2=pot2+toCall;
-        setAc(na); setPot(np2); setABet(aBetVal+toCall);
-        setStatus(toCall===0?'IA deu check':'IA chamou');
-        setTimeout(function(){advance(p,na,np2,community,deckRef,curStage,playerH,aiH);},400);
-      } else {
-        var rSize=Math.min(Math.max(curBetVal*2,BB*3),a+aBetVal);
-        var toAdd=Math.min(rSize-aBetVal,a);
-        var na2=a-toAdd; var np3=pot2+toAdd;
-        var nb=aBetVal+toAdd;
-        setAc(na2); setPot(np3); setABet(nb); setCurBet(nb);
-        setStatus('IA aumentou para '+nb+'! Call, Raise ou Fold?');
-        setRaiseAmt(nb*2);
-      }
-      setThinking(false);
-    },800+Math.random()*600);
-  }
-
-  function pFold(){
-    if(thinking)return;
-    setReveal(true); setAc(ac+pot); setPot(0);
-    setLastAct({who:'player',act:'fold'});
-    setResult({outcome:'lose',reason:'Voce desistiu',chips:0,ps:null,as:null});
-    updGs('over');
-  }
-  function pCall(){
-    if(thinking)return;
-    var toCall=Math.min(curBet-pBet,pc);
-    if(toCall<0)return;
-    var np=pc-toCall; var pot2=pot+toCall; var npBet=pBet+toCall;
-    updPc(np); setPot(pot2); setPBet(npBet);
-    setLastAct({who:'player',act:'call'});
-    advance(np,ac,pot2,comm,deck,stage,ph,ah);
-  }
-  function pCheck(){
-    if(thinking||curBet>pBet)return;
-    setLastAct({who:'player',act:'check'});
-    setStatus('Voce deu check');
-    runAI(pc,ac,pot,deck,comm,stage,curBet,aBet,ph,ah);
-  }
-  function pRaise(amt){
-    if(thinking)return;
-    var toAdd=Math.min(amt-pBet,pc);
-    if(toAdd<=0)return;
-    var np=pc-toAdd; var pot2=pot+toAdd;
-    updPc(np); setPot(pot2); setPBet(amt); setCurBet(amt);
-    setShowRaise(false);
-    setLastAct({who:'player',act:pc===0?'allin':'raise'});
-    setStatus(pc===0?'ALL IN!':'Voce aumentou para '+amt);
-    runAI(np,ac,pot2,deck,comm,stage,amt,aBet,ph,ah);
-  }
-  function pAllIn(){pRaise(pc+pBet);}
-
-  function nextHand(){
-    if(pc<=0||ac<=0){
-      gsRef.current='idle'; onChange(pc); log('Poker: terminou com '+pc+' fichas');
-      updGs('idle'); return;
-    }
-    updGs('playing');
-    dealHand(pc,ac);
-  }
-
-  var canCall=curBet>pBet&&pc>0;
-  var canCheck=curBet<=pBet;
-  var toCall2=Math.max(0,Math.min(curBet-pBet,pc));
-  var stLabel={pre:'Pre-Flop',flop:'Flop',turn:'Turn',river:'River',showdown:'Showdown'};
-  var actColor={fold:'#e74c3c',call:'#3498db',check:'#2ecc71',raise:'#f1c40f',allin:'#e74c3c'};
-
-  function PCard(props){
-    var r=props.rank; var s=props.suit; var fd=props.faceDown; var hl=props.hl;
-    var sym=SUIT_SYM[s]||s;
-    var col=SUIT_COL[s]||'#ccc';
-    if(fd){
-      return React.createElement('div',{style:{width:50,height:72,borderRadius:7,flexShrink:0,
-        background:'linear-gradient(145deg,#1a0836,#0d0418)',
-        border:'1.5px solid rgba(138,43,226,.4)',
-        boxShadow:'0 4px 12px rgba(0,0,0,.7)',
-        display:'flex',alignItems:'center',justifyContent:'center'}},
-        React.createElement('div',{style:{width:'70%',height:'70%',
-          border:'1px solid rgba(138,43,226,.25)',borderRadius:3,
-          background:'repeating-linear-gradient(45deg,rgba(138,43,226,.05) 0,rgba(138,43,226,.05) 1px,transparent 0,transparent 50%)',
-          backgroundSize:'6px 6px'}})
-      );
-    }
-    return React.createElement('div',{style:{
-      width:50,height:72,borderRadius:7,flexShrink:0,
-      background:hl?'linear-gradient(145deg,#fffbe0,#fff8c0)':'linear-gradient(145deg,#fff,#f0ebfa)',
-      border:hl?'2px solid #f1c40f':'1.5px solid rgba(0,0,0,.15)',
-      boxShadow:hl?'0 0 14px rgba(241,196,15,.6),0 4px 12px rgba(0,0,0,.5)':'0 4px 12px rgba(0,0,0,.5)',
-      display:'flex',flexDirection:'column',alignItems:'center',
-      justifyContent:'space-between',padding:'4px 5px',
-      transform:hl?'translateY(-5px)':'none',
-      transition:'transform .2s',
-    }},
-      React.createElement('div',{style:{alignSelf:'flex-start',color:col,fontWeight:900,fontSize:12,lineHeight:1,fontFamily:"'Cinzel',serif"}},r),
-      React.createElement('div',{style:{color:col,fontSize:26,lineHeight:1,
-        filter:(s==='heart'||s==='diam')?'drop-shadow(0 0 3px rgba(231,76,60,.5))':'drop-shadow(0 1px 3px rgba(0,0,0,.3))'}},sym),
-      React.createElement('div',{style:{alignSelf:'flex-end',color:col,fontWeight:900,fontSize:12,lineHeight:1,transform:'rotate(180deg)',fontFamily:"'Cinzel',serif"}},r)
-    );
-  }
-
-  if(gs==='idle'){
-    return (
-      <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
-        <div style={{textAlign:'center',padding:'28px 20px 24px',
-          background:'radial-gradient(ellipse at 50% 0%,rgba(20,80,20,.5),rgba(3,12,3,.95))',
-          border:'1px solid rgba(46,204,113,.18)',borderRadius:24,
-          boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
-          <div style={{display:'flex',justifyContent:'center',gap:10,marginBottom:16}}>
-            <span style={{fontSize:32,color:'#ccc'}}>♠</span>
-            <span style={{fontSize:32,color:'#e74c3c'}}>♥</span>
-            <span style={{fontSize:32,color:'#e74c3c'}}>♦</span>
-            <span style={{fontSize:32,color:'#ccc'}}>♣</span>
-          </div>
-          <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>POKER</div>
-          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:24}}>TEXAS HOLDEM vs IA</div>
-          <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'16px',marginBottom:20,border:'1px solid rgba(255,255,255,.04)'}}>
-            <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:10}}>APOSTA (BIG BLIND)</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}}>
-              {[10,25,50,100,200].map(v=>(
-                <button key={v} onClick={()=>setBet(v)}
-                  style={{padding:'6px 14px',
-                    background:bet===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
-                    border:`1px solid ${bet===v?'#f1c40f':'rgba(255,255,255,.1)'}`,
-                    borderRadius:8,color:bet===v?'#f1c40f':'#666',
-                    cursor:'pointer',fontSize:13,fontWeight:900,fontFamily:"'Cinzel',serif"}}>
-                  {v}
-                </button>
-              ))}
-            </div>
-            <div style={{color:'#444',fontSize:10,marginTop:8}}>Stack inicial: {bet*4} fichas</div>
-          </div>
-          <button onClick={startGame} disabled={chips<bet*2}
-            style={{padding:'13px 36px',
-              background:chips>=bet*2?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',
-              border:'1px solid rgba(46,204,113,.4)',borderRadius:14,
-              color:chips>=bet*2?'#2ecc71':'#444',fontWeight:900,fontSize:15,
-              cursor:chips>=bet*2?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
-            ENTRAR NA MESA
-          </button>
-          {chips<bet*2 && <div style={{color:'#c0392b',fontSize:10,marginTop:8}}>Precisa de {bet*2} fichas minimo</div>}
-        </div>
-      </div>
-    );
-  }
-
-  var isOver=gs==='over';
-
-  return (
-    <div style={{padding:'6px',maxWidth:460,margin:'0 auto',userSelect:'none'}}>
-
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-        padding:'8px 12px',background:'rgba(0,0,0,.5)',borderRadius:12,
-        border:'1px solid rgba(255,255,255,.04)',marginBottom:6}}>
-        <div style={{textAlign:'center',minWidth:70}}>
-          <div style={{color:'#2ecc71',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>VOCE</div>
-          <div style={{color:'#fff',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif"}}>{pc}</div>
-        </div>
-        <div style={{textAlign:'center'}}>
-          <div style={{color:'rgba(255,255,255,.25)',fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:1}}>{stLabel[stage]||''}</div>
-          <div style={{color:'#f1c40f',fontWeight:900,fontSize:20,fontFamily:"'Cinzel',serif",textShadow:'0 0 16px rgba(241,196,15,.5)'}}>{pot>0?pot+' fichas':'—'}</div>
-        </div>
-        <div style={{textAlign:'center',minWidth:70}}>
-          <div style={{color:'#e74c3c',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>IA</div>
-          <div style={{color:'#fff',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif"}}>{ac}</div>
-        </div>
-      </div>
-
-      <div style={{
-        background:'radial-gradient(ellipse at 50% 40%,#17521a 0%,#0c3010 45%,#060f06 100%)',
-        border:'3px solid #6b3e1a',borderRadius:22,padding:'12px 10px',
-        boxShadow:'0 16px 48px rgba(0,0,0,.85)',
-        marginBottom:6,position:'relative',minHeight:230}}>
-
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-          <div style={{display:'flex',gap:5}}>
-            {ah.length>0 ? ah.map(function(c,i){
-              var hl=isOver&&result&&result.as&&reveal;
-              return React.createElement(PCard,{key:c.id,rank:c.rank,suit:c.suit,faceDown:!reveal,hl:false});
-            }) : [0,1].map(function(i){return <div key={i} style={{width:50,height:72,borderRadius:7,border:'1px dashed rgba(255,255,255,.08)',background:'rgba(0,0,0,.2)'}}/>;}) }
-          </div>
-          <div style={{textAlign:'right',paddingRight:4}}>
-            <div style={{color:'#e74c3c',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>IA</div>
-            {reveal&&result&&result.as&&<div style={{color:'#aaa',fontSize:9,marginTop:2}}>{pkHandName(result.as)}</div>}
-            {lastAct&&lastAct.who==='ai' && <div style={{color:actColor[lastAct.act]||'#aaa',fontSize:10,fontWeight:900,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{lastAct.act.toUpperCase()}</div>}
-            {thinking && <div style={{color:'#f1c40f',fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>PENSANDO...</div>}
-          </div>
-        </div>
-
-        <div style={{display:'flex',justifyContent:'center',gap:5,padding:'6px 0',minHeight:78}}>
-          {[0,1,2,3,4].map(function(i){
-            var c=comm[i];
-            if(c) return React.createElement(PCard,{key:c.id||i,rank:c.rank,suit:c.suit,faceDown:false,hl:false});
-            return <div key={i} style={{width:50,height:72,borderRadius:7,border:'1px dashed rgba(255,255,255,.08)',background:'rgba(0,0,0,.15)'}}/>;
-          })}
-        </div>
-
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10}}>
-          <div style={{paddingLeft:4}}>
-            <div style={{color:'#2ecc71',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>VOCE</div>
-            {isOver&&result&&result.ps&&<div style={{color:'#aaa',fontSize:9,marginTop:2}}>{pkHandName(result.ps)}</div>}
-            {lastAct&&lastAct.who==='player' && <div style={{color:actColor[lastAct.act]||'#aaa',fontSize:10,fontWeight:900,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{lastAct.act==='allin'?'ALL IN':lastAct.act.toUpperCase()}</div>}
-          </div>
-          <div style={{display:'flex',gap:5}}>
-            {ph.length>0 ? ph.map(function(c){
-              return React.createElement(PCard,{key:c.id,rank:c.rank,suit:c.suit,faceDown:false,hl:false});
-            }) : [0,1].map(function(i){return <div key={i} style={{width:50,height:72,borderRadius:7,border:'1px dashed rgba(255,255,255,.08)',background:'rgba(0,0,0,.2)'}}/>;}) }
-          </div>
-        </div>
-
-        {stage==='pre'&&!isOver && (
-          <div style={{position:'absolute',top:10,right:10,display:'flex',gap:4}}>
-            <div style={{background:'rgba(231,76,60,.75)',borderRadius:20,padding:'2px 7px',fontSize:8,color:'#fff',fontWeight:900}}>SB {SB}</div>
-            <div style={{background:'rgba(52,152,219,.75)',borderRadius:20,padding:'2px 7px',fontSize:8,color:'#fff',fontWeight:900}}>BB {BB}</div>
-          </div>
-        )}
-      </div>
-
-      <div style={{textAlign:'center',minHeight:16,marginBottom:6,
-        color:status.indexOf('IA')>=0?'#e74c3c':status.indexOf('Voce')>=0?'#2ecc71':'rgba(255,255,255,.4)',
-        fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-        {status}
-      </div>
-
-      {isOver&&result && (
-        <div style={{
-          background:result.outcome==='win'?'rgba(46,204,113,.1)':result.outcome==='lose'?'rgba(231,76,60,.08)':'rgba(241,196,15,.08)',
-          border:'1px solid rgba(255,255,255,.1)',
-          borderRadius:14,padding:'14px',textAlign:'center',marginBottom:8}}>
-          <div style={{fontSize:30,marginBottom:6}}>
-            {result.outcome==='win'?'🏆':result.outcome==='lose'?'😔':'🤝'}
-          </div>
-          <div style={{color:result.outcome==='win'?'#2ecc71':result.outcome==='lose'?'#e74c3c':'#f1c40f',
-            fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif",marginBottom:4}}>
-            {result.outcome==='win'?'+'+result.chips+' fichas':result.outcome==='lose'?'Perdeu a rodada':'Empate'}
-          </div>
-          <div style={{color:'#666',fontSize:11}}>{result.reason}</div>
-          <div style={{display:'flex',gap:8,marginTop:12,justifyContent:'center'}}>
-            {pc>0&&ac>0 && (
-              <button onClick={nextHand}
-                style={{padding:'10px 24px',background:'rgba(46,204,113,.15)',
-                  border:'1px solid rgba(46,204,113,.4)',borderRadius:11,
-                  color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:13,fontFamily:"'Cinzel',serif"}}>
-                Proxima Mao
-              </button>
-            )}
-            <button onClick={function(){gsRef.current='idle';onChange(pc);log('Poker: saiu com '+pc+' fichas');updGs('idle');}}
-              style={{padding:'10px 20px',background:'rgba(255,255,255,.04)',
-                border:'1px solid rgba(255,255,255,.1)',borderRadius:11,
-                color:'#888',fontWeight:700,cursor:'pointer',fontSize:12}}>
-              Sair
-            </button>
-          </div>
-          {(pc<=0||ac<=0) && (
-            <div style={{marginTop:8,color:ac<=0?'#f1c40f':'#e74c3c',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-              {ac<=0?'Voce venceu a sessao!':'Suas fichas acabaram'}
-            </div>
-          )}
-        </div>
-      )}
-
-      {!isOver&&!thinking && (
-        <div>
-          {showRaise && (
-            <div style={{background:'rgba(0,0,0,.5)',border:'1px solid rgba(241,196,15,.18)',borderRadius:14,padding:'12px',marginBottom:6}}>
-              <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:10}}>RAISE / BET</div>
-              <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
-                {[
-                  {l:'Min',v:Math.max(curBet*2||BB*2,BB*2)},
-                  {l:'Meio Pot',v:Math.floor(pot*.5)},
-                  {l:'Pot',v:pot},
-                ].map(function(item){
-                  var capped=Math.min(item.v,pc+pBet);
-                  return (
-                    <button key={item.l} onClick={()=>setRaiseAmt(capped)}
-                      style={{padding:'5px 10px',
-                        background:raiseAmt===capped?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
-                        border:'1px solid rgba(255,255,255,.1)',
-                        borderRadius:8,color:raiseAmt===capped?'#f1c40f':'#666',
-                        cursor:'pointer',fontSize:11,fontWeight:700}}>
-                      {item.l}
-                    </button>
-                  );
-                })}
-              </div>
-              <input type="range" min={Math.max(curBet*2||BB*2,BB*2)} max={pc+pBet} value={raiseAmt} step={BB}
-                onChange={e=>setRaiseAmt(+e.target.value)}
-                style={{width:'100%',accentColor:'#f1c40f',marginBottom:10}}/>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>pRaise(raiseAmt)}
-                  style={{flex:1,padding:'10px',background:'rgba(241,196,15,.15)',
-                    border:'1px solid rgba(241,196,15,.4)',borderRadius:10,
-                    color:'#f1c40f',fontWeight:900,cursor:'pointer',fontSize:13,fontFamily:"'Cinzel',serif"}}>
-                  {curBet>0?'RAISE':'BET'} {raiseAmt}
-                </button>
-                <button onClick={pAllIn}
-                  style={{padding:'10px 14px',background:'rgba(231,76,60,.15)',
-                    border:'1px solid rgba(231,76,60,.4)',borderRadius:10,
-                    color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-                  ALL IN
-                </button>
-              </div>
-            </div>
-          )}
-          <div style={{display:'flex',gap:5}}>
-            <button onClick={pFold}
-              style={{flex:1,padding:'13px 4px',background:'rgba(231,76,60,.08)',
-                border:'2px solid rgba(231,76,60,.3)',borderRadius:13,
-                color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-              FOLD
-            </button>
-            {canCheck ? (
-              <button onClick={pCheck}
-                style={{flex:1.6,padding:'13px 4px',background:'rgba(46,204,113,.1)',
-                  border:'2px solid rgba(46,204,113,.35)',borderRadius:13,
-                  color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-                CHECK
-              </button>
-            ) : (
-              <button onClick={pCall} disabled={!canCall}
-                style={{flex:1.6,padding:'13px 4px',background:'rgba(52,152,219,.1)',
-                  border:'2px solid rgba(52,152,219,.4)',borderRadius:13,
-                  color:canCall?'#3498db':'#444',fontWeight:900,
-                  cursor:canCall?'pointer':'not-allowed',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-                CALL {toCall2>0?'('+toCall2+')':''}
-              </button>
-            )}
-            <button onClick={()=>setShowRaise(function(v){return !v;})}
-              style={{flex:1,padding:'13px 4px',
-                background:showRaise?'rgba(241,196,15,.15)':'rgba(241,196,15,.06)',
-                border:'2px solid rgba(241,196,15,.3)',borderRadius:13,
-                color:'#f1c40f',fontWeight:900,cursor:'pointer',fontSize:12,fontFamily:"'Cinzel',serif"}}>
-              BET
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!isOver&&thinking && (
-        <div style={{textAlign:'center',padding:'14px',color:'#e74c3c',fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3}}>
-          IA PENSANDO...
-        </div>
-      )}
-
+// Constantes e componente de carta — FORA do Poker para evitar recriação a cada render
+var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣'};
+var PK_SC={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd'};
+function CardV({card,hidden}){
+  if(hidden)return(
+    <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',
+      border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🂠</div>
+  );
+  if(!card)return(
+    <div style={{width:42,height:60,borderRadius:6,background:'rgba(255,255,255,.03)',
+      border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>
+  );
+  return(
+    <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',
+      border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',
+      justifyContent:'center',gap:1,boxShadow:'0 2px 6px rgba(0,0,0,.5)',flexShrink:0}}>
+      <div style={{fontSize:11,fontWeight:900,color:PK_SC[card.s],lineHeight:1}}>{card.r}</div>
+      <div style={{fontSize:15,color:PK_SC[card.s],lineHeight:1}}>{PK_SS[card.s]}</div>
     </div>
   );
 }
 
 
 // ══════════════════════════════════════════════════════════════
-// GO — 19x19, offline vs IA + online 1v1
+//  POKER — Texas Hold'em Heads-Up vs IA  v3.0
 // ══════════════════════════════════════════════════════════════
 
-// ── Go engine helpers ──────────────────────────────────────────
-function goNeighbors(r,c,N){
-  var nb=[];
-  if(r>0)nb.push([r-1,c]);
-  if(r<N-1)nb.push([r+1,c]);
-  if(c>0)nb.push([r,c-1]);
-  if(c<N-1)nb.push([r,c+1]);
-  return nb;
+function pkMakeDeck(){
+  var S=['s','h','d','c'],R=['2','3','4','5','6','7','8','9','10','J','Q','K','A'],d=[];
+  S.forEach(function(s){R.forEach(function(r){d.push({r:r,s:s,id:r+s+Math.random().toString(36).slice(2)});});});
+  for(var i=d.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=d[i];d[i]=d[j];d[j]=t;}
+  return d;
 }
-
-function goGroup(board,r,c,N){
-  var color=board[r][c];
-  if(!color)return{stones:[],liberties:[]};
-  var visited=new Set();
-  var stones=[];
-  var libs=new Set();
-  var queue=[[r,c]];
-  while(queue.length){
-    var cur=queue.pop();
-    var key=cur[0]+','+cur[1];
-    if(visited.has(key))continue;
-    visited.add(key);
-    stones.push(cur);
-    var nb=goNeighbors(cur[0],cur[1],N);
-    for(var i=0;i<nb.length;i++){
-      var nr=nb[i][0],nc=nb[i][1];
-      var nk=nr+','+nc;
-      if(!visited.has(nk)){
-        if(!board[nr][nc])libs.add(nk);
-        else if(board[nr][nc]===color)queue.push([nr,nc]);
-      }
-    }
+function pkRI(r){return['2','3','4','5','6','7','8','9','10','J','Q','K','A'].indexOf(r);}
+function pkEval5(h){
+  var ri=h.map(function(c){return pkRI(c.r);}).sort(function(a,b){return b-a;});
+  var si=h.map(function(c){return c.s;});
+  var fl=si.every(function(s){return s===si[0];});
+  var cnt={};ri.forEach(function(r){cnt[r]=(cnt[r]||0)+1;});
+  var pairs=Object.entries(cnt).map(function(e){return[+e[0],e[1]];}).sort(function(a,b){return b[1]-a[1]||b[0]-a[0];});
+  var g=pairs.map(function(p){return p[0];}),gs=pairs.map(function(p){return p[1];});
+  var st=false,sh=ri[0],u=[...new Set(ri)];
+  if(u.length>=5){
+    for(var i=0;i<=u.length-5;i++){if(u[i]-u[i+4]===4){st=true;sh=u[i];break;}}
+    if(!st&&u.includes(12)&&u.includes(0)&&u.includes(1)&&u.includes(2)&&u.includes(3)){st=true;sh=3;}
   }
-  return{stones:stones,liberties:Array.from(libs)};
+  if(st&&fl)return sh===12?{rank:8,tb:[12]}:{rank:7,tb:[sh]};
+  if(gs[0]===4)return{rank:6,tb:[g[0],g[1]]};
+  if(gs[0]===3&&gs[1]===2)return{rank:5,tb:[g[0],g[1]]};
+  if(fl)return{rank:4,tb:ri.slice(0,5)};
+  if(st)return{rank:3,tb:[sh]};
+  if(gs[0]===3)return{rank:2,tb:[g[0],g[1],g[2]]};
+  if(gs[0]===2&&gs[1]===2)return{rank:1,tb:[g[0],g[1],g[2]]};
+  if(gs[0]===2)return{rank:0,tb:[g[0],g[1],g[2],g[3]]};
+  return{rank:-1,tb:ri.slice(0,5)};
 }
-
-function goCapture(board,r,c,N){
-  // Place stone at r,c (board already updated), capture opponent groups with 0 liberties
-  var opp=board[r][c]==='B'?'W':'B';
-  var captured=[];
-  var nb=goNeighbors(r,c,N);
-  for(var i=0;i<nb.length;i++){
-    var nr=nb[i][0],nc=nb[i][1];
-    if(board[nr][nc]===opp){
-      var g=goGroup(board,nr,nc,N);
-      if(g.liberties.length===0){
-        captured=captured.concat(g.stones);
-        for(var j=0;j<g.stones.length;j++)board[g.stones[j][0]][g.stones[j][1]]=null;
-      }
-    }
-  }
-  return captured;
-}
-
-function goLegal(board,r,c,color,prevBoard,N){
-  if(board[r][c])return false;
-  var nb=board.map(function(row){return row.slice();});
-  nb[r][c]=color;
-  var caps=goCapture(nb,r,c,N);
-  // Suicide check
-  var g=goGroup(nb,r,c,N);
-  if(g.liberties.length===0&&caps.length===0)return false;
-  // Ko check
-  if(prevBoard){
-    var same=true;
-    outer: for(var i=0;i<N;i++)for(var j=0;j<N;j++)if(nb[i][j]!==prevBoard[i][j]){same=false;break outer;}
-    if(same)return false;
-  }
-  return true;
-}
-
-function goScore(board,N,komi,method){
-  // Territory scoring (Japanese) or Area scoring (Chinese)
-  var bScore=0,wScore=komi;
-  var visited=new Array(N).fill(null).map(function(){return new Array(N).fill(false);});
-  for(var i=0;i<N;i++){
-    for(var j=0;j<N;j++){
-      if(board[i][j]==='B')bScore+=(method==='area'?1:0);
-      else if(board[i][j]==='W')wScore+=(method==='area'?1:0);
-      else if(!visited[i][j]){
-        // flood fill empty region
-        var region=[],borders=new Set();
-        var q=[[i,j]];
-        while(q.length){
-          var cur=q.pop();
-          var rk=cur[0]+','+cur[1];
-          if(visited[cur[0]][cur[1]])continue;
-          visited[cur[0]][cur[1]]=true;
-          region.push(cur);
-          var nb=goNeighbors(cur[0],cur[1],N);
-          for(var k=0;k<nb.length;k++){
-            if(board[nb[k][0]][nb[k][1]])borders.add(board[nb[k][0]][nb[k][1]]);
-            else if(!visited[nb[k][0]][nb[k][1]])q.push([nb[k][0],nb[k][1]]);
-          }
-        }
-        if(borders.size===1){
-          var owner=Array.from(borders)[0];
-          if(owner==='B')bScore+=region.length;
-          else wScore+=region.length;
-        }
-      }
-    }
-  }
-  return{black:Math.round(bScore*10)/10,white:Math.round(wScore*10)/10};
-}
-
-// Simple Go AI — Monte Carlo + heuristics
-function goAI(board,color,N,caps){
-  var opp=color==='B'?'W':'B';
-  var best=null,bestScore=-Infinity;
-  var moves=[];
-  for(var i=0;i<N;i++)for(var j=0;j<N;j++)
-    if(!board[i][j])moves.push([i,j]);
-  // Shuffle
-  for(var i=moves.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=moves[i];moves[i]=moves[j];moves[j]=t;}
-  // Score each move heuristically
-  var sampled=moves.slice(0,Math.min(60,moves.length));
-  for(var m=0;m<sampled.length;m++){
-    var r=sampled[m][0],c=sampled[m][1];
-    if(!goLegal(board,r,c,color,null,N))continue;
-    var nb2=board.map(function(row){return row.slice();});
-    nb2[r][c]=color;
-    var capd=goCapture(nb2,r,c,N);
-    var sc=0;
-    sc+=capd.length*3;
-    // Protect own groups in atari
-    var myNbs=goNeighbors(r,c,N);
-    for(var k=0;k<myNbs.length;k++){
-      if(board[myNbs[k][0]][myNbs[k][1]]===color){
-        var g=goGroup(board,myNbs[k][0],myNbs[k][1],N);
-        if(g.liberties.length<=2)sc+=4;
-      }
-      if(board[myNbs[k][0]][myNbs[k][1]]===opp){
-        var og=goGroup(nb2,myNbs[k][0],myNbs[k][1],N);
-        if(og.liberties.length===1)sc+=5;
-      }
-    }
-    // Prefer center early
-    var dr=r-Math.floor(N/2),dc=c-Math.floor(N/2);
-    sc-=Math.sqrt(dr*dr+dc*dc)*0.15;
-    sc+=Math.random()*0.5;
-    if(sc>bestScore){bestScore=sc;best=[r,c];}
-  }
+function pkEval7(cards){
+  var best=null;
+  function c5(arr,k,s,cur,cb){if(cur.length===k){cb(cur.slice());return;}for(var i=s;i<=arr.length-(k-cur.length);i++){cur.push(arr[i]);c5(arr,k,i+1,cur,cb);cur.pop();}}
+  c5(cards,5,0,[],function(h){var v=pkEval5(h);if(!best||pkCmpV(v,best)>0)best=v;});
   return best;
 }
+function pkCmpV(a,b){
+  if(a.rank!==b.rank)return a.rank-b.rank;
+  for(var i=0;i<Math.max(a.tb.length,b.tb.length);i++){var d=(a.tb[i]||0)-(b.tb[i]||0);if(d)return d;}
+  return 0;
+}
+var PKN=['Par','Dois Pares','Trinca','Sequência','Flush','Full House','Quadra','Straight Flush','Royal Flush'];
+function pkHN(v){if(!v)return'?';if(v.rank===8)return'Royal Flush';if(v.rank<0)return'Carta Alta';return PKN[v.rank];}
 
-function Go({chips,onChange,log}){
+var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣'};
+var PK_SC={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd'};
+function CardV({card,hidden}){
+  if(hidden)return <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🂠</div>;
+  if(!card)return <div style={{width:44,height:62,borderRadius:6,background:'rgba(255,255,255,.03)',border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>;
+  return(
+    <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,boxShadow:'0 2px 8px rgba(0,0,0,.6)',flexShrink:0}}>
+      <div style={{fontSize:12,fontWeight:900,color:PK_SC[card.s],lineHeight:1}}>{card.r}</div>
+      <div style={{fontSize:16,color:PK_SC[card.s],lineHeight:1}}>{PK_SS[card.s]}</div>
+    </div>
+  );
+}
+
+function Poker({chips,onChange,log,mode}){
+  var COST=mode==='online'?5:1;
+  var SB=5,BB=10,START=100;
+
+  /*
+   * LÓGICA DE APOSTAS — bitmask ap:
+   *   ap=0: nenhum agiu nesta rua
+   *   ap=1: só jogador agiu
+   *   ap=2: só IA agiu
+   *   ap=3: ambos agiram
+   *
+   * Rua fecha quando: ap===3 && pbr===abr
+   *
+   * Após aposta/raise:
+   *   ap=1 (jogador apostou) → IA precisa responder
+   *   ap=2 (IA apostou)     → jogador precisa responder
+   *
+   * Blinds não contam como "agiu" (ap começa em 0 toda rua).
+   * Isso permite a opção do BB no pré-flop: quando SB faz limp
+   * (call), ap=1 mas abr=pbr, então shouldAdv=false → IA (BB) age.
+   */
+  var G=useRef({deck:[],ph:[],ah:[],comm:[],pot:0,ps:0,as:0,pbr:0,abr:0,cb:0,ap:0,street:'preflop',acting:null,dealer:'player',hand:0,result:null});
+  var [,setTick]=useState(0);
+  var [showRaise,setShowRaise]=useState(false);
+  var [raiseVal,setRaiseVal]=useState(BB*2);
+  var [screen,setScreen]=useState('idle');
+  function redraw(){setTick(function(t){return t+1;});}
+  function ok(g){return g.ap===3&&g.pbr===g.abr;}
+
+  function deal(dealer,ps,as){
+    var d=pkMakeDeck();
+    var pSB=dealer==='player';
+    var pB=pSB?SB:BB,aB=pSB?BB:SB;
+    var ph=[d.pop(),d.pop()],ah=[d.pop(),d.pop()];
+    var first=pSB?'player':'ai';
+    G.current={deck:d,ph:ph,ah:ah,comm:[],pot:pB+aB,ps:ps-pB,as:as-aB,pbr:pB,abr:aB,cb:BB,ap:0,street:'preflop',acting:first,dealer:dealer,hand:(G.current.hand||0)+1,result:null};
+    setShowRaise(false);setRaiseVal(BB*2);redraw();
+    if(first==='ai')setTimeout(runAI,800);
+  }
+
+  function startGame(){
+    if(chips<COST)return;
+    onChange(-COST);
+    deal('player',START,START);
+    setScreen('playing');
+  }
+
+  function advStreet(){
+    var g=G.current;
+    var nd=[...g.deck],nc=[...g.comm],next;
+    if(g.street==='preflop'){nd.pop();nc.push(nd.pop(),nd.pop(),nd.pop());next='flop';}
+    else if(g.street==='flop'){nd.pop();nc.push(nd.pop());next='turn';}
+    else if(g.street==='turn'){nd.pop();nc.push(nd.pop());next='river';}
+    else{doShowdown();return;}
+    var first=g.dealer==='player'?'ai':'player'; // BB age primeiro pós-flop
+    G.current={...g,deck:nd,comm:nc,pbr:0,abr:0,cb:0,ap:0,street:next,acting:first};
+    setShowRaise(false);setRaiseVal(BB*2);redraw();
+    if(first==='ai')setTimeout(runAI,800);
+  }
+
+  function doShowdown(){
+    var g=G.current;
+    var pV=pkEval7(g.ph.concat(g.comm));
+    var aV=pkEval7(g.ah.concat(g.comm));
+    var cmp=pkCmpV(pV,aV);
+    var winner,reason,nps,nas;
+    if(cmp>0){winner='player';reason='Sua mão: '+pkHN(pV)+' bate '+pkHN(aV);nps=g.ps+g.pot;nas=g.as;}
+    else if(cmp<0){winner='ai';reason='IA: '+pkHN(aV)+' bate '+pkHN(pV);nps=g.ps;nas=g.as+g.pot;}
+    else{winner='tie';reason='Empate! '+pkHN(pV);var h2=Math.floor(g.pot/2);nps=g.ps+h2;nas=g.as+(g.pot-h2);}
+    G.current={...g,ps:nps,as:nas,street:'showdown',acting:null,result:{winner:winner,reason:reason,ph:pkHN(pV),ah:pkHN(aV),nps:nps,nas:nas}};
+    if(winner==='player')log('♠ Poker — vitória: '+pkHN(pV));
+    else if(winner==='ai')log('♠ Poker — derrota');
+    else log('♠ Poker — empate');
+    redraw();
+  }
+
+  // ── Ações do jogador ──
+  function pFold(){
+    var g=G.current;
+    G.current={...g,as:g.as+g.pot,street:'showdown',acting:null,result:{winner:'ai',reason:'Você desistiu.',ph:null,ah:null,nps:g.ps,nas:g.as+g.pot}};
+    log('♠ Poker — fold');redraw();
+  }
+
+  function pCheck(){
+    var g=G.current;
+    var ng={...g,ap:g.ap|1};
+    if(ok(ng)){G.current={...ng,acting:null};redraw();setTimeout(advStreet,500);}
+    else{G.current={...ng,acting:'ai'};redraw();setTimeout(runAI,800);}
+  }
+
+  function pCall(){
+    var g=G.current;
+    var pay=Math.min(g.cb-g.pbr,g.ps);
+    var ng={...g,ps:g.ps-pay,pot:g.pot+pay,pbr:g.pbr+pay,ap:g.ap|1};
+    if(ok(ng)){G.current={...ng,acting:null};redraw();setTimeout(advStreet,500);}
+    else{G.current={...ng,acting:'ai'};redraw();setTimeout(runAI,800);} // BB option pré-flop
+  }
+
+  function pAggress(total){
+    var g=G.current;
+    var minTotal=canCheck2(g)?BB:(g.cb+Math.max(BB,1));
+    var t=Math.max(minTotal,total);
+    t=Math.min(t,g.ps+g.pbr);
+    var extra=t-g.pbr;
+    if(extra<=0)return;
+    G.current={...g,ps:g.ps-extra,pot:g.pot+extra,pbr:t,cb:t,ap:1,acting:'ai'};
+    setShowRaise(false);redraw();setTimeout(runAI,800);
+  }
+
+  function canCheck2(g){return Math.max(0,g.cb-g.pbr)===0;}
+
+  // ── IA ──
+  function runAI(){
+    var g=G.current;
+    if(g.acting!=='ai'||g.street==='showdown')return;
+    var toCall=Math.max(0,g.cb-g.abr);
+    var r=Math.random();
+    var action;
+    if(toCall<=0){action=r<0.45?'check':'bet';}
+    else{action=r<0.10?'fold':r<0.25?'raise':'call';}
+
+    if(action==='fold'){
+      G.current={...g,ps:g.ps+g.pot,street:'showdown',acting:null,result:{winner:'player',reason:'IA desistiu.',ph:null,ah:null,nps:g.ps+g.pot,nas:g.as}};
+      log('♠ Poker — IA foldou');redraw();return;
+    }
+
+    var nas=g.as,npot=g.pot,nabr=g.abr,ncb=g.cb,nap=g.ap;
+
+    if(action==='check'){
+      nap=g.ap|2;
+    } else if(action==='call'){
+      var pay=Math.min(toCall,g.as);
+      nas=g.as-pay;npot=g.pot+pay;nabr=g.abr+pay;nap=g.ap|2;
+    } else if(action==='bet'){
+      var ba=Math.min(BB,g.as);
+      nas=g.as-ba;npot=g.pot+ba;nabr=g.abr+ba;ncb=nabr;nap=2;
+    } else if(action==='raise'){
+      var minR=(g.cb||BB)+BB;
+      var ra=Math.min(Math.max(minR,(g.cb||BB)*2),g.as+g.abr);
+      var re=ra-g.abr;
+      if(re>0&&re<=g.as){nas=g.as-re;npot=g.pot+re;nabr=ra;ncb=ra;nap=2;}
+      else{var pay2=Math.min(toCall,g.as);nas=g.as-pay2;npot=g.pot+pay2;nabr=g.abr+pay2;nap=g.ap|2;}
+    }
+
+    var ng={...g,as:nas,pot:npot,abr:nabr,cb:ncb,ap:nap};
+    if(ok(ng)){G.current={...ng,acting:null};redraw();setTimeout(advStreet,500);}
+    else{G.current={...ng,acting:'player'};redraw();}
+  }
+
+  // ── Render ──
+  var g=G.current;
+  var isSD=g.street==='showdown';
+  var myTurn=g.acting==='player'&&!isSD;
+  var toCall2=Math.max(0,g.cb-g.pbr);
+  var canCheck=toCall2===0;
+  var newDealer=g.dealer==='player'?'ai':'player';
+  var streetLabel={preflop:'PRÉ-FLOP',flop:'FLOP',turn:'TURN',river:'RIVER',showdown:'SHOWDOWN'};
+
+  if(screen==='idle')return(
+    <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
+      <div style={{textAlign:'center',padding:'28px 20px 24px',background:'radial-gradient(ellipse at 50% 0%,rgba(20,80,20,.5),rgba(3,12,3,.95))',border:'1px solid rgba(46,204,113,.18)',borderRadius:24,boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
+        <div style={{display:'flex',justifyContent:'center',gap:10,marginBottom:16}}>
+          <span style={{fontSize:30,color:'#ddd'}}>♠</span><span style={{fontSize:30,color:'#e74c3c'}}>♥</span>
+          <span style={{fontSize:30,color:'#e74c3c'}}>♦</span><span style={{fontSize:30,color:'#ddd'}}>♣</span>
+        </div>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>POKER</div>
+        <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:4}}>TEXAS HOLD'EM HEADS-UP VS IA</div>
+        <div style={{color:'#333',fontSize:9,marginBottom:16}}>v3.0</div>
+        <div style={{color:'rgba(255,255,255,.3)',fontSize:11,lineHeight:1.9,marginBottom:16}}>
+          Blinds: SB {SB} / BB {BB} &nbsp;•&nbsp; Stack: {START} fichas<br/>
+          Pré-flop: SB age primeiro &nbsp;•&nbsp; Pós-flop: BB age primeiro<br/>
+          Dealer / SB alterna a cada mão
+        </div>
+        <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:12,padding:'12px',marginBottom:20}}>
+          <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+          <div style={{color:'#f1c40f',fontSize:26,fontWeight:900,fontFamily:"'Cinzel',serif"}}>{COST} 🎰</div>
+          <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR SESSÃO</div>
+        </div>
+        <button onClick={startGame} disabled={chips<COST}
+          style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',border:'1px solid rgba(46,204,113,.4)',borderRadius:14,color:chips>=COST?'#2ecc71':'#444',fontWeight:900,fontSize:15,cursor:chips>=COST?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+          {chips>=COST?'ENTRAR NA MESA':'SALDO INSUFICIENTE'}
+        </button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{padding:'10px 8px',maxWidth:480,margin:'0 auto',fontFamily:"Georgia,serif"}}>
+      {/* Cabeçalho */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif"}}>♠ POKER</div>
+        <div style={{color:'#555',fontSize:10,letterSpacing:2}}>MÃO #{g.hand}</div>
+        <div style={{fontSize:10}}><span style={{color:'#2ecc71'}}>Você: {g.ps}</span><span style={{color:'#333'}}> | </span><span style={{color:'#aaa'}}>IA: {g.as}</span></div>
+      </div>
+
+      {/* Mesa */}
+      <div style={{background:'radial-gradient(ellipse at 50% 50%,#1b5e20,#0a3a0a 60%,#051505)',border:'6px solid #3e2723',borderRadius:22,padding:'14px 10px',marginBottom:8,boxShadow:'inset 0 2px 12px rgba(0,0,0,.6),0 8px 32px rgba(0,0,0,.8)'}}>
+
+        {/* IA */}
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div>
+              <div style={{color:'#aaa',fontSize:11,fontWeight:700}}>🤖 IA &nbsp;<span style={{color:'#555',fontSize:10,fontWeight:400}}>{g.dealer==='ai'?'🔘 Dealer/SB':'⬤ Big Blind'}</span></div>
+              <div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {g.as}</div>
+            </div>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              {g.acting==='ai'&&!isSD&&<span style={{color:'#f1c40f',fontSize:10}}>⏳ pensando...</span>}
+              {g.abr>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:10,fontWeight:700}}>{g.abr} fichas</span>}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:5,justifyContent:'center'}}>
+            {g.ah.map(function(c,i){return <CardV key={i} card={c} hidden={!isSD}/>;}) }
+          </div>
+        </div>
+
+        {/* Comunitárias + Pote */}
+        <div style={{borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 4px',margin:'0 0 12px',textAlign:'center'}}>
+          <div style={{color:'rgba(255,255,255,.2)',fontSize:9,letterSpacing:3,marginBottom:8,fontFamily:"'Rajdhani',sans-serif"}}>{streetLabel[g.street]||g.street}</div>
+          <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:8}}>
+            {[0,1,2,3,4].map(function(i){return <CardV key={i} card={g.comm[i]||null} hidden={false}/>;}) }
+          </div>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.35)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'4px 16px'}}>
+            <span style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>POTE</span>
+            <span style={{color:'#f1c40f',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif"}}>{g.pot}</span>
+          </div>
+        </div>
+
+        {/* Jogador */}
+        <div>
+          <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:6}}>
+            {g.ph.map(function(c,i){return <CardV key={i} card={c} hidden={false}/>;}) }
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{color:'#2ecc71',fontSize:11,fontWeight:700}}>👤 VOCÊ &nbsp;<span style={{color:'#1a8449',fontSize:10,fontWeight:400}}>{g.dealer==='player'?'🔘 Dealer/SB':'⬤ Big Blind'}</span></div>
+              <div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {g.ps}</div>
+            </div>
+            {g.pbr>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:10,fontWeight:700}}>{g.pbr} fichas</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Resultado */}
+      {isSD&&g.result&&(
+        <div style={{background:g.result.winner==='player'?'rgba(46,204,113,.08)':g.result.winner==='tie'?'rgba(241,196,15,.06)':'rgba(231,76,60,.08)',border:'1px solid '+(g.result.winner==='player'?'rgba(46,204,113,.3)':g.result.winner==='tie'?'rgba(241,196,15,.25)':'rgba(231,76,60,.3)'),borderRadius:14,padding:'14px',marginBottom:8,textAlign:'center',animation:'fadeIn .4s ease'}}>
+          <div style={{fontSize:24,marginBottom:4}}>{g.result.winner==='player'?'🏆':g.result.winner==='tie'?'🤝':'😔'}</div>
+          <div style={{color:g.result.winner==='player'?'#2ecc71':g.result.winner==='tie'?'#f1c40f':'#e74c3c',fontWeight:900,fontSize:15,marginBottom:4,fontFamily:"'Cinzel',serif"}}>
+            {g.result.winner==='player'?'VOCÊ VENCEU!':g.result.winner==='tie'?'EMPATE!':'IA VENCEU!'}
+          </div>
+          <div style={{color:'rgba(255,255,255,.4)',fontSize:11,marginBottom:10}}>{g.result.reason}</div>
+          {g.result.ph&&(
+            <div style={{display:'flex',justifyContent:'center',gap:20,marginBottom:12}}>
+              <div style={{textAlign:'center'}}><div style={{color:'#2ecc71',fontSize:9,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>SUA MÃO</div><div style={{color:'#fff',fontSize:13,fontWeight:700}}>{g.result.ph}</div></div>
+              <div style={{width:1,background:'rgba(255,255,255,.1)'}}/>
+              <div style={{textAlign:'center'}}><div style={{color:'#aaa',fontSize:9,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>MÃO DA IA</div><div style={{color:'#fff',fontSize:13,fontWeight:700}}>{g.result.ah}</div></div>
+            </div>
+          )}
+          <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+            {g.result.nps>0&&g.result.nas>0&&(
+              <button onClick={function(){deal(newDealer,g.result.nps,g.result.nas);}}
+                style={{padding:'9px 22px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,fontSize:12,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                ▶ PRÓXIMA MÃO
+              </button>
+            )}
+            <button onClick={function(){setScreen('idle');}}
+              style={{padding:'9px 16px',background:'rgba(231,76,60,.08)',border:'1px solid rgba(231,76,60,.2)',borderRadius:10,color:'#e74c3c',fontWeight:700,fontSize:11,cursor:'pointer'}}>
+              Sair da Mesa
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Ações */}
+      {myTurn&&(
+        <div style={{background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:'12px'}}>
+          <div style={{color:'rgba(255,255,255,.2)',fontSize:9,letterSpacing:3,textAlign:'center',marginBottom:10,fontFamily:"'Rajdhani',sans-serif"}}>
+            {canCheck?'SUA VEZ':'SUA VEZ — CALL '+toCall2}
+          </div>
+
+          {showRaise&&(
+            <div style={{marginBottom:10}}>
+              <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,textAlign:'center',marginBottom:8,fontFamily:"'Rajdhani',sans-serif"}}>{canCheck?'VALOR DO BET':'VALOR TOTAL DO RAISE'}</div>
+              <div style={{display:'flex',gap:6,alignItems:'center',justifyContent:'center',marginBottom:8}}>
+                <button onClick={function(){setRaiseVal(function(v){return Math.max(canCheck?BB:g.cb+BB,v-BB);});}}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>−</button>
+                <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,minWidth:60,textAlign:'center',fontFamily:"'Cinzel',serif"}}>{raiseVal}</div>
+                <button onClick={function(){setRaiseVal(function(v){return Math.min(g.ps+g.pbr,v+BB);});}}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>+</button>
+              </div>
+              <div style={{display:'flex',gap:5,justifyContent:'center',flexWrap:'wrap',marginBottom:10}}>
+                {(function(){
+                  var opts=canCheck?[BB,Math.floor(g.pot/2),g.pot,g.ps+g.pbr]:[g.cb+BB,g.cb*2,g.pot+g.pbr,g.ps+g.pbr];
+                  return opts.filter(function(v,i,a){return v>0&&v<=(g.ps+g.pbr)&&a.indexOf(v)===i;}).slice(0,4).map(function(v){
+                    var lbl=v===g.ps+g.pbr?'All-In':v===g.pot||v===g.pot+g.pbr?'Pote':String(v);
+                    return <button key={v} onClick={function(){setRaiseVal(v);}} style={{padding:'4px 10px',fontSize:10,fontWeight:700,cursor:'pointer',borderRadius:6,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,background:raiseVal===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'1px solid '+(raiseVal===v?'rgba(241,196,15,.5)':'rgba(255,255,255,.1)'),color:raiseVal===v?'#f1c40f':'#666'}}>{lbl}</button>;
+                  });
+                })()}
+              </div>
+              <div style={{display:'flex',gap:6}}>
+                <button onClick={function(){pAggress(raiseVal);}}
+                  style={{flex:1,padding:'10px',background:'linear-gradient(135deg,rgba(241,196,15,.18),rgba(241,196,15,.06))',border:'1px solid rgba(241,196,15,.45)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                  {canCheck?'BET '+raiseVal:'RAISE → '+raiseVal}
+                </button>
+                <button onClick={function(){setShowRaise(false);}}
+                  style={{padding:'10px 14px',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:10,color:'#555',fontWeight:700,fontSize:12,cursor:'pointer'}}>✕</button>
+              </div>
+            </div>
+          )}
+
+          {!showRaise&&(
+            <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+              <button onClick={pFold} style={{padding:'10px 18px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.35)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>FOLD</button>
+              {canCheck&&<button onClick={pCheck} style={{padding:'10px 18px',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.18)',borderRadius:10,color:'#fff',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>CHECK</button>}
+              {!canCheck&&<button onClick={pCall} style={{padding:'10px 18px',background:'rgba(52,152,219,.12)',border:'1px solid rgba(52,152,219,.4)',borderRadius:10,color:'#3498db',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>CALL {toCall2}</button>}
+              <button onClick={function(){setRaiseVal(canCheck?BB:Math.min(g.cb*2||BB*2,g.ps+g.pbr));setShowRaise(true);}}
+                style={{padding:'10px 18px',background:'linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))',border:'1px solid rgba(241,196,15,.35)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                {canCheck?'BET':'RAISE'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {g.acting==='ai'&&!isSD&&(
+        <div style={{textAlign:'center',padding:'10px',color:'rgba(255,255,255,.2)',fontSize:11,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>⏳ AGUARDANDO IA...</div>
+      )}
+    </div>
+  );
+}
+
+
+function Go({chips,onChange,log,mode}){
+  const COST=mode==='online'?5:1;
   var N=19;
   var KOMI=6.5;
 
@@ -6044,7 +5921,8 @@ function Go({chips,onChange,log}){
   var STAR_POINTS=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
 
   function startGame(){
-    if(chips<bet)return;
+    if(chips<COST)return;
+    onChange(-COST);
     setBoard(emptyBoard());
     setPrevBoard(null);
     setTurn('B');
@@ -6199,21 +6077,13 @@ function Go({chips,onChange,log}){
           boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
           <div style={{fontSize:48,marginBottom:8}}>⚫</div>
           <div style={{color:'#f1c40f',fontWeight:900,fontSize:24,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>GO</div>
-          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:24}}>19x19 — OFFLINE VS IA</div>
+          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:20}}>19x19 — OFFLINE VS IA</div>
 
-          <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,.04)'}}>
-            <div style={{color:'#555',fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:8}}>APOSTA</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}}>
-              {[1,5,10,25,50].map(function(v){return(
-                <button key={v} onClick={function(){setBet(v);}}
-                  style={{padding:'5px 13px',fontSize:12,fontWeight:900,cursor:'pointer',borderRadius:7,
-                    background:bet===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',
-                    border:'1px solid '+(bet===v?'#f1c40f':'rgba(255,255,255,.1)'),
-                    color:bet===v?'#f1c40f':'#666',fontFamily:"'Cinzel',serif"}}>
-                  {v}
-                </button>
-              );})}
-            </div>
+          {/* Custo da partida */}
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:12,padding:'12px 14px',marginBottom:14}}>
+            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
+            <div style={{color:'#f1c40f',fontSize:26,fontWeight:900,fontFamily:"'Cinzel',serif"}}>{COST} 🎰</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
           </div>
 
           <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,.04)'}}>
@@ -6247,15 +6117,14 @@ function Go({chips,onChange,log}){
             </div>
           </div>
 
-          <button onClick={startGame} disabled={chips<bet}
+          <button onClick={startGame} disabled={chips<COST}
             style={{padding:'13px 36px',
-              background:chips>=bet?'linear-gradient(135deg,rgba(139,90,43,.6),rgba(80,50,20,.8))':'rgba(255,255,255,.04)',
+              background:chips>=COST?'linear-gradient(135deg,rgba(139,90,43,.6),rgba(80,50,20,.8))':'rgba(255,255,255,.04)',
               border:'1px solid rgba(139,90,43,.5)',borderRadius:14,
-              color:chips>=bet?'#f1c40f':'#444',fontWeight:900,fontSize:15,
-              cursor:chips>=bet?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
-            JOGAR
+              color:chips>=COST?'#f1c40f':'#444',fontWeight:900,fontSize:15,
+              cursor:chips>=COST?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+            {chips>=COST?`JOGAR — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
           </button>
-          {chips<bet&&<div style={{color:'#c0392b',fontSize:10,marginTop:8}}>Precisa de {bet} fichas</div>}
         </div>
       </div>
     );
@@ -6866,7 +6735,7 @@ function App(){
   const chips=Math.max(0,userData?.chips||0);
 
   // ── Sistema de fichas ÚNICO — online e offline usam o mesmo saldo ──
-  const FREE_CHIPS_PER_AD = 10; // 10 fichas = R$1,00 por anúncio
+  const FREE_CHIPS_PER_AD = 10; // 10 fichas por anúncio (30 segundos)
   const [showAdModal, setShowAdModal] = useState(false);
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
@@ -6899,21 +6768,39 @@ function App(){
       const uid = userData?.uid; if(!uid) return 0;
       const today = new Date().toDateString();
       const streak = getAdStreak();
-      if(streak.lastDate === today) return 0; // já assistiu hoje
-      const yesterday = new Date(Date.now()-86400000).toDateString();
-      const newDays = streak.lastDate === yesterday ? streak.days + 1 : 1;
-      const newStreak = {days:newDays, lastDate:today, weekBonusClaimed:streak.weekBonusClaimed};
-      // Bônus semanal: 6 dias seguidos
-      let bonus = 0;
-      if(newDays >= 6 && !streak.weekBonusClaimed){
-        bonus = 60;
-        newStreak.days = 0;
-        newStreak.weekBonusClaimed = false;
+      // Contar total de anúncios assistidos esta semana
+      const weekKey = 'ad_week_'+uid;
+      let weekData = {count:0, weekStart: getWeekStart(), bonusClaimed:false};
+      try { const s=localStorage.getItem(weekKey); if(s) weekData=JSON.parse(s); } catch{}
+      // Resetar se nova semana
+      if(weekData.weekStart !== getWeekStart()){
+        weekData = {count:0, weekStart:getWeekStart(), bonusClaimed:false};
       }
-      localStorage.setItem('ad_streak_'+uid, JSON.stringify(newStreak));
+      weekData.count = (weekData.count||0) + 1;
+      // Atualizar streak de dias
+      let bonus = 0;
+      if(streak.lastDate !== today){
+        const yesterday = new Date(Date.now()-86400000).toDateString();
+        const newDays = streak.lastDate === yesterday ? streak.days + 1 : 1;
+        const newStreak = {days:newDays, lastDate:today, weekBonusClaimed:streak.weekBonusClaimed};
+        // Bônus semanal: 6 dias úteis + 100 anúncios na semana
+        if(newDays >= 6 && weekData.count >= 100 && !weekData.bonusClaimed){
+          bonus = 60;
+          newStreak.days = 0;
+          weekData.bonusClaimed = true;
+        }
+        localStorage.setItem('ad_streak_'+uid, JSON.stringify(newStreak));
+      }
+      localStorage.setItem(weekKey, JSON.stringify(weekData));
       return bonus;
     } catch { return 0; }
   };
+
+  function getWeekStart(){
+    const d=new Date(); d.setHours(0,0,0,0);
+    d.setDate(d.getDate()-d.getDay()); // domingo
+    return d.toDateString();
+  }
 
   const watchAd = async () => {
     setAdWatching(true);
@@ -6977,12 +6864,12 @@ function App(){
   if(!authUser)return <LoginScreen/>;
 
   const GAMES={
-    pife:<Pife chips={displayChips} onChange={onChange} log={log}/>,
-    domino:<Dominoes chips={displayChips} onChange={onChange} log={log}/>,
-    dama:<Dama chips={displayChips} onChange={onChange} log={log}/>,
-    xadrez:<Xadrez chips={displayChips} onChange={onChange} log={log}/>,
-    poker:<Poker chips={displayChips} onChange={onChange} log={log}/>,
-    go:<Go chips={displayChips} onChange={onChange} log={log}/>,
+    pife:<Pife chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
+    domino:<Dominoes chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
+    dama:<Dama chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
+    xadrez:<Xadrez chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
+    poker:<Poker chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
+    go:<Go chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange}/>,
   };
 
@@ -7007,12 +6894,6 @@ function App(){
       {/* Header */}
       <div style={{position:"sticky",top:0,zIndex:200,background:"rgba(4,4,4,.97)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(241,196,15,.22)",height:56,display:"flex",alignItems:"center",padding:"0 12px",gap:10}}>
         <div style={{flex:1,fontWeight:900,fontSize:18,color:"#f1c40f",letterSpacing:".06em",cursor:"pointer"}} onClick={()=>setScreen('home')}>🎰 CASSINO AR</div>
-
-        {/* Modo Online/Offline */}
-        <button onClick={()=>setGameMode(m=>m==='offline'?'online':'offline')}
-          style={{background:gameMode==='online'?"rgba(46,204,113,.15)":"rgba(255,255,255,.05)",border:`1px solid ${gameMode==='online'?"rgba(46,204,113,.4)":"rgba(255,255,255,.1)"}`,borderRadius:8,color:gameMode==='online'?"#2ecc71":"#666",padding:"4px 10px",cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"Georgia,serif",whiteSpace:"nowrap"}}>
-          {gameMode==='online'?"🌐 Online":"📴 Offline"}
-        </button>
 
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div onClick={()=>setShowShop(true)} style={{cursor:"pointer",textAlign:"right"}}>
@@ -7052,7 +6933,7 @@ function App(){
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
                     <button onClick={()=>setShowShop(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#1a4a1a,#0d2e0d)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10,color:"#2ecc71",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>+ COMPRAR</button>
                     <button onClick={()=>setShowAdModal(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#2a1800,#1a1000)",border:"1px solid rgba(212,172,13,.35)",borderRadius:10,color:"#d4ac0d",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,textAlign:"center",lineHeight:1.4}}>
-                      📺 +1 FICHA<br/><span style={{fontSize:8,opacity:.6}}>ANÚNCIO GRÁTIS</span>
+                      📺 +10 FICHAS<br/><span style={{fontSize:8,opacity:.6}}>ANÚNCIO GRÁTIS</span>
                     </button>
                   </div>
                 </div>
@@ -7067,14 +6948,15 @@ function App(){
 
             {/* Modo Online/Offline */}
             <div style={{display:"flex",gap:6,marginBottom:16,background:"rgba(255,255,255,.02)",borderRadius:14,padding:4,border:"1px solid rgba(255,255,255,.05)"}}>
-              {['offline','online'].map(m=>(
-                <button key={m} onClick={()=>setGameMode(m)} style={{flex:1,padding:"9px",background:gameMode===m?m==='online'?"linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))":"linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))":"transparent",border:`1px solid ${gameMode===m?m==='online'?"rgba(46,204,113,.4)":"rgba(241,196,15,.3)":"transparent"}`,borderRadius:10,color:gameMode===m?m==='online'?"#2ecc71":"#f1c40f":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s"}}>
-                  {m==='offline'?"🎮 OFFLINE":"⚡ ONLINE"}
+              {[
+                {m:'offline',label:'🎮 OFFLINE',sub:'1 ficha / partida',color:'#f1c40f',active:'linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))'},
+                {m:'online',label:'⚡ ONLINE',sub:'5 fichas / partida',color:'#2ecc71',active:'linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))'},
+              ].map(({m,label,sub,color,active})=>(
+                <button key={m} onClick={()=>setGameMode(m)} style={{flex:1,padding:"10px 6px",background:gameMode===m?active:"transparent",border:`1px solid ${gameMode===m?color+'66':"transparent"}`,borderRadius:10,color:gameMode===m?color:"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
+                  <div>{label}</div>
+                  <div style={{fontSize:9,letterSpacing:1,opacity:.7,marginTop:2,fontWeight:400}}>{sub}</div>
                 </button>
               ))}
-              <div style={{textAlign:"center",marginTop:6,color:"rgba(255,255,255,.2)",fontSize:9,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-                ✓ Mesmo saldo nos dois modos
-              </div>
             </div>
 
             {/* Título jogos */}
@@ -7106,6 +6988,16 @@ function App(){
                 </div>
               ))}
             </div>
+
+            {/* Histórico de partidas */}
+            {feed.length>1&&(
+              <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+                <div style={{color:"rgba(255,255,255,.25)",fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:8}}>HISTÓRICO</div>
+                {feed.slice(0,5).map((m,i)=>(
+                  <div key={i} style={{color:i===0?"rgba(255,255,255,.55)":"rgba(255,255,255,.2)",fontSize:11,paddingBottom:4,borderBottom:i<Math.min(feed.length,5)-1?"1px solid rgba(255,255,255,.04)":"none",marginBottom:i<Math.min(feed.length,5)-1?4:0}}>{m}</div>
+                ))}
+              </div>
+            )}
 
             {/* Sobre / Créditos */}
             <div onClick={()=>setShowAbout(true)} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}
