@@ -6948,15 +6948,14 @@ function App(){
 
             {/* Modo Online/Offline */}
             <div style={{display:"flex",gap:6,marginBottom:16,background:"rgba(255,255,255,.02)",borderRadius:14,padding:4,border:"1px solid rgba(255,255,255,.05)"}}>
-              {[
-                {m:'offline',label:'🎮 OFFLINE',sub:'1 ficha / partida',color:'#f1c40f',active:'linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))'},
-                {m:'online',label:'⚡ ONLINE',sub:'5 fichas / partida',color:'#2ecc71',active:'linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))'},
-              ].map(({m,label,sub,color,active})=>(
-                <button key={m} onClick={()=>setGameMode(m)} style={{flex:1,padding:"10px 6px",background:gameMode===m?active:"transparent",border:`1px solid ${gameMode===m?color+'66':"transparent"}`,borderRadius:10,color:gameMode===m?color:"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
-                  <div>{label}</div>
-                  <div style={{fontSize:9,letterSpacing:1,opacity:.7,marginTop:2,fontWeight:400}}>{sub}</div>
-                </button>
-              ))}
+              <button onClick={()=>setGameMode('offline')} style={{flex:1,padding:"10px 6px",background:gameMode==='offline'?"linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))":"transparent",border:"1px solid "+(gameMode==='offline'?"rgba(241,196,15,.35)":"transparent"),borderRadius:10,color:gameMode==='offline'?"#f1c40f":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
+                <div>🎮 OFFLINE</div>
+                <div style={{fontSize:9,letterSpacing:1,opacity:.6,marginTop:2,fontWeight:400}}>1 ficha / partida</div>
+              </button>
+              <button onClick={()=>setGameMode('online')} style={{flex:1,padding:"10px 6px",background:gameMode==='online'?"linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))":"transparent",border:"1px solid "+(gameMode==='online'?"rgba(46,204,113,.35)":"transparent"),borderRadius:10,color:gameMode==='online'?"#2ecc71":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
+                <div>⚡ ONLINE</div>
+                <div style={{fontSize:9,letterSpacing:1,opacity:.6,marginTop:2,fontWeight:400}}>5 fichas / partida</div>
+              </button>
             </div>
 
             {/* Título jogos */}
@@ -6994,7 +6993,9 @@ function App(){
               <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
                 <div style={{color:"rgba(255,255,255,.25)",fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:8}}>HISTÓRICO</div>
                 {feed.slice(0,5).map((m,i)=>(
-                  <div key={i} style={{color:i===0?"rgba(255,255,255,.55)":"rgba(255,255,255,.2)",fontSize:11,paddingBottom:4,borderBottom:i<Math.min(feed.length,5)-1?"1px solid rgba(255,255,255,.04)":"none",marginBottom:i<Math.min(feed.length,5)-1?4:0}}>{m}</div>
+                  <div key={i} style={{color:i===0?"rgba(255,255,255,.55)":"rgba(255,255,255,.2)",fontSize:11,padding:"3px 0"}}>
+                    {m}
+                  </div>
                 ))}
               </div>
             )}
