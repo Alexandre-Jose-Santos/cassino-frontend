@@ -1170,7 +1170,7 @@ function Pife({chips,onChange,log,mode}){
     if(phase!=="meld")return;
     const c=ph[idx],nh=ph.filter((_,i)=>i!==idx);
     setPh(nh);setDisc(d=>[...d,c]);setNewCardIdx(null);
-    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife — vitória`);return;}
+    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife +${config.bet}`);return;}
     setPhase("draw");setMsg("Vez da IA...");
     setTimeout(()=>{
       let a=[...ai],d=[...deck],ds=[...disc,c];
@@ -1209,15 +1209,8 @@ function Pife({chips,onChange,log,mode}){
       <h2 style={{color:"#f1c40f",fontFamily:"'Cinzel',Georgia,serif",textAlign:"center",fontSize:22,margin:"0 0 6px"}}>🃏 Pife</h2>
       <p style={{color:"rgba(255,255,255,.3)",textAlign:"center",fontSize:11,marginBottom:18,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif"}}>FORME 3 GRUPOS DE 3 CARTAS</p>
 
-      {/* Custo da partida */}
-      <div style={{background:"rgba(241,196,15,.06)",border:"1px solid rgba(241,196,15,.2)",borderRadius:12,padding:"14px 16px",marginBottom:14,textAlign:"center"}}>
-        <div style={{color:"rgba(255,255,255,.4)",fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:4}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
-        <div style={{color:"#f1c40f",fontSize:28,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
-        <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
-      </div>
-
       {/* Baralhos */}
-      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:16}}>
+      <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",borderRadius:16,padding:16,marginBottom:12}}>
         <div style={{color:"rgba(255,255,255,.4)",fontSize:9,fontWeight:700,marginBottom:12,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif"}}>NÚMERO DE BARALHOS</div>
         <div style={{display:"flex",gap:8}}>
           {[1,2].map(n=>(
@@ -1240,11 +1233,11 @@ function Pife({chips,onChange,log,mode}){
       <button onClick={()=>start(pifeDecks)} disabled={chips<COST}
         style={{width:"100%",padding:"14px",
           background:chips>=COST?"linear-gradient(135deg,#1a4a1a,#0d2e0d)":"rgba(255,255,255,.02)",
-          border:`1px solid ${chips>=COST?"rgba(46,204,113,.4)":"rgba(255,255,255,.05)"}`,
+          border:"1px solid "+(chips>=COST?"rgba(46,204,113,.4)":"rgba(255,255,255,.05)"),
           borderRadius:12,color:chips>=COST?"#2ecc71":"#333",
           fontWeight:900,fontSize:14,cursor:chips>=COST?"pointer":"not-allowed",
           fontFamily:"'Cinzel',Georgia,serif",letterSpacing:2,transition:"all .2s"}}>
-        {chips>=COST?`▶ JOGAR — ${COST} FICHA${COST>1?'S':''}`:"SALDO INSUFICIENTE"}
+        {chips>=COST?("▶ JOGAR — "+COST+(COST>1?" FICHAS":" FICHA")):"SALDO INSUFICIENTE"}
       </button>
     </div>
   );
@@ -1551,15 +1544,9 @@ function Dominoes({chips,onChange,log,mode}){
             </button>
           ))}
         </div>
-        {/* Custo da partida */}
-        <div style={{background:"rgba(241,196,15,.06)",border:"1px solid rgba(241,196,15,.2)",borderRadius:10,padding:"10px 14px",marginBottom:12,textAlign:"center"}}>
-          <div style={{color:"rgba(255,255,255,.4)",fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
-          <div style={{color:"#f1c40f",fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
-          <div style={{color:"rgba(255,255,255,.35)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
-        </div>
         {numPlayers>=2&&<>
           <Btn full onClick={()=>start(numPlayers)} disabled={chips<COST}>
-            {chips>=COST?`▶ JOGAR — ${COST} FICHA${COST>1?'S':''}`:"SALDO INSUFICIENTE"}
+            {chips>=COST?("▶ JOGAR — "+COST+(COST>1?" FICHAS":" FICHA")):"SALDO INSUFICIENTE"}
           </Btn>
         </>}
       </div>
@@ -3450,6 +3437,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.on('game_start',({room,matchId})=>{
       onChange(-5);
       setMyRoom(r=>({...r,...room,matchId,started:true}));
+      // Mantém no localStorage para reconectar se o app fechar durante a partida
       localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount}));
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
@@ -3593,7 +3581,6 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const oppVadRef=React.useRef(null);
   const vadTimerRef=React.useRef(null);
   const pttTrackRef=React.useRef(null); // AudioTrack do mic local
-  const pttGainRef=React.useRef(null);  // GainNode para PTT (mais confiável no Android)
   const [gameOver,setGameOver]=useState(false);
   const [rematchCountdown,setRematchCountdown]=useState(null);
   const [rematchMsg,setRematchMsg]=useState('');
@@ -3638,9 +3625,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     if(oppVadRef.current)cancelAnimationFrame(oppVadRef.current);
     if(pcRef.current){pcRef.current.close();pcRef.current=null;}
     if(localStreamRef.current){localStreamRef.current.getTracks().forEach(t=>t.stop());localStreamRef.current=null;}
-    if(localStreamRef._raw){localStreamRef._raw.getTracks().forEach(t=>t.stop());localStreamRef._raw=null;}
     pttTrackRef.current=null;
-    pttGainRef.current=null;
     remoteGainRef.current=null;
     oppAnalyserRef.current=null;
     setCallState('idle');
@@ -3652,23 +3637,15 @@ function OnlineLobby({socket,chips,userData,onChange}){
   // Push-to-talk: pressionar = habilita mic; soltar = desabilita
   const pttPress=()=>{
     if(callState!=='connected')return;
-    if(pttGainRef.current){
-      pttGainRef.current.gain.value=1; // GainNode (confiável no Android)
-    } else {
-      const track=pttTrackRef.current;
-      if(track)track.enabled=true; // fallback
-    }
+    const track=pttTrackRef.current;
+    if(track){track.enabled=true;}
     setPttActive(true);
     setSpeaking(true);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:true});
   };
   const pttRelease=()=>{
-    if(pttGainRef.current){
-      pttGainRef.current.gain.value=0;
-    } else {
-      const track=pttTrackRef.current;
-      if(track)track.enabled=false;
-    }
+    const track=pttTrackRef.current;
+    if(track){track.enabled=false;}
     setPttActive(false);
     setSpeaking(false);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
@@ -3703,33 +3680,13 @@ function OnlineLobby({socket,chips,userData,onChange}){
   };
 
   const setupLocalStream=async()=>{
-    const rawStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
-    // Usa GainNode para PTT — mais confiável no Android que track.enabled
-    try{
-      const ctx=new (window.AudioContext||window.webkitAudioContext)();
-      // Android exige resume() explícito após gesto do usuário
-      if(ctx.state==='suspended') await ctx.resume();
-      const src=ctx.createMediaStreamSource(rawStream);
-      const gain=ctx.createGain();
-      gain.gain.value=0; // começa mudo
-      const dest=ctx.createMediaStreamDestination();
-      src.connect(gain);
-      gain.connect(dest);
-      pttGainRef.current=gain;
-      pttTrackRef.current=dest.stream.getAudioTracks()[0];
-      localStreamRef.current=dest.stream;
-      // Guarda raw stream para dar stop() no encerramento
-      localStreamRef._raw=rawStream;
-      return dest.stream;
-    }catch(e){
-      // Fallback: track.enabled
-      const track=rawStream.getAudioTracks()[0];
-      if(track)track.enabled=false;
-      pttTrackRef.current=track;
-      pttGainRef.current=null;
-      localStreamRef.current=rawStream;
-      return rawStream;
-    }
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
+    // PTT começa com mic MUDO — só ativa ao pressionar
+    const track=stream.getAudioTracks()[0];
+    if(track)track.enabled=false;
+    pttTrackRef.current=track;
+    localStreamRef.current=stream;
+    return stream;
   };
 
   const iniciarChamada=async()=>{
@@ -3766,14 +3723,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
     }catch(e){socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});}
   };
 
-  // Ref estável para uid — evita re-registro de listeners a cada update de chips
-  const myUidRef=React.useRef(null);
-  React.useEffect(()=>{ myUidRef.current=userData?.uid; },[userData]);
-
   React.useEffect(()=>{
     if(!socket)return;
     const onOffer=({offer,uid:callerUid})=>{
-      if(callerUid===myUidRef.current)return;
+      if(callerUid===userData?.uid)return;
       setCallState('incoming');
       socket._pendingOffer={offer,callerUid};
     };
@@ -3783,7 +3736,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     };
     const onEnd=()=>encerrarChamada();
     const onSpeaking=({uid:sUid,speaking:s})=>{
-      if(sUid!==myUidRef.current)setOppSpeaking(s);
+      if(sUid!==userData?.uid)setOppSpeaking(s);
     };
     socket.on('webrtc_call_request',onOffer);
     socket.on('webrtc_ice',onIce);
@@ -3795,7 +3748,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       socket.off('webrtc_call_end',onEnd);
       socket.off('webrtc_speaking',onSpeaking);
     };
-  },[socket]); // ← só socket, não userData
+  },[socket,userData]);
 
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
@@ -4961,15 +4914,14 @@ function Dama({chips,onChange,log,mode}){
       {!started?(
         <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(20,14,6,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center'}}>
           <div style={{fontSize:48,marginBottom:8}}>♟</div>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:16}}>Jogue contra a IA</div>
-          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px 14px',marginBottom:20}}>
-            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
-            <div style={{color:'#f1c40f',fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
-            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:20}}>Jogue contra a IA</div>
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px',marginBottom:16,textAlign:'center'}}>
+            <div style={{color:'#f1c40f',fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} ficha{COST>1?"s":""}</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10}}>por partida</div>
           </div>
-          <button onClick={startGame}
-            style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,#2a5a1a,#1a3a0d)':'rgba(255,255,255,.03)',border:`1px solid ${chips>=COST?'rgba(46,204,113,.5)':'rgba(255,255,255,.08)'}`,borderRadius:12,color:chips>=COST?'#2ecc71':'#444',fontWeight:900,fontSize:14,cursor:chips>=COST?'pointer':'not-allowed',letterSpacing:1}}>
-            {chips>=COST?`▶ INICIAR — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
+          <button onClick={startGame} disabled={chips<COST}
+            style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,#2a5a1a,#1a3a0d)':'rgba(255,255,255,.03)',border:'1px solid '+(chips>=COST?'rgba(46,204,113,.5)':'rgba(255,255,255,.08)'),borderRadius:12,color:chips>=COST?'#2ecc71':'#444',fontWeight:900,fontSize:14,cursor:chips>=COST?'pointer':'not-allowed',letterSpacing:1}}>
+            {chips>=COST?("▶ INICIAR — "+COST+(COST>1?" FICHAS":" FICHA")):'SALDO INSUFICIENTE'}
           </button>
         </div>
       ):(
@@ -5221,18 +5173,17 @@ function Xadrez({chips,onChange,log,mode}){
       {!started?(
         <div style={{background:'linear-gradient(135deg,rgba(0,0,0,.6),rgba(10,8,20,.8))',border:'1px solid rgba(241,196,15,.2)',borderRadius:16,padding:'24px 20px',textAlign:'center'}}>
           <div style={{fontSize:48,marginBottom:8}}>♔</div>
-          <div style={{color:'#aaa',fontSize:13,marginBottom:16,lineHeight:1.5}}>
+          <div style={{color:'#aaa',fontSize:13,marginBottom:20,lineHeight:1.5}}>
             Jogue contra a IA<br/>
             <span style={{fontSize:11,color:'#555'}}>Roque • En passant • Promoção • Xeque-mate</span>
           </div>
-          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px 14px',marginBottom:20}}>
-            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
-            <div style={{color:'#f1c40f',fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} 🎰</div>
-            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px',marginBottom:16,textAlign:'center'}}>
+            <div style={{color:'#f1c40f',fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{COST} ficha{COST>1?"s":""}</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10}}>por partida</div>
           </div>
-          <button onClick={startGame}
-            style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,#2a1a4a,#1a0d2e)':'rgba(255,255,255,.03)',border:`1px solid ${chips>=COST?'rgba(155,89,182,.5)':'rgba(255,255,255,.08)'}`,borderRadius:12,color:chips>=COST?'#9b59b6':'#444',fontWeight:900,fontSize:14,cursor:chips>=COST?'pointer':'not-allowed',letterSpacing:1}}>
-            {chips>=COST?`▶ INICIAR — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
+          <button onClick={startGame} disabled={chips<COST}
+            style={{padding:'13px 36px',background:chips>=COST?'linear-gradient(135deg,#2a1a4a,#1a0d2e)':'rgba(255,255,255,.03)',border:'1px solid '+(chips>=COST?'rgba(155,89,182,.5)':'rgba(255,255,255,.08)'),borderRadius:12,color:chips>=COST?'#9b59b6':'#444',fontWeight:900,fontSize:14,cursor:chips>=COST?'pointer':'not-allowed',letterSpacing:1}}>
+            {chips>=COST?("▶ INICIAR — "+COST+(COST>1?" FICHAS":" FICHA")):'SALDO INSUFICIENTE'}
           </button>
         </div>
       ):(
@@ -5349,7 +5300,7 @@ function Xadrez({chips,onChange,log,mode}){
 
 
 // ══════════════════════════════════════════════════════
-// POKER — Texas Hold em vs IA
+// POKER — Texas Holdem vs IA
 // ══════════════════════════════════════════════════════
 
 // ── Avaliação de mão ──
@@ -5426,75 +5377,6 @@ function pkAI(hand,community,stage,aiBet,curBet){
   if(str===2)return toCall===0?'check':Math.random()<.45?'call':'fold';
   if(str===1)return toCall===0?'check':Math.random()<.3?'call':'fold';
   return toCall===0?(Math.random()<.12?'raise':'check'):Math.random()<.1?'call':'fold';
-}
-
-
-// ══════════════════════════════════════════════════════════════
-//  POKER — Texas Hold'em Heads-Up vs IA
-// ══════════════════════════════════════════════════════════════
-
-function pkMakeDeck(){
-  var s=['s','h','d','c'],r=['2','3','4','5','6','7','8','9','10','J','Q','K','A'],d=[];
-  s.forEach(function(su){r.forEach(function(ra){d.push({r:ra,s:su,id:ra+su+Math.random().toString(36).slice(2)});});});
-  for(var i=d.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=d[i];d[i]=d[j];d[j]=t;}
-  return d;
-}
-function pkRI(r){return['2','3','4','5','6','7','8','9','10','J','Q','K','A'].indexOf(r);}
-function pkEval5(h){
-  var ri=h.map(function(c){return pkRI(c.r);}).sort(function(a,b){return b-a;});
-  var si=h.map(function(c){return c.s;});
-  var fl=si.every(function(s){return s===si[0];});
-  var cnt={};ri.forEach(function(r){cnt[r]=(cnt[r]||0)+1;});
-  var pairs=Object.entries(cnt).map(function(e){return[+e[0],e[1]];}).sort(function(a,b){return b[1]-a[1]||b[0]-a[0];});
-  var g=pairs.map(function(p){return p[0];});
-  var gs=pairs.map(function(p){return p[1];});
-  var st=false,sh=ri[0],u=[...new Set(ri)];
-  if(u.length>=5){for(var i=0;i<=u.length-5;i++){if(u[i]-u[i+4]===4){st=true;sh=u[i];break;}}
-    if(!st&&u.includes(12)&&u.includes(0)&&u.includes(1)&&u.includes(2)&&u.includes(3)){st=true;sh=3;}}
-  if(st&&fl)return sh===12?{rank:8,tb:[12]}:{rank:7,tb:[sh]};
-  if(gs[0]===4)return{rank:6,tb:[g[0],g[1]]};
-  if(gs[0]===3&&gs[1]===2)return{rank:5,tb:[g[0],g[1]]};
-  if(fl)return{rank:4,tb:ri.slice(0,5)};
-  if(st)return{rank:3,tb:[sh]};
-  if(gs[0]===3)return{rank:2,tb:[g[0],g[1],g[2]]};
-  if(gs[0]===2&&gs[1]===2)return{rank:1,tb:[g[0],g[1],g[2]]};
-  if(gs[0]===2)return{rank:0,tb:[g[0],g[1],g[2],g[3]]};
-  return{rank:-1,tb:ri.slice(0,5)};
-}
-function pkEval7(cards){
-  var best=null;
-  function c5(arr,k,s,cur,cb){if(cur.length===k){cb(cur.slice());return;}for(var i=s;i<=arr.length-(k-cur.length);i++){cur.push(arr[i]);c5(arr,k,i+1,cur,cb);cur.pop();}}
-  c5(cards,5,0,[],function(h){var v=pkEval5(h);if(!best||pkCmpV(v,best)>0)best=v;});
-  return best;
-}
-function pkCmpV(a,b){
-  if(a.rank!==b.rank)return a.rank-b.rank;
-  for(var i=0;i<Math.max(a.tb.length,b.tb.length);i++){var d=(a.tb[i]||0)-(b.tb[i]||0);if(d)return d;}
-  return 0;
-}
-var PKN=['Par','Dois Pares','Trinca','Sequência','Flush','Full House','Quadra','Straight Flush','Royal Flush'];
-function pkHN(v){if(!v)return'?';if(v.rank===8)return'Royal Flush';if(v.rank<0)return'Carta Alta';return PKN[v.rank];}
-
-// Constantes e componente de carta — FORA do Poker para evitar recriação a cada render
-var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣'};
-var PK_SC={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd'};
-function CardV({card,hidden}){
-  if(hidden)return(
-    <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',
-      border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🂠</div>
-  );
-  if(!card)return(
-    <div style={{width:42,height:60,borderRadius:6,background:'rgba(255,255,255,.03)',
-      border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>
-  );
-  return(
-    <div style={{width:42,height:60,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',
-      border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',
-      justifyContent:'center',gap:1,boxShadow:'0 2px 6px rgba(0,0,0,.5)',flexShrink:0}}>
-      <div style={{fontSize:11,fontWeight:900,color:PK_SC[card.s],lineHeight:1}}>{card.r}</div>
-      <div style={{fontSize:15,color:PK_SC[card.s],lineHeight:1}}>{PK_SS[card.s]}</div>
-    </div>
-  );
 }
 
 
@@ -6076,13 +5958,11 @@ function Go({chips,onChange,log,mode}){
           boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
           <div style={{fontSize:48,marginBottom:8}}>⚫</div>
           <div style={{color:'#f1c40f',fontWeight:900,fontSize:24,fontFamily:"'Cinzel',serif",letterSpacing:3,marginBottom:4}}>GO</div>
-          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:20}}>19x19 — OFFLINE VS IA</div>
+          <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3,marginBottom:24}}>19x19 — OFFLINE VS IA</div>
 
-          {/* Custo da partida */}
-          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:12,padding:'12px 14px',marginBottom:14}}>
-            <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{mode==='online'?'MODO ONLINE':'MODO OFFLINE'}</div>
-            <div style={{color:'#f1c40f',fontSize:26,fontWeight:900,fontFamily:"'Cinzel',serif"}}>{COST} 🎰</div>
-            <div style={{color:'rgba(255,255,255,.35)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>FICHA{COST>1?'S':''} POR PARTIDA</div>
+          <div style={{background:'rgba(241,196,15,.06)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'10px',marginBottom:12,textAlign:'center'}}>
+            <div style={{color:'#f1c40f',fontSize:20,fontWeight:900,fontFamily:"'Cinzel',serif"}}>{COST} ficha{COST>1?'s':''}</div>
+            <div style={{color:'rgba(255,255,255,.35)',fontSize:10}}>por partida</div>
           </div>
 
           <div style={{background:'rgba(0,0,0,.35)',borderRadius:14,padding:'14px',marginBottom:12,border:'1px solid rgba(255,255,255,.04)'}}>
@@ -6122,7 +6002,7 @@ function Go({chips,onChange,log,mode}){
               border:'1px solid rgba(139,90,43,.5)',borderRadius:14,
               color:chips>=COST?'#f1c40f':'#444',fontWeight:900,fontSize:15,
               cursor:chips>=COST?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
-            {chips>=COST?`JOGAR — ${COST} FICHA${COST>1?'S':''}`:'SALDO INSUFICIENTE'}
+            {chips>=COST?("JOGAR — "+COST+(COST>1?" FICHAS":" FICHA")):'SALDO INSUFICIENTE'}
           </button>
         </div>
       </div>
@@ -6734,7 +6614,7 @@ function App(){
   const chips=Math.max(0,userData?.chips||0);
 
   // ── Sistema de fichas ÚNICO — online e offline usam o mesmo saldo ──
-  const FREE_CHIPS_PER_AD = 10; // 10 fichas por anúncio (30 segundos)
+  const FREE_CHIPS_PER_AD = 10; // 10 fichas = R$1,00 por anúncio
   const [showAdModal, setShowAdModal] = useState(false);
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
@@ -6767,39 +6647,21 @@ function App(){
       const uid = userData?.uid; if(!uid) return 0;
       const today = new Date().toDateString();
       const streak = getAdStreak();
-      // Contar total de anúncios assistidos esta semana
-      const weekKey = 'ad_week_'+uid;
-      let weekData = {count:0, weekStart: getWeekStart(), bonusClaimed:false};
-      try { const s=localStorage.getItem(weekKey); if(s) weekData=JSON.parse(s); } catch{}
-      // Resetar se nova semana
-      if(weekData.weekStart !== getWeekStart()){
-        weekData = {count:0, weekStart:getWeekStart(), bonusClaimed:false};
-      }
-      weekData.count = (weekData.count||0) + 1;
-      // Atualizar streak de dias
+      if(streak.lastDate === today) return 0; // já assistiu hoje
+      const yesterday = new Date(Date.now()-86400000).toDateString();
+      const newDays = streak.lastDate === yesterday ? streak.days + 1 : 1;
+      const newStreak = {days:newDays, lastDate:today, weekBonusClaimed:streak.weekBonusClaimed};
+      // Bônus semanal: 6 dias seguidos
       let bonus = 0;
-      if(streak.lastDate !== today){
-        const yesterday = new Date(Date.now()-86400000).toDateString();
-        const newDays = streak.lastDate === yesterday ? streak.days + 1 : 1;
-        const newStreak = {days:newDays, lastDate:today, weekBonusClaimed:streak.weekBonusClaimed};
-        // Bônus semanal: 6 dias úteis + 100 anúncios na semana
-        if(newDays >= 6 && weekData.count >= 100 && !weekData.bonusClaimed){
-          bonus = 60;
-          newStreak.days = 0;
-          weekData.bonusClaimed = true;
-        }
-        localStorage.setItem('ad_streak_'+uid, JSON.stringify(newStreak));
+      if(newDays >= 6 && !streak.weekBonusClaimed){
+        bonus = 60;
+        newStreak.days = 0;
+        newStreak.weekBonusClaimed = false;
       }
-      localStorage.setItem(weekKey, JSON.stringify(weekData));
+      localStorage.setItem('ad_streak_'+uid, JSON.stringify(newStreak));
       return bonus;
     } catch { return 0; }
   };
-
-  function getWeekStart(){
-    const d=new Date(); d.setHours(0,0,0,0);
-    d.setDate(d.getDate()-d.getDay()); // domingo
-    return d.toDateString();
-  }
 
   const watchAd = async () => {
     setAdWatching(true);
@@ -6893,7 +6755,6 @@ function App(){
       {/* Header */}
       <div style={{position:"sticky",top:0,zIndex:200,background:"rgba(4,4,4,.97)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(241,196,15,.22)",height:56,display:"flex",alignItems:"center",padding:"0 12px",gap:10}}>
         <div style={{flex:1,fontWeight:900,fontSize:18,color:"#f1c40f",letterSpacing:".06em",cursor:"pointer"}} onClick={()=>setScreen('home')}>🎰 CASSINO AR</div>
-
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div onClick={()=>setShowShop(true)} style={{cursor:"pointer",textAlign:"right"}}>
             <div style={{color:"#f1c40f",fontWeight:900,fontSize:15}}>{chips.toLocaleString()}</div>
@@ -6948,12 +6809,12 @@ function App(){
             {/* Modo Online/Offline */}
             <div style={{display:"flex",gap:6,marginBottom:16,background:"rgba(255,255,255,.02)",borderRadius:14,padding:4,border:"1px solid rgba(255,255,255,.05)"}}>
               <button onClick={()=>setGameMode('offline')} style={{flex:1,padding:"10px 6px",background:gameMode==='offline'?"linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))":"transparent",border:"1px solid "+(gameMode==='offline'?"rgba(241,196,15,.35)":"transparent"),borderRadius:10,color:gameMode==='offline'?"#f1c40f":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
-                <div>🎮 OFFLINE</div>
-                <div style={{fontSize:9,opacity:.6,marginTop:2}}>1 ficha / partida</div>
+                <div>{"🎮 OFFLINE"}</div>
+                <div style={{fontSize:9,opacity:.6,marginTop:2}}>{"1 ficha / partida"}</div>
               </button>
               <button onClick={()=>setGameMode('online')} style={{flex:1,padding:"10px 6px",background:gameMode==='online'?"linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))":"transparent",border:"1px solid "+(gameMode==='online'?"rgba(46,204,113,.35)":"transparent"),borderRadius:10,color:gameMode==='online'?"#2ecc71":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
-                <div>⚡ ONLINE</div>
-                <div style={{fontSize:9,opacity:.6,marginTop:2}}>5 fichas / partida</div>
+                <div>{"⚡ ONLINE"}</div>
+                <div style={{fontSize:9,opacity:.6,marginTop:2}}>{"5 fichas / partida"}</div>
               </button>
             </div>
 
@@ -6972,7 +6833,7 @@ function App(){
                 {k:"dama",i:"♟",n:"Dama",d:"vs IA • Estratégia",c:"#ca6f1e",gc:"#1a0e05"},
                 {k:"xadrez",i:"♔",n:"Xadrez",d:"vs IA • Clássico",c:"#8e44ad",gc:"#12071a"},
                 {k:"lobby",i:"🌐",n:"Online",d:"vs Jogadores Reais",c:"#2ecc71",gc:"#082a15"},
-                {k:"poker",i:"♠",n:"Poker",d:"Texas Hold em vs IA",c:"#c0392b",gc:"#2a0808"},
+                {k:"poker",i:"♠",n:"Poker",d:"Texas Holdem vs IA",c:"#c0392b",gc:"#2a0808"},
                 {k:"go",i:"⚫",n:"Go",d:"19x19 — Clássico oriental",c:"#8B6914",gc:"#1a1205"},
               ].map(g=>(
                 <div key={g.k} onClick={()=>!g.disabled&&setScreen(g.k)}
@@ -6986,16 +6847,6 @@ function App(){
                 </div>
               ))}
             </div>
-
-            {/* Historico */}
-            {feed.length>1&&(
-              <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
-                <div style={{color:"rgba(255,255,255,.25)",fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:8}}>HISTORICO</div>
-                {feed.slice(0,5).map((m,i)=>(
-                  <div key={i} style={{color:"rgba(255,255,255,.4)",fontSize:11,padding:"2px 0"}}>{m}</div>
-                ))}
-              </div>
-            )}
 
             {/* Sobre / Créditos */}
             <div onClick={()=>setShowAbout(true)} style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}
