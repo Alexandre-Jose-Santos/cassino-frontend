@@ -3448,7 +3448,6 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setMyRoom(r=>r?{...r,players:r.players.map(p=>p.uid===onUid?{...p,online:true}:p)}:r);
     });
     socket.on('game_start',({room,matchId})=>{
-      // Debita 5 fichas de entrada ao iniciar partida online
       onChange(-5);
       setMyRoom(r=>({...r,...room,matchId,started:true}));
       localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount}));
@@ -5350,7 +5349,7 @@ function Xadrez({chips,onChange,log,mode}){
 
 
 // ══════════════════════════════════════════════════════
-// POKER — Texas Hold'em vs IA
+// POKER — Texas Hold em vs IA
 // ══════════════════════════════════════════════════════
 
 // ── Avaliação de mão ──
@@ -6948,13 +6947,13 @@ function App(){
 
             {/* Modo Online/Offline */}
             <div style={{display:"flex",gap:6,marginBottom:16,background:"rgba(255,255,255,.02)",borderRadius:14,padding:4,border:"1px solid rgba(255,255,255,.05)"}}>
-              <button onClick={()=>setGameMode('offline')} style={{flex:1,padding:"10px 6px",background:gameMode==='offline'?"linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))":"transparent",border:"1px solid "+(gameMode==='offline'?"rgba(241,196,15,.35)":"transparent"),borderRadius:10,color:gameMode==='offline'?"#f1c40f":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
+              <button onClick={()=>setGameMode('offline')} style={{flex:1,padding:"10px 6px",background:gameMode==='offline'?"linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))":"transparent",border:"1px solid "+(gameMode==='offline'?"rgba(241,196,15,.35)":"transparent"),borderRadius:10,color:gameMode==='offline'?"#f1c40f":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
                 <div>🎮 OFFLINE</div>
-                <div style={{fontSize:9,letterSpacing:1,opacity:.6,marginTop:2,fontWeight:400}}>1 ficha / partida</div>
+                <div style={{fontSize:9,opacity:.6,marginTop:2}}>1 ficha / partida</div>
               </button>
-              <button onClick={()=>setGameMode('online')} style={{flex:1,padding:"10px 6px",background:gameMode==='online'?"linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))":"transparent",border:"1px solid "+(gameMode==='online'?"rgba(46,204,113,.35)":"transparent"),borderRadius:10,color:gameMode==='online'?"#2ecc71":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
+              <button onClick={()=>setGameMode('online')} style={{flex:1,padding:"10px 6px",background:gameMode==='online'?"linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))":"transparent",border:"1px solid "+(gameMode==='online'?"rgba(46,204,113,.35)":"transparent"),borderRadius:10,color:gameMode==='online'?"#2ecc71":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
                 <div>⚡ ONLINE</div>
-                <div style={{fontSize:9,letterSpacing:1,opacity:.6,marginTop:2,fontWeight:400}}>5 fichas / partida</div>
+                <div style={{fontSize:9,opacity:.6,marginTop:2}}>5 fichas / partida</div>
               </button>
             </div>
 
@@ -6988,14 +6987,12 @@ function App(){
               ))}
             </div>
 
-            {/* Histórico de partidas */}
+            {/* Historico */}
             {feed.length>1&&(
               <div style={{background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
-                <div style={{color:"rgba(255,255,255,.25)",fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:8}}>HISTÓRICO</div>
+                <div style={{color:"rgba(255,255,255,.25)",fontSize:9,letterSpacing:3,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,marginBottom:8}}>HISTORICO</div>
                 {feed.slice(0,5).map((m,i)=>(
-                  <div key={i} style={{color:i===0?"rgba(255,255,255,.55)":"rgba(255,255,255,.2)",fontSize:11,padding:"3px 0"}}>
-                    {m}
-                  </div>
+                  <div key={i} style={{color:"rgba(255,255,255,.4)",fontSize:11,padding:"2px 0"}}>{m}</div>
                 ))}
               </div>
             )}
