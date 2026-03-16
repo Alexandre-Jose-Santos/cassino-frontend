@@ -3354,6 +3354,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
 function OnlineLobby({socket,chips,userData,onChange}){
   const [rooms,setRooms]=useState([]);
   const [online,setOnline]=useState(0);
+  const [connected,setConnected]=useState(false);
   const [creating,setCreating]=useState(false);
   const [newGame,setNewGame]=useState('pife');
   const [newBet,setNewBet]=useState(10);
@@ -3363,8 +3364,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
 
   useEffect(()=>{
     if(!socket)return;
-    // Solicita dados ao entrar no lobby
-    socket.emit('get_rooms');
+    // Verifica se já está conectado
+    if(socket.connected){setConnected(true);socket.emit('get_rooms');}
+    socket.on('connect',()=>{setConnected(true);socket.emit('get_rooms');});
+    socket.on('disconnect',()=>setConnected(false));
+    socket.on('connect_error',()=>setConnected(false));
     socket.on('rooms_update',setRooms);
     socket.on('online_count',setOnline);
     socket.on('room_created',({roomId,room})=>{
@@ -4242,8 +4246,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
         <div>
           <h2 style={{color:"#f1c40f",fontFamily:"'Cinzel',Georgia,serif",fontSize:18,letterSpacing:1}}>🌐 SALAS ONLINE</h2>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
-            <div style={{color:online>0?"#2ecc71":socket?"#f1c40f":"#e74c3c",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-              {online>0?`● ${online} online agora`:socket?"● Conectando...":"● Servidor offline"}
+            <div style={{color:online>0?"#2ecc71":connected?"#2ecc71":"#f1c40f",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+              {online>0?`● ${online} online agora`:connected?"● Conectado":"● Conectando..."}
             </div>
           </div>
         </div>
@@ -6577,19 +6581,38 @@ function App(){
   // Socket.io — conecta automaticamente ao fazer login
   useEffect(()=>{
     if(!authUser||!token)return;
-    const s=window.io(BACKEND_URL,{auth:{token}});
-    s.on('connect',()=>{log('🌐 Online!');s.emit('get_rooms');});
-    s.on('reconnect',()=>{s.emit('get_rooms');});
-    s.on('connect_error',(err)=>{
-      console.error('Socket connect_error:',err.message);
-    });
-    s.on('disconnect',(reason)=>{
-      if(reason!=='io client disconnect') showToast('⚠️ Conexão perdida.','error');
-    });
-    s.on('chips_credited',({chips,message})=>{showToast(message);log(message);});
-    s.on('error',({message})=>showToast(message,'error'));
-    setSocket(s);
-    return()=>{s.disconnect();setSocket(null);};
+    let s;
+    let destroyed=false;
+    async function connect(tk){
+      if(destroyed)return;
+      s=window.io(BACKEND_URL,{auth:{token:tk},reconnectionAttempts:3,timeout:10000});
+      s.on('connect',()=>{log('🌐 Online!');s.emit('get_rooms');});
+      s.on('connect_error',async(err)=>{
+        console.error('Socket connect_error:',err.message);
+        // Se token expirado, tenta renovar e reconectar uma vez
+        if(err.message.includes('Token')&&!destroyed){
+          try{
+            const newTk=await authUser.getIdToken(true);
+            setToken(newTk);
+            s.disconnect();
+            connect(newTk);
+          }catch(e){
+            showToast('❌ Falha na conexão. Recarregue a página.','error');
+          }
+        } else {
+          showToast('❌ Servidor offline. Tente mais tarde.','error');
+        }
+      });
+      s.on('reconnect',()=>{s.emit('get_rooms');});
+      s.on('disconnect',(reason)=>{
+        if(reason!=='io client disconnect') showToast('⚠️ Conexão perdida.','error');
+      });
+      s.on('chips_credited',({chips,message})=>{showToast(message);log(message);});
+      s.on('error',({message})=>showToast(message,'error'));
+      setSocket(s);
+    }
+    connect(token);
+    return()=>{destroyed=true;s?.disconnect();setSocket(null);};
   },[authUser,token]);
 
   const chips=Math.max(0,userData?.chips||0);
