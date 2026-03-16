@@ -3017,21 +3017,373 @@ function PokerOnline({socket,room,userData,onGameOver}){
   var [curBet,setCurBet]=useState(0);
   var [stage,setStage]=useState('wait');
   var [myTurn,setMyTurn]=useState(false);
-  var [status,setStatus]=useState('Aguardando inicio...');
   var [result,setResult]=useState(null);
   var [revealOpp,setRevealOpp]=useState(false);
   var [oppHand,setOppHand]=useState([]);
-  var [oppHandSize,setOppHandSize]=useState(2);
-  var [raiseAmt,setRaiseAmt]=useState(0);
+  var [raiseAmt,setRaiseAmt]=useState(10);
   var [showRaise,setShowRaise]=useState(false);
-  var [initialized,setInitialized]=useState(false);
   var [lastAct,setLastAct]=useState(null);
   var [lastOppAct,setLastOppAct]=useState(null);
+  // Tela de aposta antes de iniciar
+  var [betScreen,setBetScreen]=useState(true);
+  var [betVal,setBetVal]=useState(5);
+  var [betReady,setBetReady]=useState(false); // eu votei
+  var [oppBetReady,setOppBetReady]=useState(false); // adversário votou
+  var [agreedBet,setAgreedBet]=useState(null);
+  var [betMsg,setBetMsg]=useState('');
 
   var opp=room.players.find(function(p){return p.uid!==userData?.uid;});
-  var oppName=opp?opp.name:'Adversario';
-  var BB=0;
-  var SB=Math.max(5,Math.floor(BB/2));
+  var oppName=opp?opp.name:'Adversário';
+  var isCreator=room.players[0]?.uid===userData?.uid;
+
+  useEffect(function(){
+    if(!socket)return;
+    function onAct(evt){
+      var action=evt.action; var data=evt.data; var sUid=evt.uid;
+
+      // ── Aposta acordada ──
+      if(action==='poker_bet_agreed'){
+        setAgreedBet(data.bet);
+        setBetScreen(false);
+        setBetMsg('');
+      }
+      if(action==='poker_bet_proposal'){
+        // adversário propôs uma aposta
+        setBetVal(data.bet);
+        setBetMsg('Adversário propôs: '+data.bet+' fichas. Aceitar?');
+        setOppBetReady(false);
+      }
+      if(action==='poker_bet_waiting'){
+        setOppBetReady(true);
+        setBetMsg('Adversário confirmou. Aguardando você...');
+      }
+
+      // ── Mão distribuída ──
+      if(action==='poker_deal'){
+        setHand(data.hand||[]);
+        setComm([]);
+        setMyChips(data.chips||0);
+        setOppChips(data.oppChips||0);
+        setPot(data.pot||0);
+        setMyBet(data.myBet||0);
+        setOppBet(data.oppBet||0);
+        setCurBet(data.curBet||0);
+        setRaiseAmt((data.curBet||10)*2||10);
+        setStage('pre');
+        setMyTurn(data.myTurn||false);
+        setRevealOpp(false); setOppHand([]); setResult(null);
+        setLastAct(null); setLastOppAct(null);
+        setBetScreen(false);
+      }
+      if(action==='poker_community'){
+        setComm(data.community||[]);
+        setMyChips(data.chips||data.myChips||myChips);
+        setOppChips(data.oppChips||oppChips);
+        setPot(data.pot||pot);
+        setMyBet(0); setOppBet(0); setCurBet(0);
+        setRaiseAmt(10);
+        setMyTurn(data.myTurn||false);
+        setStage(data.stage||'flop');
+        setLastAct(null); setLastOppAct(null);
+        setShowRaise(false);
+      }
+      if(action==='poker_action'){
+        // atualiza estado para ambos
+        if(data.pot!==undefined)setPot(data.pot);
+        if(data.curBet!==undefined)setCurBet(data.curBet);
+        if(sUid!==userData?.uid){
+          // foi o adversário agindo
+          setLastOppAct(data.action);
+          if(data.oppChips!==undefined)setOppChips(data.oppChips);
+          if(data.oppBet!==undefined)setOppBet(data.oppBet);
+          if(data.myTurn!==undefined)setMyTurn(data.myTurn);
+          if(data.raiseAmt)setRaiseAmt(data.raiseAmt*2||10);
+        } else {
+          // foi eu agindo — confirmação
+          setLastAct(data.action||lastAct);
+          if(data.myChips!==undefined)setMyChips(data.myChips);
+          if(data.myBet!==undefined)setMyBet(data.myBet);
+          if(data.myTurn!==undefined)setMyTurn(data.myTurn);
+        }
+      }
+      if(action==='poker_win'){
+        setRevealOpp(true);
+        setOppHand(data.oppHand||[]);
+        setMyChips(data.myChips||0);
+        setOppChips(data.oppChips||0);
+        setPot(0);
+        var isWinner=data.winnerId===userData?.uid;
+        var isTie=data.tie;
+        setResult({
+          outcome:isTie?'tie':isWinner?'win':'lose',
+          reason:data.reason||'',
+          myHand:data.myHand,
+          oppHandFinal:data.oppHand,
+        });
+        setStage('showdown');
+        setMyTurn(false);
+        onGameOver&&onGameOver();
+      }
+      if(action==='poker_fold'){
+        var iWon=data.winnerId===userData?.uid;
+        if(data.myChips!==undefined)setMyChips(data.myChips);
+        if(data.oppChips!==undefined)setOppChips(data.oppChips);
+        setPot(0);
+        setRevealOpp(iWon);
+        setResult({outcome:iWon?'win':'lose',reason:iWon?'Adversário desistiu.':'Você desistiu.'});
+        setStage('showdown');
+        setMyTurn(false);
+        onGameOver&&onGameOver();
+      }
+    }
+    socket.on('game_action',onAct);
+    // Auto-inicia: envia proposta de aposta ao montar
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betVal,uid:userData?.uid}});
+    return function(){socket.off('game_action',onAct);};
+  },[socket]);
+
+  function emitAct(action,data){
+    socket.emit('game_action',{roomId:room.id,action:'poker_action',data:{action,uid:userData?.uid,...(data||{})}});
+  }
+  function doFold(){if(!myTurn)return;setLastAct('fold');emitAct('fold');}
+  function doCall(){
+    if(!myTurn)return;
+    var toCall=Math.min(curBet-myBet,myChips);
+    setLastAct('call');
+    emitAct('call',{toCall});
+  }
+  function doCheck(){if(!myTurn||curBet>myBet)return;setLastAct('check');emitAct('check');}
+  function doRaise(amt){
+    if(!myTurn)return;
+    setLastAct('raise');
+    setShowRaise(false);
+    emitAct('raise',{amount:amt});
+  }
+  function doAllIn(){doRaise(myChips+myBet);}
+
+  function confirmBet(){
+    setBetReady(true);
+    setBetMsg('Aguardando adversário...');
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betVal,uid:userData?.uid}});
+  }
+
+  function nextHand(){
+    setResult(null); setRevealOpp(false); setOppHand([]);
+    setStage('wait'); setBetScreen(true);
+    setBetReady(false); setOppBetReady(false); setBetMsg('');
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betVal,uid:userData?.uid}});
+  }
+
+  var canCall=curBet>myBet&&myChips>0;
+  var canCheck=curBet<=myBet;
+  var toCall2=Math.max(0,Math.min(curBet-myBet,myChips));
+  var isWaiting=stage==='wait';
+  var stLabel={pre:'PRÉ-FLOP',preflop:'PRÉ-FLOP',flop:'FLOP',turn:'TURN',river:'RIVER',showdown:'SHOWDOWN',wait:'AGUARDANDO'};
+  var PK_SS2={s:'♠',h:'♥',d:'♦',c:'♣',spade:'♠',heart:'♥',diam:'♦',club:'♣'};
+  var PK_SC2={s:'#222',h:'#e74c3c',d:'#e74c3c',c:'#222',spade:'#222',heart:'#e74c3c',diam:'#e74c3c',club:'#222'};
+
+  function OCard({card,hidden}){
+    if(hidden)return <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🂠</div>;
+    if(!card)return <div style={{width:44,height:62,borderRadius:6,background:'rgba(255,255,255,.03)',border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>;
+    var r=card.rank||card.r; var s=card.suit||card.s;
+    var col=PK_SC2[s]||'#222'; var sym=PK_SS2[s]||s||'?';
+    return(
+      <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,boxShadow:'0 2px 8px rgba(0,0,0,.6)',flexShrink:0}}>
+        <div style={{fontSize:12,fontWeight:900,color:col,lineHeight:1}}>{r}</div>
+        <div style={{fontSize:16,color:col,lineHeight:1}}>{sym}</div>
+      </div>
+    );
+  }
+
+  // ── Tela de definição de aposta ──
+  if(betScreen&&!result) return(
+    <div style={{padding:'16px 10px',maxWidth:480,margin:'0 auto',fontFamily:"Georgia,serif"}}>
+      <div style={{textAlign:'center',padding:'28px 20px 24px',background:'radial-gradient(ellipse at 50% 0%,rgba(20,80,20,.5),rgba(3,12,3,.95))',border:'1px solid rgba(46,204,113,.18)',borderRadius:24,boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
+        <div style={{display:'flex',justifyContent:'center',gap:10,marginBottom:16}}>
+          <span style={{fontSize:30,color:'#ddd'}}>♠</span><span style={{fontSize:30,color:'#e74c3c'}}>♥</span>
+          <span style={{fontSize:30,color:'#e74c3c'}}>♦</span><span style={{fontSize:30,color:'#ddd'}}>♣</span>
+        </div>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:20,fontFamily:"'Cinzel',serif",letterSpacing:2,marginBottom:4}}>POKER ONLINE</div>
+        <div style={{color:'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:16}}>TEXAS HOLD'EM — {oppName.toUpperCase()}</div>
+
+        <div style={{background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:'16px',marginBottom:16}}>
+          <div style={{color:'rgba(255,255,255,.4)',fontSize:10,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif",marginBottom:12}}>VALOR DA APOSTA MÍNIMA POR MÃO</div>
+          <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginBottom:12}}>
+            {[5,10,20,50,100].map(function(v){
+              return <button key={v} onClick={function(){if(!betReady)setBetVal(v);}}
+                style={{padding:'8px 14px',background:betVal===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'1px solid '+(betVal===v?'rgba(241,196,15,.5)':'rgba(255,255,255,.1)'),borderRadius:8,color:betVal===v?'#f1c40f':'#666',fontWeight:700,fontSize:13,cursor:betReady?'not-allowed':'pointer',fontFamily:"'Cinzel',serif"}}>
+                {v}
+              </button>;
+            })}
+          </div>
+          <div style={{display:'flex',gap:8,justifyContent:'center',alignItems:'center',marginBottom:8}}>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:betReady?'#2ecc71':'rgba(255,255,255,.3)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>VOCÊ</div>
+              <div style={{fontSize:20}}>{betReady?'✅':'⏳'}</div>
+            </div>
+            <div style={{color:'rgba(255,255,255,.1)',fontSize:20,margin:'0 8px'}}>VS</div>
+            <div style={{textAlign:'center'}}>
+              <div style={{color:oppBetReady?'#2ecc71':'rgba(255,255,255,.3)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>{oppName.slice(0,8).toUpperCase()}</div>
+              <div style={{fontSize:20}}>{oppBetReady?'✅':'⏳'}</div>
+            </div>
+          </div>
+          {betMsg&&<div style={{color:'rgba(241,196,15,.7)',fontSize:11,textAlign:'center',marginTop:4,fontFamily:"'Rajdhani',sans-serif"}}>{betMsg}</div>}
+        </div>
+
+        <button onClick={confirmBet} disabled={betReady}
+          style={{padding:'13px 36px',background:!betReady?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',border:'1px solid rgba(46,204,113,.4)',borderRadius:14,color:!betReady?'#2ecc71':'#444',fontWeight:900,fontSize:15,cursor:betReady?'not-allowed':'pointer',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+          {betReady?'AGUARDANDO...':'CONFIRMAR '+betVal+' FICHAS'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Resultado ──
+  if(result) return(
+    <div style={{padding:'10px 8px',maxWidth:480,margin:'0 auto',fontFamily:"Georgia,serif"}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif"}}>♠ POKER ONLINE</div>
+        <div style={{fontSize:10}}><span style={{color:'#2ecc71'}}>Você: {myChips}</span><span style={{color:'#333'}}> | </span><span style={{color:'#aaa'}}>{oppName.slice(0,8)}: {oppChips}</span></div>
+      </div>
+      <div style={{background:result.outcome==='win'?'rgba(46,204,113,.08)':result.outcome==='tie'?'rgba(241,196,15,.06)':'rgba(231,76,60,.08)',border:'1px solid '+(result.outcome==='win'?'rgba(46,204,113,.3)':result.outcome==='tie'?'rgba(241,196,15,.25)':'rgba(231,76,60,.3)'),borderRadius:14,padding:'14px',marginBottom:8,textAlign:'center'}}>
+        <div style={{fontSize:24,marginBottom:4}}>{result.outcome==='win'?'🏆':result.outcome==='tie'?'🤝':'😔'}</div>
+        <div style={{color:result.outcome==='win'?'#2ecc71':result.outcome==='tie'?'#f1c40f':'#e74c3c',fontWeight:900,fontSize:15,marginBottom:4,fontFamily:"'Cinzel',serif"}}>
+          {result.outcome==='win'?'VOCÊ VENCEU!':result.outcome==='tie'?'EMPATE!':oppName.slice(0,8)+' VENCEU!'}
+        </div>
+        <div style={{color:'rgba(255,255,255,.4)',fontSize:11,marginBottom:10}}>{result.reason}</div>
+        {revealOpp&&oppHand.length>0&&(
+          <div style={{display:'flex',justifyContent:'center',gap:4,marginBottom:12}}>
+            {oppHand.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
+          </div>
+        )}
+        <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+          {myChips>0&&oppChips>0&&(
+            <button onClick={nextHand}
+              style={{padding:'9px 22px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,fontSize:12,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+              ▶ PRÓXIMA MÃO
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Mesa de jogo ──
+  return(
+    <div style={{padding:'10px 8px',maxWidth:480,margin:'0 auto',fontFamily:"Georgia,serif"}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif"}}>♠ POKER ONLINE</div>
+        <div style={{color:'#555',fontSize:10,letterSpacing:2}}>{stLabel[stage]||stage.toUpperCase()}</div>
+        <div style={{fontSize:10}}><span style={{color:'#2ecc71'}}>Você: {myChips}</span><span style={{color:'#333'}}> | </span><span style={{color:'#aaa'}}>{oppName.slice(0,8)}: {oppChips}</span></div>
+      </div>
+
+      <div style={{background:'radial-gradient(ellipse at 50% 50%,#1b5e20,#0a3a0a 60%,#051505)',border:'6px solid #3e2723',borderRadius:22,padding:'14px 10px',marginBottom:8,boxShadow:'inset 0 2px 12px rgba(0,0,0,.6),0 8px 32px rgba(0,0,0,.8)'}}>
+        {/* Adversário */}
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div>
+              <div style={{color:'#aaa',fontSize:11,fontWeight:700}}>👤 {oppName.slice(0,10)}</div>
+              <div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {oppChips}</div>
+            </div>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              {!myTurn&&!isWaiting&&stage!=='showdown'&&<span style={{color:'#f1c40f',fontSize:10}}>⏳ pensando...</span>}
+              {lastOppAct&&<span style={{color:'rgba(255,255,255,.4)',fontSize:10,fontWeight:700,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{lastOppAct.toUpperCase()}</span>}
+              {oppBet>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:10,fontWeight:700}}>{oppBet}</span>}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:5,justifyContent:'center'}}>
+            {[null,null].map(function(c,i){return <OCard key={i} card={c} hidden={true}/>;}) }
+          </div>
+        </div>
+
+        {/* Cartas comunitárias + Pote */}
+        <div style={{borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 4px',margin:'0 0 12px',textAlign:'center'}}>
+          <div style={{color:'rgba(255,255,255,.2)',fontSize:9,letterSpacing:3,marginBottom:8,fontFamily:"'Rajdhani',sans-serif"}}>{stLabel[stage]||stage.toUpperCase()}</div>
+          <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:8}}>
+            {[0,1,2,3,4].map(function(i){return <OCard key={i} card={comm[i]||null} hidden={false}/>;}) }
+          </div>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.35)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'4px 16px'}}>
+            <span style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>POTE</span>
+            <span style={{color:'#f1c40f',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif"}}>{pot}</span>
+          </div>
+        </div>
+
+        {/* Jogador */}
+        <div>
+          <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:6}}>
+            {(hand.length>0?hand:[null,null]).map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{color:'#2ecc71',fontSize:11,fontWeight:700}}>👤 VOCÊ</div>
+              <div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {myChips}</div>
+            </div>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              {myTurn&&<span style={{color:'#2ecc71',fontSize:10}}>✅ sua vez</span>}
+              {lastAct&&<span style={{color:'rgba(255,255,255,.4)',fontSize:10,fontWeight:700,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{lastAct==='allin'?'ALL IN':lastAct.toUpperCase()}</span>}
+              {myBet>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:10,fontWeight:700}}>{myBet}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ações */}
+      {myTurn&&stage!=='showdown'&&!isWaiting&&(
+        <div style={{background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:'12px'}}>
+          <div style={{color:'rgba(255,255,255,.2)',fontSize:9,letterSpacing:3,textAlign:'center',marginBottom:10,fontFamily:"'Rajdhani',sans-serif"}}>
+            {canCheck?'SUA VEZ':'SUA VEZ — CALL '+toCall2}
+          </div>
+          {showRaise&&(
+            <div style={{marginBottom:10}}>
+              <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,textAlign:'center',marginBottom:8,fontFamily:"'Rajdhani',sans-serif"}}>{canCheck?'VALOR DO BET':'VALOR TOTAL DO RAISE'}</div>
+              <div style={{display:'flex',gap:6,alignItems:'center',justifyContent:'center',marginBottom:8}}>
+                <button onClick={function(){setRaiseAmt(function(v){return Math.max(canCheck?5:(curBet+5),v-5);});}}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>−</button>
+                <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,minWidth:60,textAlign:'center',fontFamily:"'Cinzel',serif"}}>{raiseAmt}</div>
+                <button onClick={function(){setRaiseAmt(function(v){return Math.min(myChips+myBet,v+5);});}}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>+</button>
+              </div>
+              <div style={{display:'flex',gap:5,justifyContent:'center',flexWrap:'wrap',marginBottom:10}}>
+                {(function(){
+                  var opts=canCheck?[5,Math.floor(pot/2)||5,pot||5,myChips+myBet]:[curBet+5,curBet*2,pot+myBet,myChips+myBet];
+                  return opts.filter(function(v,i,a){return v>0&&v<=(myChips+myBet)&&a.indexOf(v)===i;}).slice(0,4).map(function(v){
+                    var lbl=v===myChips+myBet?'All-In':v===pot||v===pot+myBet?'Pote':String(v);
+                    return <button key={v} onClick={function(){setRaiseAmt(v);}} style={{padding:'4px 10px',fontSize:10,fontWeight:700,cursor:'pointer',borderRadius:6,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,background:raiseAmt===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'1px solid '+(raiseAmt===v?'rgba(241,196,15,.5)':'rgba(255,255,255,.1)'),color:raiseAmt===v?'#f1c40f':'#666'}}>{lbl}</button>;
+                  });
+                })()}
+              </div>
+              <div style={{display:'flex',gap:6}}>
+                <button onClick={function(){doRaise(raiseAmt);}}
+                  style={{flex:1,padding:'10px',background:'linear-gradient(135deg,rgba(241,196,15,.18),rgba(241,196,15,.06))',border:'1px solid rgba(241,196,15,.45)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                  {canCheck?'BET '+raiseAmt:'RAISE → '+raiseAmt}
+                </button>
+                <button onClick={doAllIn}
+                  style={{padding:'10px 14px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.3)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:12,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>ALL IN</button>
+                <button onClick={function(){setShowRaise(false);}}
+                  style={{padding:'10px 14px',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:10,color:'#555',fontWeight:700,fontSize:12,cursor:'pointer'}}>✕</button>
+              </div>
+            </div>
+          )}
+          {!showRaise&&(
+            <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+              <button onClick={doFold} style={{padding:'10px 18px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.35)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>FOLD</button>
+              {canCheck&&<button onClick={doCheck} style={{padding:'10px 18px',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.18)',borderRadius:10,color:'#fff',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>CHECK</button>}
+              {!canCheck&&<button onClick={doCall} disabled={!canCall} style={{padding:'10px 18px',background:'rgba(52,152,219,.12)',border:'1px solid rgba(52,152,219,.4)',borderRadius:10,color:canCall?'#3498db':'#444',fontWeight:900,fontSize:13,cursor:canCall?'pointer':'not-allowed',fontFamily:"'Cinzel',serif",letterSpacing:1}}>CALL {toCall2}</button>}
+              <button onClick={function(){setShowRaise(true);setRaiseAmt(canCheck?5:Math.min(curBet*2||10,myChips+myBet));}}
+                style={{padding:'10px 18px',background:'linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))',border:'1px solid rgba(241,196,15,.35)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
+                {canCheck?'BET':'RAISE'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {!myTurn&&!isWaiting&&stage!=='showdown'&&(
+        <div style={{textAlign:'center',padding:'10px',color:'rgba(255,255,255,.2)',fontSize:11,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>⏳ AGUARDANDO ADVERSÁRIO...</div>
+      )}
+    </div>
+  );
+}
+
 
   useEffect(function(){
     if(!socket||initialized)return;
@@ -6825,7 +7177,7 @@ function App(){
                 {k:"dama",i:"♟",n:"Dama",d:"vs IA • Estratégia",c:"#ca6f1e",gc:"#1a0e05"},
                 {k:"xadrez",i:"♔",n:"Xadrez",d:"vs IA • Clássico",c:"#8e44ad",gc:"#12071a"},
                 {k:"lobby",i:"🌐",n:"Online",d:"vs Jogadores Reais",c:"#2ecc71",gc:"#082a15"},
-                {k:"poker",i:"♠",n:"Poker",d:"Texas Holdem vs IA",c:"#c0392b",gc:"#2a0808"},
+                {k:"poker",i:"♠",n:"Poker",d:"Texas Hold'em vs IA",c:"#c0392b",gc:"#2a0808"},
                 {k:"go",i:"⚫",n:"Go",d:"19x19 — Clássico oriental",c:"#8B6914",gc:"#1a1205"},
               ].map(g=>(
                 <div key={g.k} onClick={()=>!g.disabled&&setScreen(g.k)}
