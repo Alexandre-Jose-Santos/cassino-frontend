@@ -3213,10 +3213,14 @@ function PokerOnline({socket,room,userData,onGameOver}){
             {oppHand.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
           </div>
         )}
-        {myChips>0&&oppChips>0&&(
+        {(myChips>=betValRef.current&&oppChips>=betValRef.current)?(
           <button onClick={nextHand} style={{padding:'10px 24px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
             ▶ PRÓXIMA MÃO
           </button>
+        ):(
+          <div style={{color:'#e74c3c',fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,textAlign:'center',padding:'8px',background:'rgba(231,76,60,.08)',border:'1px solid rgba(231,76,60,.2)',borderRadius:8}}>
+            ❌ Fichas insuficientes para continuar
+          </div>
         )}
       </div>
     </div>
@@ -3339,7 +3343,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.on('room_created',({roomId,room})=>{
       const r={...room,id:roomId};
       setMyRoom(r);
-      localStorage.setItem('cassino_my_room',JSON.stringify({roomId,game:r.game,betAmount:r.betAmount,maxPlayers:r.maxPlayers}));
+      localStorage.setItem('cassino_my_room',JSON.stringify({roomId,game:r.game,betAmount:r.betAmount,maxPlayers:r.maxPlayers,savedAt:Date.now()}));
       setCreating(false);
       setMsg('');
     });
@@ -3368,7 +3372,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
         socket.emit('player_ready',{roomId:room.id});
       }
       setMyRoom(room);
-      localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount,maxPlayers:room.maxPlayers}));
+      localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount,maxPlayers:room.maxPlayers,savedAt:Date.now()}));
       setMsg('');
     });
     socket.on('player_offline',({uid:offUid,room})=>{
@@ -3380,7 +3384,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     });
     socket.on('game_start',({room,matchId})=>{
       setMyRoom(r=>({...r,...room,matchId,started:true}));
-      localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount}));
+      localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount,savedAt:Date.now()}));
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
       const eu = userData?.uid;
@@ -3457,14 +3461,17 @@ function OnlineLobby({socket,chips,userData,onChange}){
         }
       }
     });
-    // Reconecta automaticamente se tinha sala salva
+    // Reconecta automaticamente se tinha sala salva recentemente (menos de 2h)
     const savedRoom=localStorage.getItem('cassino_my_room');
     if(savedRoom){
       try{
-        const{roomId}=JSON.parse(savedRoom);
-        setMsg('🔄 Reconectando à sala...');
-        // Tenta reconectar — se der erro "iniciado" ou "não encontrada" limpa silenciosamente
-        socket.emit('join_room',{roomId});
+        const parsed=JSON.parse(savedRoom);
+        const age=Date.now()-(parsed.savedAt||0);
+        if(age < 2*60*60*1000){ // menos de 2 horas
+          socket.emit('join_room',{roomId:parsed.roomId});
+        } else {
+          localStorage.removeItem('cassino_my_room'); // sala antiga, descarta silenciosamente
+        }
       }catch{localStorage.removeItem('cassino_my_room');}
     }
     return()=>{
@@ -4166,8 +4173,15 @@ function OnlineLobby({socket,chips,userData,onChange}){
             </div>
           </div>
         </div>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={()=>socket?.emit('get_rooms')} style={{padding:"7px 10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#888",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>🔄 VER SALAS</button>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <button onClick={()=>socket?.emit('get_rooms')} style={{padding:"7px 10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#888",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>🔄</button>
+          <button onClick={async()=>{
+            try{ await fetch(BACKEND_URL+'/wake'); }catch(e){}
+            if(socket&&!socket.connected){ socket.connect(); }
+            else if(socket){ socket.emit('get_rooms'); }
+            setConnected(false);
+            setTimeout(()=>{ if(socket&&socket.connected){ setConnected(true); socket.emit('get_rooms'); } },2000);
+          }} style={{padding:"7px 10px",background:"rgba(231,76,60,.08)",border:"1px solid rgba(231,76,60,.25)",borderRadius:8,color:"#e74c3c",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>⚡ Reconectar</button>
           <Btn sm onClick={()=>setCreating(v=>!v)} c="#2ecc71" tc="#000">+ Criar</Btn>
         </div>
       </div>
