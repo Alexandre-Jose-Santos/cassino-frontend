@@ -3379,9 +3379,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
       setMyRoom(r=>r?{...r,players:r.players.map(p=>p.uid===onUid?{...p,online:true}:p)}:r);
     });
     socket.on('game_start',({room,matchId})=>{
-      onChange(-5);
       setMyRoom(r=>({...r,...room,matchId,started:true}));
-      // Mantém no localStorage para reconectar se o app fechar durante a partida
       localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount}));
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
@@ -3852,55 +3850,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
 
         {msg&&<div style={{color:"#e74c3c",textAlign:"center",fontSize:12,marginBottom:10,padding:"8px",background:"rgba(231,76,60,.08)",borderRadius:8}}>{msg}</div>}
 
-        {/* Aposta destacada + botão alterar para criador */}
-        <div style={{marginBottom:12,padding:"12px",background:"rgba(241,196,15,.06)",border:"1px solid rgba(241,196,15,.15)",borderRadius:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:"rgba(255,255,255,.4)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:2}}>APOSTA DA PARTIDA</div>
-              <div style={{color:"#f1c40f",fontSize:22,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>{myRoom.betAmount} fichas</div>
-              <div style={{color:"rgba(255,255,255,.2)",fontSize:10,marginTop:1}}>Boa sorte!</div>
-            </div>
-            {myRoom.started&&(
-              <button onClick={()=>setShowBetMenu(v=>!v)}
-                style={{padding:"8px 12px",background:"rgba(241,196,15,.1)",border:"1px solid rgba(241,196,15,.3)",borderRadius:8,color:"#f1c40f",fontSize:11,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>
-                ✏️ ALTERAR
-              </button>
-            )}
-          </div>
-          {/* Menu de nova aposta */}
-          {showBetMenu&&(
-            <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,.06)",paddingTop:10}}>
-              <div style={{color:"rgba(255,255,255,.3)",fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,marginBottom:6}}>PROPOR NOVA APOSTA</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {/* no bet selector */ [].map(v=>(
-                  <button key={v} onClick={()=>proporAposta(v)}
-                    style={{padding:"6px 12px",background:v===myRoom.betAmount?"rgba(241,196,15,.2)":"rgba(255,255,255,.04)",border:`1px solid ${v===myRoom.betAmount?"#f1c40f":"rgba(255,255,255,.1)"}`,borderRadius:6,color:v===myRoom.betAmount?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Modal de proposta de aposta para outros jogadores */}
-        {betProposal&&(
-          <div style={{marginBottom:12,padding:"14px",background:"rgba(241,196,15,.08)",border:"2px solid rgba(241,196,15,.4)",borderRadius:12,textAlign:"center"}}>
-            <div style={{color:"#f1c40f",fontWeight:900,fontSize:14,fontFamily:"'Cinzel',Georgia,serif",marginBottom:4}}>
-              📢 PROPOSTA DE APOSTA
-            </div>
-            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginBottom:10}}>
-              <strong style={{color:"#fff"}}>{betProposal.proposedBy}</strong> quer mudar a aposta para{" "}
-              <strong style={{color:"#f1c40f"}}>{betProposal.newBet} fichas</strong>
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={()=>votarAposta(true)} c="#2ecc71" tc="#000">✅ ACEITAR</Btn>
-              <Btn full onClick={()=>votarAposta(false)} c="#e74c3c" tc="#fff">❌ RECUSAR</Btn>
-            </div>
-          </div>
-        )}
-
-        {/* Botão pronto — para todos (criador de 2 jogadores também precisa) */}
+        {/* Botão pronto */}
         {!myRoom.started&&!(euSouCriador&&(myRoom.maxPlayers||2)===2&&players.length<2)&&(
           <div style={{marginBottom:10}}>
             {!euPronto?(
@@ -3960,7 +3910,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
                 🎮 JOGO EM ANDAMENTO
               </div>
               <div style={{color:"rgba(255,255,255,.4)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-                {GAMES_INFO[myRoom.game]?.i} {GAMES_INFO[myRoom.game]?.n} • Aposta: {myRoom.betAmount} fichas
+                {GAMES_INFO[myRoom.game]?.i} {GAMES_INFO[myRoom.game]?.n}
               </div>
             </div>
 
