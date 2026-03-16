@@ -4239,8 +4239,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div>
           <h2 style={{color:"#f1c40f",fontFamily:"'Cinzel',Georgia,serif",fontSize:18,letterSpacing:1}}>🌐 SALAS ONLINE</h2>
-          <div style={{color:online>0?"#2ecc71":"#e74c3c",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-            {online>0?`● ${online} online agora`:"● Servidor offline"}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+            <div style={{color:online>0?"#2ecc71":"#e74c3c",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+              {online>0?`● ${online} online agora`:"● Servidor offline"}
+            </div>
+            <div style={{background:"linear-gradient(135deg,rgba(46,204,113,.2),rgba(46,204,113,.08))",border:"1px solid rgba(46,204,113,.4)",borderRadius:6,padding:"2px 8px",color:"#2ecc71",fontSize:9,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:2}}>⚡ MODO ONLINE • 5 fichas/partida</div>
           </div>
         </div>
         <div style={{display:"flex",gap:6}}>
@@ -6783,18 +6786,6 @@ function App(){
               )}
             </div>
 
-            {/* Modo Online/Offline */}
-            <div style={{display:"flex",gap:6,marginBottom:16,background:"rgba(255,255,255,.02)",borderRadius:14,padding:4,border:"1px solid rgba(255,255,255,.05)"}}>
-              <button onClick={()=>setGameMode('offline')} style={{flex:1,padding:"10px 6px",background:gameMode==='offline'?"linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))":"transparent",border:"1px solid "+(gameMode==='offline'?"rgba(241,196,15,.35)":"transparent"),borderRadius:10,color:gameMode==='offline'?"#f1c40f":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
-                <div>{"🎮 OFFLINE"}</div>
-                <div style={{fontSize:9,opacity:.6,marginTop:2}}>{"1 ficha / partida"}</div>
-              </button>
-              <button onClick={()=>setGameMode('online')} style={{flex:1,padding:"10px 6px",background:gameMode==='online'?"linear-gradient(135deg,rgba(46,204,113,.15),rgba(46,204,113,.05))":"transparent",border:"1px solid "+(gameMode==='online'?"rgba(46,204,113,.35)":"transparent"),borderRadius:10,color:gameMode==='online'?"#2ecc71":"#444",cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:12,letterSpacing:2,transition:"all .25s",textAlign:"center"}}>
-                <div>{"⚡ ONLINE"}</div>
-                <div style={{fontSize:9,opacity:.6,marginTop:2}}>{"5 fichas / partida"}</div>
-              </button>
-            </div>
-
             {/* Título jogos */}
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
               <div style={{flex:1,height:1,background:"linear-gradient(90deg,transparent,rgba(241,196,15,.2))"}}/>
@@ -6847,7 +6838,7 @@ function App(){
       {/* Bottom Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:200,background:"rgba(4,4,4,.98)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(241,196,15,.18)",display:"flex",minHeight:60,paddingBottom:"env(safe-area-inset-bottom)"}}>
         {nav.map(item=>(
-          <button key={item.k} onClick={()=>{if(item.k==='shop_btn'){setShowShop(true);return;}if(item.k==='lobby')setGameMode('online');setScreen(item.k);}} style={{flex:1,minWidth:44,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:screen===item.k?"#f1c40f":"#3a3a3a",borderTop:screen===item.k?"2px solid #f1c40f":"2px solid transparent",transition:"all .2s",fontSize:8,fontWeight:700,padding:"8px 0"}}>
+          <button key={item.k} onClick={()=>{if(item.k==='shop_btn'){setShowShop(true);return;}if(item.k==='lobby')setGameMode('online');else setGameMode('offline');setScreen(item.k);}} style={{flex:1,minWidth:44,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:screen===item.k?"#f1c40f":"#3a3a3a",borderTop:screen===item.k?"2px solid #f1c40f":"2px solid transparent",transition:"all .2s",fontSize:8,fontWeight:700,padding:"8px 0"}}>
             <span style={{fontSize:16}}>{item.i}</span>{item.l}
           </button>
         ))}
