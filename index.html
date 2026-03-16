@@ -4243,7 +4243,6 @@ function OnlineLobby({socket,chips,userData,onChange}){
             <div style={{color:online>0?"#2ecc71":"#e74c3c",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
               {online>0?`● ${online} online agora`:"● Servidor offline"}
             </div>
-            <div style={{background:"linear-gradient(135deg,rgba(46,204,113,.2),rgba(46,204,113,.08))",border:"1px solid rgba(46,204,113,.4)",borderRadius:6,padding:"2px 8px",color:"#2ecc71",fontSize:9,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:2}}>⚡ MODO ONLINE • 5 fichas/partida</div>
           </div>
         </div>
         <div style={{display:"flex",gap:6}}>
@@ -6573,14 +6572,13 @@ function App(){
     return unsub;
   },[authUser]);
 
-  // Socket.io
+  // Socket.io — conecta automaticamente ao fazer login
   useEffect(()=>{
-    if(!authUser||!token||gameMode!=='online')return;
+    if(!authUser||!token)return;
     const s=window.io(BACKEND_URL,{auth:{token}});
-    s.on('connect',()=>{showToast('🌐 Conectado!');log('🌐 Online!');});
+    s.on('connect',()=>{log('🌐 Online!');});
     s.on('connect_error',(err)=>{
       console.error('Socket connect_error:',err.message);
-      showToast('❌ Servidor offline. Tente mais tarde.','error');
     });
     s.on('disconnect',(reason)=>{
       if(reason!=='io client disconnect') showToast('⚠️ Conexão perdida.','error');
@@ -6589,7 +6587,7 @@ function App(){
     s.on('error',({message})=>showToast(message,'error'));
     setSocket(s);
     return()=>{s.disconnect();setSocket(null);};
-  },[authUser,token,gameMode]);
+  },[authUser,token]);
 
   const chips=Math.max(0,userData?.chips||0);
 
