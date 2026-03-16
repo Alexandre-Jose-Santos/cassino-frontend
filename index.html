@@ -3171,7 +3171,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
 
   var stLabel={pre:'PRÉ-FLOP',preflop:'PRÉ-FLOP',flop:'FLOP',turn:'TURN',river:'RIVER',showdown:'SHOWDOWN',wait:'AGUARDANDO'};
   var PK_SS2={s:'♠',h:'♥',d:'♦',c:'♣',spade:'♠',heart:'♥',diam:'♦',club:'♣'};
-  var PK_SC2={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd',spade:'#ddd',heart:'#e74c3c',diam:'#e74c3c',club:'#ddd'};
+  var PK_SC2={s:'#222',h:'#e74c3c',d:'#e74c3c',c:'#222',spade:'#222',heart:'#e74c3c',diam:'#e74c3c',club:'#222'};
 
   // Componente de carta no estilo offline
   function OCard({card,hidden}){
@@ -5402,15 +5402,17 @@ function pkCmpV(a,b){
 var PKN=['Par','Dois Pares','Trinca','Sequência','Flush','Full House','Quadra','Straight Flush','Royal Flush'];
 function pkHN(v){if(!v)return'?';if(v.rank===8)return'Royal Flush';if(v.rank<0)return'Carta Alta';return PKN[v.rank];}
 
-var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣'};
-var PK_SC={s:'#ddd',h:'#e74c3c',d:'#e74c3c',c:'#ddd'};
+var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣',spade:'♠',heart:'♥',diam:'♦',club:'♣'};
+var PK_SC={s:'#222',h:'#e74c3c',d:'#e74c3c',c:'#222',spade:'#222',heart:'#e74c3c',diam:'#e74c3c',club:'#222'};
 function CardV({card,hidden}){
   if(hidden)return <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🂠</div>;
   if(!card)return <div style={{width:44,height:62,borderRadius:6,background:'rgba(255,255,255,.03)',border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>;
+  var r=card.r||card.rank; var s=card.s||card.suit;
+  var col=PK_SC[s]||'#222'; var sym=PK_SS[s]||s||'?';
   return(
     <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,boxShadow:'0 2px 8px rgba(0,0,0,.6)',flexShrink:0}}>
-      <div style={{fontSize:12,fontWeight:900,color:PK_SC[card.s],lineHeight:1}}>{card.r}</div>
-      <div style={{fontSize:16,color:PK_SC[card.s],lineHeight:1}}>{PK_SS[card.s]}</div>
+      <div style={{fontSize:12,fontWeight:900,color:col,lineHeight:1}}>{r}</div>
+      <div style={{fontSize:16,color:col,lineHeight:1}}>{sym}</div>
     </div>
   );
 }
