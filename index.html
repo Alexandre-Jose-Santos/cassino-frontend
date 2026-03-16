@@ -3363,6 +3363,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
 
   useEffect(()=>{
     if(!socket)return;
+    // Solicita dados ao entrar no lobby
+    socket.emit('get_rooms');
     socket.on('rooms_update',setRooms);
     socket.on('online_count',setOnline);
     socket.on('room_created',({roomId,room})=>{
@@ -4240,8 +4242,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
         <div>
           <h2 style={{color:"#f1c40f",fontFamily:"'Cinzel',Georgia,serif",fontSize:18,letterSpacing:1}}>🌐 SALAS ONLINE</h2>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
-            <div style={{color:online>0?"#2ecc71":"#e74c3c",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-              {online>0?`● ${online} online agora`:"● Servidor offline"}
+            <div style={{color:online>0?"#2ecc71":socket?"#f1c40f":"#e74c3c",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
+              {online>0?`● ${online} online agora`:socket?"● Conectando...":"● Servidor offline"}
             </div>
           </div>
         </div>
@@ -6576,7 +6578,8 @@ function App(){
   useEffect(()=>{
     if(!authUser||!token)return;
     const s=window.io(BACKEND_URL,{auth:{token}});
-    s.on('connect',()=>{log('🌐 Online!');});
+    s.on('connect',()=>{log('🌐 Online!');s.emit('get_rooms');});
+    s.on('reconnect',()=>{s.emit('get_rooms');});
     s.on('connect_error',(err)=>{
       console.error('Socket connect_error:',err.message);
     });
