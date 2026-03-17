@@ -3543,30 +3543,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
     {urls:'stun:stun1.l.google.com:19302'},
   ]};
 
-  // VAD no stream remoto — detecta se adversário está falando
-  const startRemoteVAD=(stream)=>{
-    try{
-      const ctx=new (window.AudioContext||window.webkitAudioContext)();
-      const src=ctx.createMediaStreamSource(stream);
-      // GainNode para controle de volume
-      const gain=ctx.createGain();
-      gain.gain.value=1;
-      remoteGainRef.current=gain;
-      const analyser=ctx.createAnalyser();
-      analyser.fftSize=512;
-      oppAnalyserRef.current=analyser;
-      src.connect(gain);
-      gain.connect(analyser);
-      gain.connect(ctx.destination);
-      const buf=new Uint8Array(analyser.frequencyBinCount);
-      const tick=()=>{
-        analyser.getByteFrequencyData(buf);
-        const avg=buf.reduce((a,b)=>a+b,0)/buf.length;
-        setOppSpeaking(avg>14);
-        oppVadRef.current=requestAnimationFrame(tick);
-      };
-      oppVadRef.current=requestAnimationFrame(tick);
-    }catch(e){}
+  // Ajusta volume do adversário (0..1)
+  const setVolume=(v)=>{
+    setOppVolume(v);
+    if(remoteAudioRef.current)remoteAudioRef.current.volume=v;
   };
 
   const encerrarChamada=()=>{
@@ -3577,6 +3557,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     pttTrackRef.current=null;
     remoteGainRef.current=null;
     oppAnalyserRef.current=null;
+    if(remoteAudioRef.current){remoteAudioRef.current.srcObject=null;}
     setCallState('idle');
     setSpeaking(false);
     setOppSpeaking(false);
@@ -3614,13 +3595,37 @@ function OnlineLobby({socket,chips,userData,onChange}){
         socket.emit('webrtc_ice',{roomId:roomId2,candidate:e.candidate});
     };
     pc.ontrack=e=>{
-      // Usa Web Audio API para controle de volume + VAD remoto
-      startRemoteVAD(e.streams[0]);
-      // Fallback audio element (caso AudioContext falhe)
+      const stream=e.streams[0]||new MediaStream([e.track]);
+      // Elemento <audio> é a saída principal — mais confiável em mobile
       if(remoteAudioRef.current){
-        remoteAudioRef.current.srcObject=e.streams[0];
+        remoteAudioRef.current.srcObject=stream;
         remoteAudioRef.current.volume=oppVolume;
+        // Força play (necessário em alguns browsers após setar srcObject)
+        const playPromise=remoteAudioRef.current.play();
+        if(playPromise)playPromise.catch(()=>{});
       }
+      // Web Audio API só para VAD (detectar se adversário está falando)
+      // NÃO conecta ao ctx.destination para evitar eco/loop
+      try{
+        const ctx=new (window.AudioContext||window.webkitAudioContext)();
+        // Resume se suspenso (mobile exige gesto)
+        if(ctx.state==='suspended')ctx.resume();
+        const src=ctx.createMediaStreamSource(stream);
+        remoteGainRef.current=null; // não usa gain para saída, só para VAD
+        const analyser=ctx.createAnalyser();
+        analyser.fftSize=512;
+        oppAnalyserRef.current=analyser;
+        src.connect(analyser);
+        // NÃO conecta analyser ao ctx.destination — áudio já sai pelo <audio>
+        const buf=new Uint8Array(analyser.frequencyBinCount);
+        const tick=()=>{
+          analyser.getByteFrequencyData(buf);
+          const avg=buf.reduce((a,b)=>a+b,0)/buf.length;
+          setOppSpeaking(avg>14);
+          oppVadRef.current=requestAnimationFrame(tick);
+        };
+        oppVadRef.current=requestAnimationFrame(tick);
+      }catch(e){}
     };
     pc.onconnectionstatechange=()=>{
       if(['disconnected','failed','closed'].includes(pc.connectionState))encerrarChamada();
