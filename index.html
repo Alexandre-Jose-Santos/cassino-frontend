@@ -3581,12 +3581,6 @@ function OnlineLobby({socket,chips,userData,onChange}){
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
   };
 
-  // Ajusta volume do adversário (0..1)
-  const setVolume=(v)=>{
-    setOppVolume(v);
-    if(remoteGainRef.current)remoteGainRef.current.gain.value=v;
-    if(remoteAudioRef.current)remoteAudioRef.current.volume=v;
-  };
 
   const criarPC=(roomId2)=>{
     const pc=new RTCPeerConnection(ICE_SERVERS);
