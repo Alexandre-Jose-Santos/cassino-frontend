@@ -7152,12 +7152,12 @@ function App(){
               )}
             </div>
 
-            {/* BOTOES SINGLE/MULTI */}
+            {/* Botoes Single/Multi */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
               <button onClick={()=>setScreen('singleplayer')}
                 style={{padding:"16px 10px",background:"linear-gradient(135deg,#0a1a2e 0%,#060f1a 100%)",border:"2px solid rgba(52,152,219,.35)",borderRadius:16,cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",transition:"all .25s"}}>
                 <div style={{position:"absolute",top:0,right:0,width:60,height:60,background:"radial-gradient(circle at top right,rgba(52,152,219,.15),transparent 70%)"}}/>
-                <div style={{fontSize:30,marginBottom:6}}>{"\uD83E\uDD16"}</div>
+                <div style={{fontSize:30,marginBottom:6}}>&#129302;</div>
                 <div style={{color:"#3498db",fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif",letterSpacing:1}}>SINGLE</div>
                 <div style={{color:"#3498db",fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif",letterSpacing:1}}>PLAYER</div>
                 <div style={{color:"rgba(255,255,255,.3)",fontSize:9,marginTop:4,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>VS INTELIGENCIA ARTIFICIAL</div>
@@ -7165,7 +7165,7 @@ function App(){
               <button onClick={()=>{setGameMode('online');setScreen('lobby');}}
                 style={{padding:"16px 10px",background:"linear-gradient(135deg,#082a15 0%,#040f08 100%)",border:"2px solid rgba(46,204,113,.35)",borderRadius:16,cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",transition:"all .25s"}}>
                 <div style={{position:"absolute",top:0,right:0,width:60,height:60,background:"radial-gradient(circle at top right,rgba(46,204,113,.15),transparent 70%)"}}/>
-                <div style={{fontSize:30,marginBottom:6}}>{"\uD83C\uDF10"}</div>
+                <div style={{fontSize:30,marginBottom:6}}>&#127760;</div>
                 <div style={{color:"#2ecc71",fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif",letterSpacing:1}}>MULTI</div>
                 <div style={{color:"#2ecc71",fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif",letterSpacing:1}}>PLAYER</div>
                 <div style={{color:"rgba(255,255,255,.3)",fontSize:9,marginTop:4,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>VS JOGADORES REAIS</div>
@@ -7181,19 +7181,19 @@ function App(){
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
                   {[
-                    {k:"pife",i:"\uD83C\uDFB4",n:"Pife",d:"1 ficha - vs IA",c:"#2471a3",gc:"#060f1a",tag:"FACIL"},
-                    {k:"domino",i:"\u{1F1E3}",n:"Domino",d:"1 ficha - vs IA",c:"#d4ac0d",gc:"#1a1400",tag:"FACIL"},
-                    {k:"dama",i:"\u265F",n:"Dama",d:"1 ficha - vs IA",c:"#ca6f1e",gc:"#1a0e05",tag:"MEDIO"},
-                    {k:"xadrez",i:"\u2654",n:"Xadrez",d:"1 ficha - vs IA",c:"#8e44ad",gc:"#12071a",tag:"DIFICIL"},
-                    {k:"poker",i:"\u2660",n:"Poker",d:"1 ficha - vs IA",c:"#c0392b",gc:"#2a0808",tag:"MEDIO"},
-                    {k:"go",i:"\u26AB",n:"Go",d:"1 ficha - vs IA",c:"#8B6914",gc:"#1a1205",tag:"DIFICIL"},
+                    {k:"pife",    i:"&#127924;",n:"Pife",   d:"1 ficha - vs IA",c:"#2471a3",gc:"#060f1a",tag:"FACIL"},
+                    {k:"domino",  i:"&#127021;",n:"Domino", d:"1 ficha - vs IA",c:"#d4ac0d",gc:"#1a1400",tag:"FACIL"},
+                    {k:"dama",    i:"&#9823;",  n:"Dama",   d:"1 ficha - vs IA",c:"#ca6f1e",gc:"#1a0e05",tag:"MEDIO"},
+                    {k:"xadrez",  i:"&#9812;",  n:"Xadrez", d:"1 ficha - vs IA",c:"#8e44ad",gc:"#12071a",tag:"DIFICIL"},
+                    {k:"poker",   i:"&#9824;",  n:"Poker",  d:"1 ficha - vs IA",c:"#c0392b",gc:"#2a0808",tag:"MEDIO"},
+                    {k:"go",      i:"&#11044;", n:"Go",     d:"1 ficha - vs IA",c:"#8B6914",gc:"#1a1205",tag:"DIFICIL"},
                   ].map(g=>(
                     <div key={g.k} onClick={()=>setScreen(g.k)}
                       style={{background:"linear-gradient(145deg,"+g.gc+" 0%,#050505 100%)",border:"1px solid "+g.c+"44",borderRadius:16,padding:"14px 12px",cursor:"pointer",transition:"all .25s",position:"relative",overflow:"hidden"}}
                       onMouseEnter={e=>{e.currentTarget.style.borderColor=g.c+"99";}}
                       onMouseLeave={e=>{e.currentTarget.style.borderColor=g.c+"44";}}>
                       <div style={{position:"absolute",top:8,right:8,background:g.c+"22",border:"1px solid "+g.c+"44",borderRadius:4,padding:"1px 5px",fontSize:7,color:g.c,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.tag}</div>
-                      <div style={{fontSize:26,marginBottom:6}}>{g.i}</div>
+                      <div style={{fontSize:26,marginBottom:6}} dangerouslySetInnerHTML={{__html:g.i}}/>
                       <div style={{fontWeight:700,fontSize:14,color:"#fff"}}>{g.n}</div>
                       <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif"}}>{g.d}</div>
                     </div>
