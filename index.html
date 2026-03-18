@@ -3102,7 +3102,13 @@ function PokerOnline({socket,room,userData,onGameOver}){
       }
     }
     socket.on('game_action',onAct);
-    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betValRef.current,uid:userData?.uid}});
+    // Envia proposta E confirmação de uma vez para evitar race condition
+    const initialBet = betValRef.current;
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:initialBet,uid:userData?.uid}});
+    // Pequeno delay para garantir que o adversário também está ouvindo
+    setTimeout(()=>{
+      socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:initialBet,uid:userData?.uid}});
+    }, 800);
     return function(){socket.off('game_action',onAct);};
   },[socket]);
 
@@ -3300,7 +3306,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [connected,setConnected]=useState(false);
   const [creating,setCreating]=useState(false);
   const [newGame,setNewGame]=useState('pife');
-  const [newBet,setNewBet]=useState(10);
+  const [newBet,setNewBet]=useState(5);
   const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
   const [msg,setMsg]=useState('');
   const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"},dama:{n:"Dama",i:"♟",c:"#ca6f1e"},xadrez:{n:"Xadrez",i:"♔",c:"#8e44ad"},poker:{n:"Poker",i:"♠",c:"#c0392b"},go:{n:"Go",i:"⚫",c:"#8B6914"}};
@@ -4168,7 +4174,17 @@ function OnlineLobby({socket,chips,userData,onChange}){
           </>}
           {['dama','xadrez','poker','go'].includes(newGame)&&<div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>⚔️ Sempre 1 vs 1 (Head-to-Head)</div>}
           
-          <div style={{background:"rgba(255,255,255,.03)",borderRadius:8,padding:"8px 12px",marginBottom:10,color:"#888",fontSize:11}}>
+          {/* Seletor de aposta para jogos não-poker */}
+          {newGame!=='poker'&&(
+            <div style={{marginBottom:10}}>
+              <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta de entrada por jogador:</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[5,10,20,50,100].map(v=>(
+                  <button key={v} onClick={()=>setNewBet(v)} style={{padding:"6px 12px",background:newBet===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:`1px solid ${newBet===v?"rgba(241,196,15,.5)":"rgba(255,255,255,.1)"}`,borderRadius:6,color:newBet===v?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>{v}</button>
+                ))}
+              </div>
+            </div>
+          )}
             {newGame==='poker'
               ? <span>🃏 Poker: <span style={{color:"#f1c40f",fontWeight:700}}>5 fichas</span> por jogador na entrada • aposta definida dentro do jogo</span>
               : <span>Entrada: <span style={{color:"#f1c40f",fontWeight:700}}>{newBet} fichas</span> por jogador • {maxPlayers} jogadores</span>
