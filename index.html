@@ -3650,11 +3650,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
     if(!socket.connected){setMsg('❌ Socket desconectado. Aguarde reconexão.');return;}
-    if(chips<newBet){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas.');return;}
+    const custoEntrada = newGame==='poker' ? 5 : newBet;
+    if(chips<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas, precisa de '+custoEntrada+'.');return;}
     console.log('🎮 Emitindo create_room:', {game:newGame,betAmount:newBet,maxPlayers,socketId:socket.id});
     setMsg('⏳ Criando sala...');
     socket.emit('create_room',{game:newGame,betAmount:newBet,maxPlayers});
-    // Timeout de segurança
     setTimeout(()=>{
       setMsg(m=>m==='⏳ Criando sala...'?'❌ Servidor não respondeu. Tente novamente.':m);
     },5000);
@@ -4122,15 +4122,26 @@ function OnlineLobby({socket,chips,userData,onChange}){
           </div>
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-          <button onClick={()=>socket?.emit('get_rooms')} style={{padding:"7px 10px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#888",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>🔄</button>
-          <button onClick={async()=>{
-            try{ await fetch(BACKEND_URL+'/wake'); }catch(e){}
-            if(socket&&!socket.connected){ socket.connect(); }
-            else if(socket){ socket.emit('get_rooms'); }
-            setConnected(false);
-            setTimeout(()=>{ if(socket&&socket.connected){ setConnected(true); socket.emit('get_rooms'); } },2000);
-          }} style={{padding:"7px 10px",background:"rgba(231,76,60,.08)",border:"1px solid rgba(231,76,60,.25)",borderRadius:8,color:"#e74c3c",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>⚡ Reconectar</button>
-          <Btn sm onClick={()=>setCreating(v=>!v)} c="#2ecc71" tc="#000">+ Criar</Btn>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+            <button onClick={()=>socket?.emit('get_rooms')} style={{padding:"7px 12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#888",fontSize:12,cursor:"pointer",fontWeight:700}}>🔄</button>
+            <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>ATUALIZAR</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+            <button onClick={async()=>{
+              try{ await fetch(BACKEND_URL+'/wake'); }catch(e){}
+              if(socket&&!socket.connected){ socket.connect(); }
+              else if(socket){ socket.disconnect(); setTimeout(()=>socket.connect(),500); }
+              setConnected(false);
+              setTimeout(()=>{ if(socket&&socket.connected){ setConnected(true); socket.emit('get_rooms'); } },2500);
+            }} style={{padding:"7px 12px",background:connected?"rgba(46,204,113,.08)":"rgba(231,76,60,.08)",border:"1px solid "+(connected?"rgba(46,204,113,.3)":"rgba(231,76,60,.3)"),borderRadius:8,color:connected?"#2ecc71":"#e74c3c",fontSize:12,cursor:"pointer",fontWeight:700}}>
+              {connected?"🟢 ON":"🔴 OFF"}
+            </button>
+            <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>SERVIDOR</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+            <Btn sm onClick={()=>setCreating(v=>!v)} c="#2ecc71" tc="#000">+ Criar</Btn>
+            <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>NOVA SALA</span>
+          </div>
         </div>
       </div>
 
@@ -4182,6 +4193,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
         :rooms.map(room=>{
           const g=GAMES_INFO[room.game]||{n:room.game,i:"🎮",c:"#555"};
           const cheia=room.players>=(room.maxPlayers||4);
+          const custoEntrar=room.game==='poker'?5:(room.betAmount||0);
+          const semSaldo=chips<custoEntrar;
           return(
             <div key={room.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:"rgba(255,255,255,.03)",borderRadius:12,marginBottom:8,border:`1px solid ${cheia?"rgba(231,76,60,.2)":"rgba(255,255,255,.06)"}`}}>
               <div style={{fontSize:24}}>{g.i}</div>
@@ -4190,11 +4203,12 @@ function OnlineLobby({socket,chips,userData,onChange}){
                 <div style={{fontSize:11}}>
                   <span style={{color:cheia?"#e74c3c":"#2ecc71"}}>{room.players}/{room.maxPlayers||4} jogadores</span>
                   <span style={{color:"#555"}}> • </span>
-                  <span style={{color:"#f1c40f"}}>{room.betAmount} fichas</span>
+                  <span style={{color:"#f1c40f"}}>{custoEntrar} fichas entrada</span>
                 </div>
+                {semSaldo&&!cheia&&<div style={{color:"#e74c3c",fontSize:10,marginTop:2}}>Saldo insuficiente ({chips} fichas)</div>}
               </div>
-              <Btn sm onClick={()=>!cheia&&entrarSala(room)} disabled={cheia} c="#f1c40f" tc="#000">
-                {cheia?"Cheia":"Entrar"}
+              <Btn sm onClick={()=>!cheia&&!semSaldo&&entrarSala(room)} disabled={cheia||semSaldo} c={semSaldo?"#555":"#f1c40f"} tc="#000">
+                {cheia?"Cheia":semSaldo?"Sem saldo":"Entrar"}
               </Btn>
             </div>
           );
