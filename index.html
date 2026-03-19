@@ -3102,13 +3102,9 @@ function PokerOnline({socket,room,userData,onGameOver}){
       }
     }
     socket.on('game_action',onAct);
-    // Envia proposta E confirmação de uma vez para evitar race condition
+    // Envia proposta inicial ao adversário (NÃO confirma automaticamente — o usuário precisa clicar em Confirmar)
     const initialBet = betValRef.current;
     socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:initialBet,uid:userData?.uid}});
-    // Pequeno delay para garantir que o adversário também está ouvindo
-    setTimeout(()=>{
-      socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:initialBet,uid:userData?.uid}});
-    }, 800);
     return function(){socket.off('game_action',onAct);};
   },[socket]);
 
@@ -4162,42 +4158,35 @@ function OnlineLobby({socket,chips,userData,onChange}){
               <button key={k} onClick={()=>{setNewGame(k);if(['dama','xadrez','poker','go'].includes(k))setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:"1px solid "+(newGame===k?g.c:"rgba(255,255,255,.1)"),borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
             ))}
           </div>
-          {!['dama','xadrez','poker','go'].includes(newGame)&&(
-            <div>
-              <div style={{color:"#888",fontSize:11,marginBottom:6}}>Numero de jogadores:</div>
-              <div style={{display:"flex",gap:6,marginBottom:8}}>
-                {[2,3,4].map(n=>(
-                  <button key={n} onClick={()=>setMaxPlayers(n)} style={{flex:1,padding:"8px",background:maxPlayers===n?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"2px solid "+(maxPlayers===n?"#f1c40f":"rgba(255,255,255,.1)"),borderRadius:8,color:maxPlayers===n?"#f1c40f":"#aaa",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {['dama','xadrez','poker','go'].includes(newGame)&&(
-            <div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>1 vs 1</div>
-          )}
           {newGame!=='poker'&&(
             <div style={{marginBottom:10}}>
+              <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogadores:</div>
+              <div style={{display:"flex",gap:6,marginBottom:8}}>
+                {[2,3,4].filter(n=>!['dama','xadrez','go'].includes(newGame)||n===2).map(n=>(
+                  <button key={n} onClick={()=>setMaxPlayers(n)} style={{flex:1,padding:"8px",background:maxPlayers===n?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"2px solid "+(maxPlayers===n?"#f1c40f":"rgba(255,255,255,.1)"),borderRadius:8,color:maxPlayers===n?"#f1c40f":"#aaa",cursor:"pointer",fontSize:13,fontWeight:700}}>{n}</button>
+                ))}
+              </div>
               <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                 {[5,10,20,50,100].map(v=>(
                   <button key={v} onClick={()=>setNewBet(v)} style={{padding:"6px 12px",background:newBet===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"1px solid "+(newBet===v?"rgba(241,196,15,.5)":"rgba(255,255,255,.1)"),borderRadius:6,color:newBet===v?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>{v}</button>
                 ))}
               </div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginBottom:10}}>{"Entrada: "+newBet+" fichas por jogador"}</div>
+              {chips<newBet&&(
+                <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700,marginBottom:8}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
+              )}
+              <Btn full onClick={criarSala} disabled={chips<newBet} c="#2ecc71" tc="#000">Criar Sala</Btn>
             </div>
           )}
-          <div style={{fontSize:11,color:"rgba(255,255,255,.4)",marginBottom:10}}>
-            {newGame==='poker'
-              ? "Poker: 5 fichas por jogador na entrada"
-              : "Entrada: "+newBet+" fichas por jogador"}
-          </div>
-          {chips<(newGame==='poker'?5:newBet)?(
-            <div style={{textAlign:"center",padding:"10px",background:"rgba(231,76,60,.08)",border:"1px solid rgba(231,76,60,.2)",borderRadius:10,color:"#e74c3c",fontSize:12,fontWeight:700}}>
-              SALDO INSUFICIENTE
+          {newGame==='poker'&&(
+            <div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginBottom:10}}>Poker: 5 fichas por jogador na entrada</div>
+              {chips<5&&(
+                <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700,marginBottom:8}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
+              )}
+              {chips>=5&&<Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>}
             </div>
-          ):(
-            <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>
           )}
         </div>
       )}
