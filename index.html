@@ -3361,6 +3361,35 @@ function OnlineLobby({socket,chips,userData,onChange}){
     socket.on('game_start',({room,matchId})=>{
       setMyRoom(r=>({...r,...room,matchId,started:true}));
       localStorage.setItem('cassino_my_room',JSON.stringify({roomId:room.id,game:room.game,betAmount:room.betAmount,savedAt:Date.now()}));
+      // Para jogos nao-poker, mostra tela de negociacao de aposta
+      if(room.game!=='poker'){
+        setBetNegScreen(true);setBetNegReady(false);setBetNegOppReady(false);
+        setBetNegMsg('');setBetNegVal(room.betAmount||5);betNegValRef.current=room.betAmount||5;
+        // Envia proposta inicial
+        setTimeout(()=>{
+          socket.emit('game_action',{roomId:room.id,action:'game_bet_proposal',data:{bet:room.betAmount||5,uid:userData?.uid}});
+        },300);
+      }
+    });
+    socket.on('game_action',(evt)=>{
+      if(!evt||evt.uid==='server'||evt.uid===userData?.uid) {
+        if(evt.action==='game_bet_agreed'){
+          setBetNegScreen(false);setBetNegMsg('');
+          if(evt.data?.bet) setMyRoom(r=>({...r,betAmount:evt.data.bet}));
+        }
+        return;
+      }
+      if(evt.action==='game_bet_proposal'){
+        setBetNegVal(evt.data?.bet||5);betNegValRef.current=evt.data?.bet||5;
+        setBetNegMsg('Adversario quer apostar: '+(evt.data?.bet||5)+' fichas');
+      }
+      if(evt.action==='game_bet_waiting'){
+        setBetNegOppReady(true);setBetNegMsg('Adversario confirmou!');
+      }
+      if(evt.action==='game_bet_agreed'){
+        setBetNegScreen(false);setBetNegMsg('');
+        if(evt.data?.bet) setMyRoom(r=>({...r,betAmount:evt.data.bet}));
+      }
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
       const eu = userData?.uid;
@@ -3507,6 +3536,12 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const vadTimerRef=React.useRef(null);
   const pttTrackRef=React.useRef(null); // AudioTrack do mic local
   const [gameOver,setGameOver]=useState(false);
+  const [betNegScreen,setBetNegScreen]=useState(false);
+  const [betNegVal,setBetNegVal]=useState(5);
+  const [betNegReady,setBetNegReady]=useState(false);
+  const [betNegOppReady,setBetNegOppReady]=useState(false);
+  const [betNegMsg,setBetNegMsg]=useState('');
+  const betNegValRef=React.useRef(5);
   const [rematchCountdown,setRematchCountdown]=useState(null);
   const [rematchMsg,setRematchMsg]=useState('');
   const [matchKey,setMatchKey]=useState(0);
@@ -3882,13 +3917,45 @@ function OnlineLobby({socket,chips,userData,onChange}){
               ))}
             </div>
 
-            {/* Jogos — ficam visíveis até reiniciar ser clicado */}
-            {myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {myRoom.game==='dama'&&<DamaOnline key={`dama-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {myRoom.game==='xadrez'&&<XadrezOnline key={`xadrez-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {/* Tela de negociacao de aposta para jogos nao-poker */}
+            {betNegScreen&&myRoom.game!=='poker'&&(
+              <div style={{background:"rgba(0,0,0,.85)",borderRadius:16,padding:"24px 16px",textAlign:"center",marginBottom:12,border:"1px solid rgba(241,196,15,.2)"}}>
+                <div style={{color:"#f1c40f",fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif",letterSpacing:2,marginBottom:4}}>APOSTA DA PARTIDA</div>
+                <div style={{color:"rgba(255,255,255,.4)",fontSize:11,fontFamily:"'Rajdhani',sans-serif",marginBottom:16}}>Escolha o valor e confirme</div>
+                <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap",marginBottom:16}}>
+                  {[5,10,20,50,100].map(v=>(
+                    <button key={v} onClick={()=>{if(betNegReady)return;setBetNegVal(v);betNegValRef.current=v;socket.emit('game_action',{roomId:myRoom.id,action:'game_bet_proposal',data:{bet:v,uid:userData?.uid}});}}
+                      style={{padding:"10px 16px",background:betNegVal===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.04)",border:"2px solid "+(betNegVal===v?"rgba(241,196,15,.6)":"rgba(255,255,255,.1)"),borderRadius:10,color:betNegVal===v?"#f1c40f":"#666",fontWeight:900,fontSize:14,cursor:betNegReady?"not-allowed":"pointer",opacity:betNegReady?.5:1}}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:16,justifyContent:"center",marginBottom:16}}>
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontSize:22,marginBottom:2}}>{betNegReady?"✅":"⏳"}</div>
+                    <div style={{color:betNegReady?"#2ecc71":"#555",fontSize:10,fontFamily:"'Rajdhani',sans-serif"}}>VOCE</div>
+                  </div>
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontSize:22,marginBottom:2}}>{betNegOppReady?"✅":"⏳"}</div>
+                    <div style={{color:betNegOppReady?"#2ecc71":"#555",fontSize:10,fontFamily:"'Rajdhani',sans-serif"}}>ADV</div>
+                  </div>
+                </div>
+                {betNegMsg&&<div style={{color:"#f1c40f",fontSize:11,marginBottom:10,fontFamily:"'Rajdhani',sans-serif"}}>{betNegMsg}</div>}
+                <button onClick={()=>{if(betNegReady)return;setBetNegReady(true);socket.emit('game_action',{roomId:myRoom.id,action:'game_bet_confirm',data:{bet:betNegValRef.current,uid:userData?.uid}});}}
+                  disabled={betNegReady}
+                  style={{padding:"12px 32px",background:!betNegReady?"linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))":"rgba(255,255,255,.04)",border:"1px solid rgba(46,204,113,.4)",borderRadius:12,color:!betNegReady?"#2ecc71":"#444",fontWeight:900,fontSize:14,cursor:betNegReady?"not-allowed":"pointer",fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+                  {betNegReady?"AGUARDANDO...":"CONFIRMAR "+betNegVal+" FICHAS"}
+                </button>
+              </div>
+            )}
+
+            {/* Jogos — ficam visiveis ate reiniciar ser clicado */}
+            {!betNegScreen&&myRoom.game==='pife'&&<PifeOnline key={`pife-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {!betNegScreen&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {!betNegScreen&&myRoom.game==='dama'&&<DamaOnline key={`dama-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {!betNegScreen&&myRoom.game==='xadrez'&&<XadrezOnline key={`xadrez-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {myRoom.game==='poker'&&<PokerOnline key={`poker-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {myRoom.game==='go'&&<GoOnline key={`go-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {!betNegScreen&&myRoom.game==='go'&&<GoOnline key={`go-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {(!['pife','domino','dama','xadrez','poker','go'].includes(myRoom.game))&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
                 🚧 Modo online para {GAMES_INFO[myRoom.game]?.n} em breve!
@@ -4158,38 +4225,40 @@ function OnlineLobby({socket,chips,userData,onChange}){
               <button key={k} onClick={()=>{setNewGame(k);if(['dama','xadrez','poker','go'].includes(k))setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:"1px solid "+(newGame===k?g.c:"rgba(255,255,255,.1)"),borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
             ))}
           </div>
-          {newGame!=='poker'&&(
+          {!['dama','xadrez','poker','go'].includes(newGame)&&(
             <div style={{marginBottom:10}}>
               <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogadores:</div>
-              <div style={{display:"flex",gap:6,marginBottom:8}}>
-                {[2,3,4].filter(n=>!['dama','xadrez','go'].includes(newGame)||n===2).map(n=>(
+              <div style={{display:"flex",gap:6,marginBottom:10}}>
+                {[2,3,4].map(n=>(
                   <button key={n} onClick={()=>setMaxPlayers(n)} style={{flex:1,padding:"8px",background:maxPlayers===n?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"2px solid "+(maxPlayers===n?"#f1c40f":"rgba(255,255,255,.1)"),borderRadius:8,color:maxPlayers===n?"#f1c40f":"#aaa",cursor:"pointer",fontSize:13,fontWeight:700}}>{n}</button>
                 ))}
               </div>
+            </div>
+          )}
+          {['dama','xadrez','go'].includes(newGame)&&(
+            <div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:10}}>1 vs 1</div>
+          )}
+          {newGame!=='poker'&&(
+            <div style={{marginBottom:10}}>
               <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                 {[5,10,20,50,100].map(v=>(
                   <button key={v} onClick={()=>setNewBet(v)} style={{padding:"6px 12px",background:newBet===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"1px solid "+(newBet===v?"rgba(241,196,15,.5)":"rgba(255,255,255,.1)"),borderRadius:6,color:newBet===v?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>{v}</button>
                 ))}
               </div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginBottom:10}}>{"Entrada: "+newBet+" fichas por jogador"}</div>
-              {chips<newBet&&(
-                <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700,marginBottom:8}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
-              )}
-              <Btn full onClick={criarSala} disabled={chips<newBet} c="#2ecc71" tc="#000">Criar Sala</Btn>
             </div>
           )}
           {newGame==='poker'&&(
-            <div>
-              <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginBottom:10}}>Poker: 5 fichas por jogador na entrada</div>
-              {chips<5&&(
-                <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700,marginBottom:8}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
-              )}
-              {chips>=5&&<Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>}
-            </div>
+            <div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginBottom:10}}>Poker: 5 fichas por jogador na entrada</div>
+          )}
+          {chips<(newGame==='poker'?5:newBet)?(
+            <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
+          ):(
+            <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>
           )}
         </div>
       )}
+
 
       {rooms.length===0
         ?<div style={{textAlign:"center",padding:"40px 20px",color:"#444"}}>
