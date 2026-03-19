@@ -3063,25 +3063,35 @@ function PokerOnline({socket,room,userData,onGameOver}){
       if(action==='poker_action'){
         if(data.pot!==undefined)setPot(data.pot);
         if(data.curBet!==undefined)setCurBet(data.curBet);
-        // Adversário agiu
-        if(sUid!==userData?.uid){
+        const myUid=userData?.uid;
+        // Acoes que vem DO adversario para mim (meu myTurn vai ficar true)
+        const oppActions=['check','bet','raise','call'];
+        // Acoes que confirmam minha propria acao (meu myTurn fica false)
+        const myConfirmActions=['checked','bet_done','raised','called'];
+        if(sUid!==myUid && oppActions.includes(data.action)){
+          // Adversario agiu — atualizar meu estado
           setLastOppAct(data.action);
           if(data.myChips!==undefined)setMyChips(data.myChips);
           if(data.oppChips!==undefined)setOppChips(data.oppChips);
           if(data.oppBet!==undefined)setOppBet(data.oppBet);
           if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
-          // Se adversário fez bet ou raise, eu preciso responder
           if(data.action==='bet'||data.action==='raise'){
             setPhase('responding');setBetAmt(data.curBet||5);
           }
-          if(data.action==='check'){setPhase('open');}
-        } else {
-          // Confirmação da minha ação
-          setLastAct(data.action||lastAct);
+          if(data.action==='check'||data.action==='call'){
+            setPhase('open');
+            if(data.myTurn)setMyTurn(true);
+          }
+        } else if(sUid===myUid || myConfirmActions.includes(data.action)){
+          // Confirmacao da minha acao
+          const displayAct=data.action==='checked'?'check':data.action==='raised'?'raise':data.action==='called'?'call':data.action;
+          setLastAct(displayAct||lastAct);
           if(data.myChips!==undefined)setMyChips(data.myChips);
           if(data.myBet!==undefined)setMyBet(data.myBet);
           if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
-          if(data.action==='bet_done'){setPhase('open');} // eu apostei, aguardo resposta
+          // Apos minha acao: aguarda adversario
+          if(myConfirmActions.includes(data.action))setMyTurn(false);
+          if(data.action==='bet_done')setPhase('open');
         }
       }
       if(action==='poker_win'){
