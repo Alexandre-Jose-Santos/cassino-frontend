@@ -3014,65 +3014,95 @@ function PokerOnline({socket,room,userData,onGameOver}){
   var [myBet,setMyBet]=useState(0);
   var [oppBet,setOppBet]=useState(0);
   var [curBet,setCurBet]=useState(0);
+  // phase: 'open' = CHECK/BET disponível | 'responding' = FOLD/CALL/RAISE disponível
   var [phase,setPhase]=useState('open');
   var [myTurn,setMyTurn]=useState(false);
   var [result,setResult]=useState(null);
   var [revealOpp,setRevealOpp]=useState(false);
   var [oppHand,setOppHand]=useState([]);
+  var [comm,setComm]=useState([]);
   var [betAmt,setBetAmt]=useState(5);
   var [showBetInput,setShowBetInput]=useState(false);
   var [lastAct,setLastAct]=useState(null);
   var [lastOppAct,setLastOppAct]=useState(null);
-  var [waiting,setWaiting]=useState(true); // aguarda poker_deal
+  var [betScreen,setBetScreen]=useState(true);
+  var [betVal,setBetVal]=useState(5);
+  var [betReady,setBetReady]=useState(false);
+  var [oppBetReady,setOppBetReady]=useState(false);
+  var [betMsg,setBetMsg]=useState('');
+  var betValRef=useRef(5);
+  var minBet=room.betAmount||5;
 
   var opp=room.players.find(function(p){return p.uid!==userData?.uid;});
   var oppName=opp?opp.name:'Adversário';
-  var minBet=room.betAmount||5;
 
   useEffect(function(){
     if(!socket)return;
     function onAct(evt){
       var action=evt.action,data=evt.data||{},sUid=evt.uid;
 
+      if(action==='poker_bet_proposal'&&sUid!==userData?.uid){
+        setBetVal(data.bet||5);betValRef.current=data.bet||5;
+        setBetMsg(oppName+' quer apostar: '+data.bet+' fichas');
+      }
+      if(action==='poker_bet_waiting'&&sUid!==userData?.uid){
+        setOppBetReady(true);setBetMsg(oppName+' confirmou!');
+      }
+      if(action==='poker_bet_agreed'){
+        setBetScreen(false);setBetMsg('');
+        setBetAmt(data.bet||5);
+      }
       if(action==='poker_deal'){
         setHand(data.hand||[]);
         setMyChips(data.chips||0);setOppChips(data.oppChips||0);
-        setPot(data.pot||0);setMyBet(data.myBet||0);setOppBet(data.oppBet||0);
-        setCurBet(data.curBet||0);
+        setPot(data.pot||0);setMyBet(data.myBet||0);setOppBet(data.oppBet||0);setCurBet(data.curBet||0);
         setPhase('open');setMyTurn(!!data.myTurn);
-        setResult(null);setRevealOpp(false);setOppHand([]);
-        setLastAct(null);setLastOppAct(null);setShowBetInput(false);
-        setWaiting(false);
+        setResult(null);setRevealOpp(false);setOppHand([]);setComm([]);
+        setLastAct(null);setLastOppAct(null);
+        setShowBetInput(false);setBetScreen(false);
       }
       if(action==='poker_community'){
-        if(data.community){}// ignorado — sem board nesse modo
-        setMyChips(data.chips||myChips);setOppChips(data.oppChips||oppChips);
-        setPot(data.pot||pot);setMyBet(0);setOppBet(0);setCurBet(0);
-        setPhase('open');setMyTurn(!!data.myTurn);
-        setLastAct(null);setLastOppAct(null);setShowBetInput(false);
+        setComm(data.community||[]);
+        if(data.chips!==undefined)setMyChips(data.chips);
+        if(data.oppChips!==undefined)setOppChips(data.oppChips);
+        if(data.pot!==undefined)setPot(data.pot);
+        setMyBet(0);setOppBet(0);setCurBet(0);
+        setMyTurn(!!data.myTurn);
+        setPhase('open');
+        setLastAct(null);setLastOppAct(null);
+        setShowBetInput(false);
       }
       if(action==='poker_action'){
         if(data.pot!==undefined)setPot(data.pot);
         if(data.curBet!==undefined)setCurBet(data.curBet);
-        var myUid=userData?.uid;
-        var actorUid=data.actorUid||(sUid!=='server'?sUid:null);
-        var wasMe=actorUid===myUid;
-        var oppActs=['check','bet','raise','call'];
-        var myConfirm=['checked','bet_done','raised','called'];
-        if(!wasMe&&oppActs.includes(data.action)){
+        const myUid=userData?.uid;
+        // Acoes que vem DO adversario para mim (meu myTurn vai ficar true)
+        const oppActions=['check','bet','raise','call'];
+        // Acoes que confirmam minha propria acao (meu myTurn fica false)
+        const myConfirmActions=['checked','bet_done','raised','called'];
+        if(sUid!==myUid && oppActions.includes(data.action)){
+          // Adversario agiu — atualizar meu estado
           setLastOppAct(data.action);
           if(data.myChips!==undefined)setMyChips(data.myChips);
           if(data.oppChips!==undefined)setOppChips(data.oppChips);
           if(data.oppBet!==undefined)setOppBet(data.oppBet);
           if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
-          if(data.action==='bet'||data.action==='raise'){setPhase('responding');setBetAmt(data.curBet||minBet);}
-          if(data.action==='check'||data.action==='call'){setPhase('open');}
-        } else if(wasMe||myConfirm.includes(data.action)){
-          var disp=data.action==='checked'?'check':data.action==='raised'?'raise':data.action==='called'?'call':data.action;
-          setLastAct(disp||lastAct);
+          if(data.action==='bet'||data.action==='raise'){
+            setPhase('responding');setBetAmt(data.curBet||5);
+          }
+          if(data.action==='check'||data.action==='call'){
+            setPhase('open');
+            if(data.myTurn)setMyTurn(true);
+          }
+        } else if(sUid===myUid || myConfirmActions.includes(data.action)){
+          // Confirmacao da minha acao
+          const displayAct=data.action==='checked'?'check':data.action==='raised'?'raise':data.action==='called'?'call':data.action;
+          setLastAct(displayAct||lastAct);
           if(data.myChips!==undefined)setMyChips(data.myChips);
           if(data.myBet!==undefined)setMyBet(data.myBet);
-          if(myConfirm.includes(data.action))setMyTurn(false);
+          if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
+          // Apos minha acao: aguarda adversario
+          if(myConfirmActions.includes(data.action))setMyTurn(false);
           if(data.action==='bet_done')setPhase('open');
         }
       }
@@ -3094,8 +3124,9 @@ function PokerOnline({socket,room,userData,onGameOver}){
       }
     }
     socket.on('game_action',onAct);
-    // Inicia o poker direto — sem tela de negociação
-    socket.emit('game_action',{roomId:room.id,action:'poker_init',data:{uid:userData?.uid}});
+    // Envia proposta inicial ao adversário (NÃO confirma automaticamente — o usuário precisa clicar em Confirmar)
+    const initialBet = betValRef.current;
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:initialBet,uid:userData?.uid}});
     return function(){socket.off('game_action',onAct);};
   },[socket]);
 
@@ -3107,140 +3138,193 @@ function PokerOnline({socket,room,userData,onGameOver}){
   function doBet(amt){if(!myTurn||phase!=='open')return;setLastAct('bet');setShowBetInput(false);emit('bet',{amount:amt});}
   function doCall(){if(!myTurn||phase!=='responding')return;setLastAct('call');emit('call');}
   function doRaise(amt){if(!myTurn||phase!=='responding')return;setLastAct('raise');setShowBetInput(false);emit('raise',{amount:amt});}
+
+  function confirmBet(){
+    setBetReady(true);setBetMsg('Aguardando '+oppName+'...');
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betValRef.current,uid:userData?.uid}});
+  }
+  function changeBetVal(v){if(betReady)return;setBetVal(v);betValRef.current=v;
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:v,uid:userData?.uid}});
+  }
   function nextHand(){
-    setResult(null);setRevealOpp(false);setOppHand([]);
-    setWaiting(true);setLastAct(null);setLastOppAct(null);
-    socket.emit('game_action',{roomId:room.id,action:'poker_init',data:{uid:userData?.uid}});
+    setResult(null);setRevealOpp(false);setOppHand([]);setComm([]);
+    setHand([]);setPot(0);setMyBet(0);setOppBet(0);setCurBet(0);
+    setBetScreen(true);setBetReady(false);setOppBetReady(false);setBetMsg('');
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betValRef.current,uid:userData?.uid}});
   }
 
   var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣',spade:'♠',heart:'♥',diam:'♦',club:'♣'};
   var PK_SC={s:'#222',h:'#e74c3c',d:'#e74c3c',c:'#222',spade:'#222',heart:'#e74c3c',diam:'#e74c3c',club:'#222'};
   function OCard({card,hidden}){
-    if(hidden)return <div style={{width:50,height:70,borderRadius:8,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>&#x1F0A0;</div>;
-    if(!card)return <div style={{width:50,height:70,borderRadius:8,background:'rgba(255,255,255,.03)',border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>;
+    if(hidden)return <div style={{width:54,height:76,borderRadius:8,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>🂠</div>;
+    if(!card)return <div style={{width:54,height:76,borderRadius:8,background:'rgba(255,255,255,.03)',border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>;
     var r=card.rank||card.r,s=card.suit||card.s;
     var col=PK_SC[s]||'#222',sym=PK_SS[s]||s||'?';
     return(
-      <div style={{width:50,height:70,borderRadius:8,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,boxShadow:'0 2px 8px rgba(0,0,0,.6)',flexShrink:0}}>
-        <div style={{fontSize:13,fontWeight:900,color:col,lineHeight:1}}>{r}</div>
-        <div style={{fontSize:18,color:col,lineHeight:1}}>{sym}</div>
+      <div style={{width:54,height:76,borderRadius:8,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,boxShadow:'0 3px 10px rgba(0,0,0,.6)',flexShrink:0}}>
+        <div style={{fontSize:14,fontWeight:900,color:col,lineHeight:1}}>{r}</div>
+        <div style={{fontSize:20,color:col,lineHeight:1}}>{sym}</div>
       </div>
     );
   }
 
-  // Aguardando cartas
-  if(waiting&&!result) return(
-    <div style={{padding:'20px',textAlign:'center',color:'rgba(255,255,255,.4)',fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,fontSize:12}}>
-      <div style={{fontSize:30,marginBottom:12}}>&#x1F0CF;</div>
-      <div>AGUARDANDO CARTAS...</div>
-      <div style={{fontSize:10,marginTop:4,color:'rgba(255,255,255,.2)'}}>Iniciando partida</div>
+  // ── Tela de definição de aposta ──
+  if(betScreen&&!result) return(
+    <div style={{padding:'16px 10px',maxWidth:480,margin:'0 auto'}}>
+      <div style={{textAlign:'center',padding:'24px 20px',background:'radial-gradient(ellipse at 50% 0%,rgba(20,80,20,.5),rgba(3,12,3,.95))',border:'1px solid rgba(46,204,113,.18)',borderRadius:20,boxShadow:'0 20px 60px rgba(0,0,0,.7)'}}>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:18,fontFamily:"'Cinzel',serif",letterSpacing:2,marginBottom:4}}>♠ POKER — {oppName}</div>
+        <div style={{color:'rgba(255,255,255,.3)',fontSize:10,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2,marginBottom:20}}>APOSTA MÍNIMA POR RODADA</div>
+        <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginBottom:16}}>
+          {[5,10,20,50,100].map(function(v){
+            return <button key={v} onClick={function(){changeBetVal(v);}}
+              style={{padding:'10px 16px',background:betVal===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'2px solid '+(betVal===v?'rgba(241,196,15,.6)':'rgba(255,255,255,.1)'),borderRadius:10,color:betVal===v?'#f1c40f':'#666',fontWeight:900,fontSize:14,cursor:betReady?'not-allowed':'pointer',fontFamily:"'Cinzel',serif",opacity:betReady?.5:1}}>
+              {v}
+            </button>;
+          })}
+        </div>
+        <div style={{display:'flex',gap:16,justifyContent:'center',marginBottom:16}}>
+          <div style={{textAlign:'center'}}><div style={{fontSize:22,marginBottom:2}}>{betReady?'✅':'⏳'}</div><div style={{color:betReady?'#2ecc71':'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif"}}>VOCÊ</div></div>
+          <div style={{color:'rgba(255,255,255,.1)',fontSize:18,alignSelf:'center'}}>VS</div>
+          <div style={{textAlign:'center'}}><div style={{fontSize:22,marginBottom:2}}>{oppBetReady?'✅':'⏳'}</div><div style={{color:oppBetReady?'#2ecc71':'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif"}}>{oppName.slice(0,8).toUpperCase()}</div></div>
+        </div>
+        {betMsg&&<div style={{color:'rgba(241,196,15,.8)',fontSize:11,textAlign:'center',marginBottom:14,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{betMsg}</div>}
+        <button onClick={confirmBet} disabled={betReady}
+          style={{padding:'12px 32px',background:!betReady?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',border:'1px solid rgba(46,204,113,.4)',borderRadius:12,color:!betReady?'#2ecc71':'#444',fontWeight:900,fontSize:14,cursor:betReady?'not-allowed':'pointer',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
+          {betReady?'AGUARDANDO...':'✔ CONFIRMAR '+betVal+' FICHAS'}
+        </button>
+      </div>
     </div>
   );
 
-  // Resultado
+  // ── Resultado ──
   if(result) return(
     <div style={{padding:'10px 8px',maxWidth:480,margin:'0 auto'}}>
-      <div style={{background:result.outcome==='win'?'rgba(46,204,113,.08)':result.outcome==='tie'?'rgba(241,196,15,.06)':'rgba(231,76,60,.08)',border:'1px solid '+(result.outcome==='win'?'rgba(46,204,113,.3)':result.outcome==='tie'?'rgba(241,196,15,.25)':'rgba(231,76,60,.3)'),borderRadius:14,padding:'18px',textAlign:'center'}}>
-        <div style={{fontSize:34,marginBottom:8}}>{result.outcome==='win'?'🏆':result.outcome==='tie'?'🤝':'😔'}</div>
-        <div style={{color:result.outcome==='win'?'#2ecc71':result.outcome==='tie'?'#f1c40f':'#e74c3c',fontWeight:900,fontSize:17,marginBottom:6,fontFamily:"'Cinzel',serif"}}>
+      <div style={{background:result.outcome==='win'?'rgba(46,204,113,.08)':result.outcome==='tie'?'rgba(241,196,15,.06)':'rgba(231,76,60,.08)',border:'1px solid '+(result.outcome==='win'?'rgba(46,204,113,.3)':result.outcome==='tie'?'rgba(241,196,15,.25)':'rgba(231,76,60,.3)'),borderRadius:14,padding:'20px',textAlign:'center'}}>
+        <div style={{fontSize:36,marginBottom:8}}>{result.outcome==='win'?'🏆':result.outcome==='tie'?'🤝':'😔'}</div>
+        <div style={{color:result.outcome==='win'?'#2ecc71':result.outcome==='tie'?'#f1c40f':'#e74c3c',fontWeight:900,fontSize:18,marginBottom:6,fontFamily:"'Cinzel',serif"}}>
           {result.outcome==='win'?'VOCÊ VENCEU!':result.outcome==='tie'?'EMPATE!':oppName+' VENCEU!'}
         </div>
-        <div style={{color:'rgba(255,255,255,.4)',fontSize:12,marginBottom:12}}>{result.reason}</div>
+        <div style={{color:'rgba(255,255,255,.4)',fontSize:12,marginBottom:14}}>{result.reason}</div>
         {revealOpp&&oppHand.length>0&&(
-          <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:14}}>
-            {oppHand.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
+          <div style={{marginBottom:14}}>
+            <div style={{color:'#888',fontSize:10,marginBottom:6,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>{oppName.slice(0,10).toUpperCase()}</div>
+            <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+              {oppHand.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
+            </div>
           </div>
         )}
-        <div style={{fontSize:11,color:'rgba(255,255,255,.3)',marginBottom:12}}>
-          Você: {myChips} fichas &nbsp;|&nbsp; {oppName}: {oppChips} fichas
-        </div>
-        {myChips>=minBet&&oppChips>=minBet&&(
+        {myChips>=betVal&&oppChips>=betVal&&(
           <button onClick={nextHand} style={{padding:'10px 24px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
             ▶ PRÓXIMA MÃO
           </button>
         )}
-        {(myChips<minBet||oppChips<minBet)&&<div style={{color:'#e74c3c',fontSize:11}}>Fichas insuficientes para continuar</div>}
+        {(myChips<betVal||oppChips<betVal)&&<div style={{color:'#e74c3c',fontSize:12,fontFamily:"'Rajdhani',sans-serif"}}>❌ Fichas insuficientes para continuar</div>}
       </div>
     </div>
   );
 
-  // Mesa
+  // ── Mesa ──
   return(
     <div style={{padding:'10px 8px',maxWidth:480,margin:'0 auto'}}>
+      {/* Header */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <div style={{color:'#f1c40f',fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif"}}>&#9824; POKER ONLINE</div>
-        <div style={{fontSize:10}}><span style={{color:'#2ecc71'}}>Você: {myChips}</span><span style={{color:'#333'}}> | </span><span style={{color:'#aaa'}}>{oppName.slice(0,10)}: {oppChips}</span></div>
+        <div style={{color:'#f1c40f',fontWeight:900,fontSize:15,fontFamily:"'Cinzel',serif"}}>♠ POKER ONLINE</div>
+        <div style={{fontSize:10}}><span style={{color:'#2ecc71'}}>Você: {myChips}</span><span style={{color:'#333'}}> | </span><span style={{color:'#aaa'}}>{oppName.slice(0,8)}: {oppChips}</span></div>
       </div>
-      <div style={{background:'radial-gradient(ellipse at 50% 50%,#1b5e20,#0a3a0a 60%,#051505)',border:'6px solid #3e2723',borderRadius:22,padding:'14px 10px',marginBottom:8,boxShadow:'inset 0 2px 12px rgba(0,0,0,.6),0 8px 32px rgba(0,0,0,.8)'}}>
+
+      {/* Mesa */}
+      <div style={{background:'radial-gradient(ellipse at 50% 50%,#1b5e20,#0a3a0a 60%,#051505)',border:'6px solid #3e2723',borderRadius:22,padding:'16px 12px',marginBottom:8,boxShadow:'inset 0 2px 12px rgba(0,0,0,.6),0 8px 32px rgba(0,0,0,.8)'}}>
         {/* Adversário */}
-        <div style={{marginBottom:12}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-            <div><div style={{color:'#aaa',fontSize:11,fontWeight:700}}>&#128100; {oppName.slice(0,12)}</div><div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {oppChips}</div></div>
+        <div style={{marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <div><div style={{color:'#aaa',fontSize:12,fontWeight:700}}>👤 {oppName.slice(0,12)}</div><div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {oppChips}</div></div>
             <div style={{display:'flex',gap:6,alignItems:'center'}}>
-              {!myTurn&&<span style={{color:'#f1c40f',fontSize:10}}>&#x23F3;</span>}
+              {!myTurn&&<span style={{color:'#f1c40f',fontSize:10}}>⏳</span>}
               {lastOppAct&&<span style={{color:'rgba(255,255,255,.5)',fontSize:11,fontWeight:700,fontFamily:"'Rajdhani',sans-serif"}}>{lastOppAct.toUpperCase()}</span>}
-              {oppBet>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:10,fontWeight:700}}>{oppBet}</span>}
+              {oppBet>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:11,fontWeight:700}}>{oppBet}</span>}
             </div>
           </div>
-          <div style={{display:'flex',gap:5,justifyContent:'center'}}>
-            <OCard card={null} hidden={true}/><OCard card={null} hidden={true}/>
+          <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+            {revealOpp&&oppHand.length>0
+              ? oppHand.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;})
+              : [null,null].map(function(_,i){return <OCard key={i} card={null} hidden={true}/>;})
+            }
           </div>
         </div>
+
         {/* Pote */}
-        <div style={{textAlign:'center',borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 0',margin:'0 0 12px'}}>
-          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.35)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'5px 18px'}}>
+        <div style={{textAlign:'center',borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 0',margin:'0 0 16px'}}>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.35)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'6px 20px'}}>
             <span style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>POTE</span>
-            <span style={{color:'#f1c40f',fontWeight:900,fontSize:20,fontFamily:"'Cinzel',serif"}}>{pot}</span>
+            <span style={{color:'#f1c40f',fontWeight:900,fontSize:22,fontFamily:"'Cinzel',serif"}}>{pot}</span>
           </div>
         </div>
+
+        {/* Cartas comunitarias */}
+        {comm.length>0&&(
+          <div style={{display:'flex',gap:4,justifyContent:'center',marginBottom:12}}>
+            {comm.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
+          </div>
+        )}
+
         {/* Jogador */}
         <div>
-          <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:6}}>
+          <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:8}}>
             {(hand.length>0?hand:[null,null]).map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
           </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div><div style={{color:'#2ecc71',fontSize:11,fontWeight:700}}>&#128100; VOCÊ</div><div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {myChips}</div></div>
+            <div><div style={{color:'#2ecc71',fontSize:12,fontWeight:700}}>👤 VOCÊ</div><div style={{color:'rgba(255,255,255,.2)',fontSize:9}}>Stack: {myChips}</div></div>
             <div style={{display:'flex',gap:6,alignItems:'center'}}>
-              {myTurn&&<span style={{color:'#2ecc71',fontSize:10}}>&#x2705; sua vez</span>}
+              {myTurn&&<span style={{color:'#2ecc71',fontSize:10}}>✅ sua vez</span>}
               {lastAct&&<span style={{color:'rgba(255,255,255,.4)',fontSize:10,fontWeight:700,fontFamily:"'Rajdhani',sans-serif"}}>{lastAct.toUpperCase()}</span>}
-              {myBet>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:10,fontWeight:700}}>{myBet}</span>}
+              {myBet>0&&<span style={{background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.2)',borderRadius:5,padding:'2px 8px',color:'#f1c40f',fontSize:11,fontWeight:700}}>{myBet}</span>}
             </div>
           </div>
         </div>
       </div>
+
       {/* Ações */}
       {myTurn&&(
         <div style={{background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.07)',borderRadius:14,padding:'12px'}}>
+          {/* Input de valor de aposta */}
           {showBetInput&&(
             <div style={{marginBottom:10}}>
+              <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,textAlign:'center',marginBottom:8,fontFamily:"'Rajdhani',sans-serif"}}>{phase==='open'?'VALOR DO BET':'VALOR DO RAISE'}</div>
               <div style={{display:'flex',gap:6,alignItems:'center',justifyContent:'center',marginBottom:8}}>
-                <button onClick={function(){setBetAmt(function(v){return Math.max(minBet,v-minBet);});}} style={{width:30,height:30,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:14}}>-</button>
-                <div style={{color:'#f1c40f',fontWeight:900,fontSize:20,minWidth:50,textAlign:'center',fontFamily:"'Cinzel',serif"}}>{betAmt}</div>
-                <button onClick={function(){setBetAmt(function(v){return Math.min(myChips,v+minBet);});}} style={{width:30,height:30,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:14}}>+</button>
+                <button onClick={function(){setBetAmt(function(v){return Math.max(minBet,v-minBet);});}}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>−</button>
+                <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,minWidth:60,textAlign:'center',fontFamily:"'Cinzel',serif"}}>{betAmt}</div>
+                <button onClick={function(){setBetAmt(function(v){return Math.min(myChips,v+minBet);});}}
+                  style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>+</button>
               </div>
-              <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:8}}>
+              <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:10}}>
                 {[minBet,minBet*2,pot||minBet*3,myChips].filter(function(v,i,a){return v>0&&v<=myChips&&a.indexOf(v)===i;}).slice(0,4).map(function(v){
-                  return <button key={v} onClick={function(){setBetAmt(v);}} style={{padding:'3px 8px',fontSize:10,fontWeight:700,cursor:'pointer',borderRadius:5,background:betAmt===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'1px solid '+(betAmt===v?'rgba(241,196,15,.4)':'rgba(255,255,255,.08)'),color:betAmt===v?'#f1c40f':'#666'}}>{v===myChips?'All-In':v}</button>;
+                  var lbl=v===myChips?'All-In':v===pot?'Pote':String(v);
+                  return <button key={v} onClick={function(){setBetAmt(v);}} style={{padding:'4px 10px',fontSize:10,fontWeight:700,cursor:'pointer',borderRadius:6,background:betAmt===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'1px solid '+(betAmt===v?'rgba(241,196,15,.5)':'rgba(255,255,255,.1)'),color:betAmt===v?'#f1c40f':'#666'}}>{lbl}</button>;
                 })}
               </div>
               <div style={{display:'flex',gap:6}}>
-                <button onClick={function(){phase==='open'?doBet(betAmt):doRaise(betAmt);}} style={{flex:1,padding:'9px',background:'rgba(241,196,15,.1)',border:'1px solid rgba(241,196,15,.4)',borderRadius:9,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>{phase==='open'?'BET '+betAmt:'RAISE '+betAmt}</button>
-                <button onClick={function(){setShowBetInput(false);}} style={{padding:'9px 12px',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:9,color:'#555',fontWeight:700,fontSize:12,cursor:'pointer'}}>&#x2715;</button>
+                <button onClick={function(){phase==='open'?doBet(betAmt):doRaise(betAmt);}}
+                  style={{flex:1,padding:'10px',background:'rgba(241,196,15,.12)',border:'1px solid rgba(241,196,15,.45)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>
+                  {phase==='open'?'BET '+betAmt:'RAISE → '+betAmt}
+                </button>
+                <button onClick={function(){setShowBetInput(false);}}
+                  style={{padding:'10px 14px',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:10,color:'#555',fontWeight:700,fontSize:12,cursor:'pointer'}}>✕</button>
               </div>
             </div>
           )}
           {!showBetInput&&(
             <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
-              <button onClick={doFold} style={{padding:'10px 18px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.35)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>FOLD</button>
-              {phase==='open'&&<button onClick={doCheck} style={{padding:'10px 18px',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.18)',borderRadius:10,color:'#fff',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>CHECK</button>}
-              {phase==='open'&&<button onClick={function(){setBetAmt(minBet);setShowBetInput(true);}} style={{padding:'10px 18px',background:'rgba(241,196,15,.07)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>BET</button>}
-              {phase==='responding'&&<button onClick={doCall} style={{padding:'10px 18px',background:'rgba(52,152,219,.1)',border:'1px solid rgba(52,152,219,.4)',borderRadius:10,color:'#3498db',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>CALL {curBet}</button>}
-              {phase==='responding'&&<button onClick={function(){setBetAmt(curBet*2||minBet*2);setShowBetInput(true);}} style={{padding:'10px 18px',background:'rgba(241,196,15,.07)',border:'1px solid rgba(241,196,15,.3)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>RAISE</button>}
+              <button onClick={doFold} style={{padding:'11px 20px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.35)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>FOLD</button>
+              {phase==='open'&&<button onClick={doCheck} style={{padding:'11px 20px',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.18)',borderRadius:10,color:'#fff',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>CHECK</button>}
+              {phase==='open'&&<button onClick={function(){setBetAmt(minBet);setShowBetInput(true);}} style={{padding:'11px 20px',background:'rgba(241,196,15,.08)',border:'1px solid rgba(241,196,15,.35)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>BET</button>}
+              {phase==='responding'&&<button onClick={doCall} style={{padding:'11px 20px',background:'rgba(52,152,219,.12)',border:'1px solid rgba(52,152,219,.4)',borderRadius:10,color:'#3498db',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>CALL {curBet}</button>}
+              {phase==='responding'&&<button onClick={function(){setBetAmt(curBet*2||minBet*2);setShowBetInput(true);}} style={{padding:'11px 20px',background:'rgba(241,196,15,.08)',border:'1px solid rgba(241,196,15,.35)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:14,cursor:'pointer',fontFamily:"'Cinzel',serif"}}>RAISE</button>}
             </div>
           )}
         </div>
       )}
-      {!myTurn&&<div style={{textAlign:'center',padding:'10px',color:'rgba(255,255,255,.2)',fontSize:11,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>&#x23F3; AGUARDANDO {oppName.slice(0,10).toUpperCase()}...</div>}
+      {!myTurn&&<div style={{textAlign:'center',padding:'10px',color:'rgba(255,255,255,.2)',fontSize:11,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>⏳ AGUARDANDO {oppName.slice(0,10).toUpperCase()}...</div>}
     </div>
   );
 }
@@ -3636,8 +3720,8 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
     if(!socket.connected){setMsg('❌ Socket desconectado. Aguarde reconexão.');return;}
-    const custoEntrada = 5;
-    if(chips<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas, precisa de 5.');return;}
+    const custoEntrada = newGame==='poker' ? 5 : newBet;
+    if(chips<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas, precisa de '+custoEntrada+'.');return;}
     console.log('🎮 Emitindo create_room:', {game:newGame,betAmount:newBet,maxPlayers,socketId:socket.id});
     setMsg('⏳ Criando sala...');
     socket.emit('create_room',{game:newGame,betAmount:newBet,maxPlayers});
@@ -4187,11 +4271,21 @@ function OnlineLobby({socket,chips,userData,onChange}){
           {['dama','xadrez','go'].includes(newGame)&&(
             <div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:10}}>1 vs 1</div>
           )}
-          <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:11}}>
-            <span style={{color:"#f1c40f",fontWeight:700}}>5 fichas</span><span style={{color:"#666"}}> por jogador na entrada • aposta definida dentro do jogo</span>
-          </div>
-          {chips<5?(
-            <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas, precisa de 5)"}</div>
+          {newGame!=='poker'&&(
+            <div style={{marginBottom:10}}>
+              <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                {[5,10,20,50,100].map(v=>(
+                  <button key={v} onClick={()=>setNewBet(v)} style={{padding:"6px 12px",background:newBet===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"1px solid "+(newBet===v?"rgba(241,196,15,.5)":"rgba(255,255,255,.1)"),borderRadius:6,color:newBet===v?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>{v}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {newGame==='poker'&&(
+            <div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginBottom:10}}>Poker Texas Hold'em: 5 fichas entrada, aposta definida antes de cada mao</div>
+          )}
+          {chips<(newGame==='poker'?5:newBet)?(
+            <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
           ):(
             <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>
           )}
@@ -6759,7 +6853,7 @@ function App(){
                   <div onClick={()=>setScreen('poker')} style={{background:"linear-gradient(145deg,#2a0808,#050505)",border:"1px solid #c0392b44",borderRadius:16,padding:"14px 12px",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#c0392b99"} onMouseLeave={e=>e.currentTarget.style.borderColor="#c0392b44"}>
                     <div style={{fontSize:24,marginBottom:4}}>&#x2660;</div>
                     <div style={{fontWeight:700,fontSize:14,color:"#fff"}}>Poker</div>
-                    <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2}}>1 ficha - vs IA</div>
+                    <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2}}>Texas Hold'em vs IA</div>
                     <div style={{marginTop:4,display:"inline-block",background:"#c0392b22",border:"1px solid #c0392b44",borderRadius:4,padding:"1px 6px",fontSize:7,color:"#c0392b",fontWeight:700}}>MEDIO</div>
                   </div>
                   <div onClick={()=>setScreen('go')} style={{background:"linear-gradient(145deg,#1a1205,#050505)",border:"1px solid #8B691444",borderRadius:16,padding:"14px 12px",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#8B691499"} onMouseLeave={e=>e.currentTarget.style.borderColor="#8B691444"}>
