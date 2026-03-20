@@ -3064,12 +3064,15 @@ function PokerOnline({socket,room,userData,onGameOver}){
         if(data.pot!==undefined)setPot(data.pot);
         if(data.curBet!==undefined)setCurBet(data.curBet);
         const myUid=userData?.uid;
-        // Acoes que vem DO adversario para mim (meu myTurn vai ficar true)
+        // actorUid = quem fez a ação. Se não veio (eventos antigos), usa sUid
+        const actorUid = data.actorUid || (sUid!=='server' ? sUid : null);
+        const wasMe = actorUid === myUid;
+        // Acoes que vem DO adversario para mim
         const oppActions=['check','bet','raise','call'];
-        // Acoes que confirmam minha propria acao (meu myTurn fica false)
+        // Acoes que confirmam minha propria acao
         const myConfirmActions=['checked','bet_done','raised','called'];
-        if(sUid!==myUid && oppActions.includes(data.action)){
-          // Adversario agiu — atualizar meu estado
+        if(!wasMe && oppActions.includes(data.action)){
+          // Adversario agiu
           setLastOppAct(data.action);
           if(data.myChips!==undefined)setMyChips(data.myChips);
           if(data.oppChips!==undefined)setOppChips(data.oppChips);
@@ -3080,16 +3083,13 @@ function PokerOnline({socket,room,userData,onGameOver}){
           }
           if(data.action==='check'||data.action==='call'){
             setPhase('open');
-            if(data.myTurn)setMyTurn(true);
           }
-        } else if(sUid===myUid || myConfirmActions.includes(data.action)){
+        } else if(wasMe || myConfirmActions.includes(data.action)){
           // Confirmacao da minha acao
           const displayAct=data.action==='checked'?'check':data.action==='raised'?'raise':data.action==='called'?'call':data.action;
           setLastAct(displayAct||lastAct);
           if(data.myChips!==undefined)setMyChips(data.myChips);
           if(data.myBet!==undefined)setMyBet(data.myBet);
-          if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
-          // Apos minha acao: aguarda adversario
           if(myConfirmActions.includes(data.action))setMyTurn(false);
           if(data.action==='bet_done')setPhase('open');
         }
