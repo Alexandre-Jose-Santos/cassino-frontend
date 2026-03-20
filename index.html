@@ -3073,37 +3073,25 @@ function PokerOnline({socket,room,userData,onGameOver}){
         setShowBetInput(false);
       }
       if(action==='poker_action'){
+        // uid:'server' em todos — usa data.myTurn como fonte de verdade
         if(data.pot!==undefined)setPot(data.pot);
         if(data.curBet!==undefined)setCurBet(data.curBet);
-        const myUid=userData?.uid;
-        // Acoes que vem DO adversario para mim (meu myTurn vai ficar true)
-        const oppActions=['check','bet','raise','call'];
-        // Acoes que confirmam minha propria acao (meu myTurn fica false)
-        const myConfirmActions=['checked','bet_done','raised','called'];
-        if(sUid!==myUid && oppActions.includes(data.action)){
-          // Adversario agiu — atualizar meu estado
-          setLastOppAct(data.action);
-          if(data.myChips!==undefined)setMyChips(data.myChips);
-          if(data.oppChips!==undefined)setOppChips(data.oppChips);
-          if(data.oppBet!==undefined)setOppBet(data.oppBet);
-          if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
-          if(data.action==='bet'||data.action==='raise'){
-            setPhase('responding');setBetAmt(data.curBet||5);
-          }
-          if(data.action==='check'||data.action==='call'){
-            setPhase('open');
-            if(data.myTurn)setMyTurn(true);
-          }
-        } else if(sUid===myUid || myConfirmActions.includes(data.action)){
-          // Confirmacao da minha acao
-          const displayAct=data.action==='checked'?'check':data.action==='raised'?'raise':data.action==='called'?'call':data.action;
-          setLastAct(displayAct||lastAct);
-          if(data.myChips!==undefined)setMyChips(data.myChips);
-          if(data.myBet!==undefined)setMyBet(data.myBet);
-          if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
-          // Apos minha acao: aguarda adversario
-          if(myConfirmActions.includes(data.action))setMyTurn(false);
-          if(data.action==='bet_done')setPhase('open');
+        if(data.myChips!==undefined)setMyChips(data.myChips);
+        if(data.myBet!==undefined)setMyBet(data.myBet);
+        if(data.oppChips!==undefined)setOppChips(data.oppChips);
+        if(data.oppBet!==undefined)setOppBet(data.oppBet);
+        if(data.myTurn!==undefined)setMyTurn(!!data.myTurn);
+        const act=data.action;
+        const iActed = data.whoActed===userData?.uid;
+        if(iActed){
+          // Eu atuei — confirmacao
+          setLastAct(act==='checked'?'check':act==='raised'?'raise':act==='called'?'call':act==='bet_done'?'bet':act);
+          if(act==='bet_done')setPhase('responding'); // aguardo resposta adversario
+        } else {
+          // Adversario atuou
+          setLastOppAct(act==='check'?'check':act==='raise'?'raise':act==='call'?'call':act==='bet'?'bet':act);
+          if(act==='bet'||act==='raise'){setPhase('responding');setBetAmt(data.curBet||betAmt);}
+          if(act==='check'||act==='call'){setPhase('open');}
         }
       }
       if(action==='poker_win'){
@@ -4255,7 +4243,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogo:</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
             {Object.entries(GAMES_INFO).map(([k,g])=>(
-              <button key={k} onClick={()=>{setNewGame(k);if(['dama','xadrez','poker','go'].includes(k))setMaxPlayers(2);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:"1px solid "+(newGame===k?g.c:"rgba(255,255,255,.1)"),borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
+              <button key={k} onClick={()=>{setNewGame(k);setMaxPlayers(['dama','xadrez','poker','go'].includes(k)?2:maxPlayers);}} style={{padding:"6px 12px",background:newGame===k?g.c:"rgba(255,255,255,.05)",border:"1px solid "+(newGame===k?g.c:"rgba(255,255,255,.1)"),borderRadius:6,color:"#fff",cursor:"pointer",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,letterSpacing:1}}>{g.i} {g.n}</button>
             ))}
           </div>
           {!['dama','xadrez','poker','go'].includes(newGame)&&(
@@ -4268,23 +4256,12 @@ function OnlineLobby({socket,chips,userData,onChange}){
               </div>
             </div>
           )}
-          {['dama','xadrez','go'].includes(newGame)&&(
-            <div style={{color:"rgba(241,196,15,.5)",fontSize:11,marginBottom:10}}>1 vs 1</div>
-          )}
-          {newGame!=='poker'&&(
-            <div style={{marginBottom:10}}>
-              <div style={{color:"#888",fontSize:11,marginBottom:6}}>Aposta por jogador:</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                {[5,10,20,50,100].map(v=>(
-                  <button key={v} onClick={()=>setNewBet(v)} style={{padding:"6px 12px",background:newBet===v?"rgba(241,196,15,.2)":"rgba(255,255,255,.05)",border:"1px solid "+(newBet===v?"rgba(241,196,15,.5)":"rgba(255,255,255,.1)"),borderRadius:6,color:newBet===v?"#f1c40f":"#aaa",cursor:"pointer",fontSize:12,fontWeight:700}}>{v}</button>
-                ))}
-              </div>
-            </div>
-          )}
-          {newGame==='poker'&&(
-            <div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginBottom:10}}>Poker Texas Hold'em: 5 fichas entrada, aposta definida antes de cada mao</div>
-          )}
-          {chips<(newGame==='poker'?5:newBet)?(
+          <div style={{fontSize:11,color:"rgba(255,255,255,.35)",marginBottom:12,padding:"8px",background:"rgba(255,255,255,.03)",borderRadius:8}}>
+            {newGame==='poker'
+              ? "Poker Texas Hold'em: valor apostado e negociado antes de cada mao dentro do jogo"
+              : "O valor da aposta e negociado entre os jogadores ao iniciar a partida"}
+          </div>
+          {chips<5?(
             <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas)"}</div>
           ):(
             <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>
