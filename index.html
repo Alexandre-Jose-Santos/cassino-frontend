@@ -3134,6 +3134,14 @@ function PokerOnline({socket,room,userData,onGameOver}){
   }
 
   // Tela de negociacao de aposta
+  // Aguardando distribuicao das cartas
+  if(!betScreen&&!result&&hand.length===0) return(
+    <div style={{padding:'40px 16px',textAlign:'center'}}>
+      <div style={{color:'#f1c40f',fontSize:28,marginBottom:12}}>🃏</div>
+      <div style={{color:'rgba(255,255,255,.4)',fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3}}>DISTRIBUINDO CARTAS...</div>
+    </div>
+  );
+
   if(betScreen&&!result) return(
     <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
       <div style={{background:'rgba(0,0,0,.85)',borderRadius:16,padding:'24px 16px',textAlign:'center',border:'1px solid rgba(241,196,15,.2)'}}>
