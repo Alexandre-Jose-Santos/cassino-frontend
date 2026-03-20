@@ -3203,8 +3203,8 @@ function PokerOnline({socket,room,userData,onGameOver}){
           </div>
           <div style={{display:'flex',gap:5,justifyContent:'center'}}>
             {revealOpp&&oppHand.length>0
-              ? oppHand.map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;})
-              : [null,null].map(function(_,i){return <OCard key={i} card={null} hidden={true}/>;})
+              ? oppHand.map(function(c,i){return <CardV key={i} card={c} hidden={false}/>;})
+              : [null,null].map(function(_,i){return <CardV key={i} card={null} hidden={true}/>;})
             }
           </div>
         </div>
@@ -3212,7 +3212,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
         {/* Comunitarias + Pote */}
         <div style={{borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 4px',margin:'0 0 12px',textAlign:'center'}}>
           <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:8}}>
-            {[0,1,2,3,4].map(function(i){return <OCard key={i} card={comm[i]||null} hidden={false}/>;}) }
+            {[0,1,2,3,4].map(function(i){return <CardV key={i} card={comm[i]||null} hidden={false}/>;}) }
           </div>
           <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.35)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'4px 16px'}}>
             <span style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>POTE</span>
@@ -3223,7 +3223,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
         {/* Jogador */}
         <div>
           <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:6}}>
-            {(hand.length>0?hand:[null,null]).map(function(c,i){return <OCard key={i} card={c} hidden={false}/>;}) }
+            {(hand.length>0?hand:[null,null]).map(function(c,i){return <CardV key={i} card={c} hidden={false}/>;}) }
           </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
