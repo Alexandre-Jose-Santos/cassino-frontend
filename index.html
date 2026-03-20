@@ -3102,7 +3102,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
         if(data.oppChips!==undefined)setOppChips(data.oppChips);
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
-        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||''});
+        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||''});
       }
     }
     socket.on('game_action',onAct);
@@ -3247,6 +3247,19 @@ function PokerOnline({socket,room,userData,onGameOver}){
             {result.outcome==='win'?'VOCE VENCEU!':result.outcome==='tie'?'EMPATE!':oppName.toUpperCase()+' VENCEU!'}
           </div>
           <div style={{color:'rgba(255,255,255,.4)',fontSize:11,marginBottom:10}}>{result.reason}</div>
+          {result.myHandName&&(
+            <div style={{display:'flex',justifyContent:'center',gap:20,marginBottom:12}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{color:'#2ecc71',fontSize:9,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>SUA MAO</div>
+                <div style={{color:'#fff',fontSize:13,fontWeight:700}}>{result.myHandName}</div>
+              </div>
+              <div style={{width:1,background:'rgba(255,255,255,.1)'}}/>
+              <div style={{textAlign:'center'}}>
+                <div style={{color:'#aaa',fontSize:9,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif",marginBottom:2}}>MAO DO ADV</div>
+                <div style={{color:'#fff',fontSize:13,fontWeight:700}}>{result.oppHandName||'?'}</div>
+              </div>
+            </div>
+          )}
           <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
             {myChips>=5&&oppChips>=5&&(
               <button onClick={nextHand}
@@ -3274,7 +3287,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
             <div style={{marginBottom:10}}>
               <div style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,textAlign:'center',marginBottom:8,fontFamily:"'Rajdhani',sans-serif"}}>{canCheck?'VALOR DO BET':'VALOR TOTAL DO RAISE'}</div>
               <div style={{display:'flex',gap:6,alignItems:'center',justifyContent:'center',marginBottom:8}}>
-                <button onClick={function(){setRaiseVal(function(v){return Math.max(canCheck?BB:curBet+BB,v-BB);});}}
+                <button onClick={function(){setRaiseVal(function(v){return Math.max(BB,v-BB);});}}
                   style={{width:32,height:32,borderRadius:8,background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',color:'#fff',fontWeight:900,cursor:'pointer',fontSize:16}}>-</button>
                 <div style={{color:'#f1c40f',fontWeight:900,fontSize:22,minWidth:60,textAlign:'center',fontFamily:"'Cinzel',serif"}}>{raiseVal}</div>
                 <button onClick={function(){setRaiseVal(function(v){return Math.min(myChips+myBet,v+BB);});}}
@@ -3282,7 +3295,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
               </div>
               <div style={{display:'flex',gap:5,justifyContent:'center',flexWrap:'wrap',marginBottom:10}}>
                 {(function(){
-                  var opts=canCheck?[BB,Math.floor(pot/2),pot,myChips+myBet]:[curBet+BB,curBet*2,pot+myBet,myChips+myBet];
+                  var opts=canCheck?[BB,Math.floor(pot/2),pot,myChips+myBet]:[BB,curBet+BB,pot+myBet,myChips+myBet];
                   return opts.filter(function(v,i,a){return v>0&&v<=(myChips+myBet)&&a.indexOf(v)===i;}).slice(0,4).map(function(v){
                     var lbl=v===myChips+myBet?'All-In':v===pot||v===pot+myBet?'Pote':String(v);
                     return <button key={v} onClick={function(){setRaiseVal(v);}} style={{padding:'4px 10px',fontSize:10,fontWeight:700,cursor:'pointer',borderRadius:6,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,background:raiseVal===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'1px solid '+(raiseVal===v?'rgba(241,196,15,.5)':'rgba(255,255,255,.1)'),color:raiseVal===v?'#f1c40f':'#666'}}>{lbl}</button>;
@@ -3305,7 +3318,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
               <button onClick={doFold} style={{padding:'10px 18px',background:'rgba(231,76,60,.1)',border:'1px solid rgba(231,76,60,.35)',borderRadius:10,color:'#e74c3c',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>FOLD</button>
               {canCheck&&<button onClick={doCheck} style={{padding:'10px 18px',background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.18)',borderRadius:10,color:'#fff',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>CHECK</button>}
               {!canCheck&&<button onClick={doCall} style={{padding:'10px 18px',background:'rgba(52,152,219,.12)',border:'1px solid rgba(52,152,219,.4)',borderRadius:10,color:'#3498db',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>CALL {toCall}</button>}
-              <button onClick={function(){setRaiseVal(canCheck?BB:Math.min(curBet*2||BB*2,myChips+myBet));setShowRaise(true);}}
+              <button onClick={function(){setRaiseVal(canCheck?BB:Math.min(curBet+BB,myChips+myBet));setShowRaise(true);}}
                 style={{padding:'10px 18px',background:'linear-gradient(135deg,rgba(241,196,15,.12),rgba(241,196,15,.04))',border:'1px solid rgba(241,196,15,.35)',borderRadius:10,color:'#f1c40f',fontWeight:900,fontSize:13,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
                 {canCheck?'BET':'RAISE'}
               </button>
