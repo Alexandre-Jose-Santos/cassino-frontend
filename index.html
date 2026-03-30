@@ -3006,7 +3006,7 @@ function XadrezOnline({socket,room,userData,onGameOver}){
   );
 }
 
-function PokerOnline({socket,room,userData,onGameOver}){
+function PokerOnline({socket,room,userData,onChange,onGameOver}){
   var [hand,setHand]=useState([]);
   var [comm,setComm]=useState([]);
   var [pot,setPot]=useState(0);
@@ -3093,7 +3093,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
       if(action==='poker_fold'){
         var won=data.winnerId===userData?.uid;
         setMyChips(won?data.oppChips||0:data.myChips||0);
-        setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.'});
+        setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.',prize:won?(data.prize||0):0});
         setRevealOpp(!won);setMyTurn(false);
       }
       if(action==='poker_win'){
@@ -3102,7 +3102,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
         if(data.oppChips!==undefined)setOppChips(data.oppChips);
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
-        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||''});
+        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?(data.prize||0):0});
       }
     }
     socket.on('game_action',onAct);
@@ -3246,6 +3246,7 @@ function PokerOnline({socket,room,userData,onGameOver}){
           <div style={{color:result.outcome==='win'?'#2ecc71':result.outcome==='tie'?'#f1c40f':'#e74c3c',fontWeight:900,fontSize:15,marginBottom:4,fontFamily:"'Cinzel',serif"}}>
             {result.outcome==='win'?'VOCE VENCEU!':result.outcome==='tie'?'EMPATE!':oppName.toUpperCase()+' VENCEU!'}
           </div>
+          {result.outcome==='win'&&result.prize>0&&<div style={{color:'#2ecc71',fontSize:14,fontWeight:900,marginBottom:4,fontFamily:"'Rajdhani',sans-serif"}}>+{result.prize} fichas</div>}
           <div style={{color:'rgba(255,255,255,.4)',fontSize:11,marginBottom:10}}>{result.reason}</div>
           {result.myHandName&&(
             <div style={{display:'flex',justifyContent:'center',gap:20,marginBottom:12}}>
@@ -3434,8 +3435,16 @@ function OnlineLobby({socket,chips,userData,onChange}){
       const eu = userData?.uid;
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
+        // Credita fichas ganhas no saldo
+        if(prize && onChange) onChange(prize);
+        // Incrementa vitórias no Firestore
+        if(eu) db.collection('users').doc(eu).update({
+          victories: firebase.firestore.FieldValue.increment(1)
+        }).catch(()=>{});
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
+        // Debita fichas perdidas do saldo
+        if(prize && onChange) onChange(-prize);
       } else {
         setMsg('Partida encerrada.');
       }
@@ -3993,7 +4002,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             {!betNegScreen&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {!betNegScreen&&myRoom.game==='dama'&&<DamaOnline key={`dama-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {!betNegScreen&&myRoom.game==='xadrez'&&<XadrezOnline key={`xadrez-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {myRoom.game==='poker'&&<PokerOnline key={`poker-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
+            {myRoom.game==='poker'&&<PokerOnline key={`poker-${matchKey}`} socket={socket} room={myRoom} userData={userData} onChange={onChange} onGameOver={()=>setGameOver(true)}/>}
             {!betNegScreen&&myRoom.game==='go'&&<GoOnline key={`go-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {(!['pife','domino','dama','xadrez','poker','go'].includes(myRoom.game))&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
