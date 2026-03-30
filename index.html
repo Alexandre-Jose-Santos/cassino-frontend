@@ -3006,7 +3006,7 @@ function XadrezOnline({socket,room,userData,onGameOver}){
   );
 }
 
-function PokerOnline({socket,room,userData,onChange,onGameOver}){
+function PokerOnline({socket,room,userData,onChange,chips,onGameOver}){
   var [hand,setHand]=useState([]);
   var [comm,setComm]=useState([]);
   var [pot,setPot]=useState(0);
@@ -3092,9 +3092,13 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
       }
       if(action==='poker_fold'){
         var won=data.winnerId===userData?.uid;
-        setMyChips(won?data.oppChips||0:data.myChips||0);
+        setMyChips(won?(data.myChips||0):(data.myChips||0));
         setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.',prize:won?(data.prize||0):0});
         setRevealOpp(!won);setMyTurn(false);
+        if(won){
+          if(data.prize&&onChange)onChange(data.prize);
+          if(userData?.uid)db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        }
       }
       if(action==='poker_win'){
         setRevealOpp(true);setOppHand(data.oppHand||[]);
@@ -3103,6 +3107,10 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
         setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?(data.prize||0):0});
+        if(!data.tie&&won){
+          if(data.prize&&onChange)onChange(data.prize);
+          if(userData?.uid)db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        }
       }
     }
     socket.on('game_action',onAct);
@@ -3262,13 +3270,13 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
             </div>
           )}
           <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
-            {myChips>=5&&oppChips>=5&&(
+            {myChips>=5&&oppChips>=5&&(chips===undefined||chips>=BB)&&(
               <button onClick={nextHand}
                 style={{padding:'9px 22px',background:'linear-gradient(135deg,#1a4a1a,#0d2e0d)',border:'1px solid rgba(46,204,113,.4)',borderRadius:10,color:'#2ecc71',fontWeight:900,fontSize:12,cursor:'pointer',fontFamily:"'Cinzel',serif",letterSpacing:1}}>
                 PROXIMA MAO
               </button>
             )}
-            {(myChips<5||oppChips<5)&&<div style={{color:'#e74c3c',fontSize:12,fontFamily:"'Rajdhani',sans-serif"}}>Fichas insuficientes para continuar</div>}
+            {(myChips<5||oppChips<5||(chips!==undefined&&chips<BB))&&<div style={{color:'#e74c3c',fontSize:12,fontFamily:"'Rajdhani',sans-serif"}}>Fichas insuficientes para continuar</div>}
             <button onClick={function(){onGameOver&&onGameOver();}}
               style={{padding:'9px 16px',background:'rgba(231,76,60,.08)',border:'1px solid rgba(231,76,60,.2)',borderRadius:10,color:'#e74c3c',fontWeight:700,fontSize:11,cursor:'pointer'}}>
               Sair da Mesa
@@ -4002,7 +4010,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
             {!betNegScreen&&myRoom.game==='domino'&&<DominoOnline key={`domino-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {!betNegScreen&&myRoom.game==='dama'&&<DamaOnline key={`dama-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {!betNegScreen&&myRoom.game==='xadrez'&&<XadrezOnline key={`xadrez-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
-            {myRoom.game==='poker'&&<PokerOnline key={`poker-${matchKey}`} socket={socket} room={myRoom} userData={userData} onChange={onChange} onGameOver={()=>setGameOver(true)}/>}
+            {myRoom.game==='poker'&&<PokerOnline key={`poker-${matchKey}`} socket={socket} room={myRoom} userData={userData} onChange={onChange} chips={chips} onGameOver={()=>setGameOver(true)}/>}
             {!betNegScreen&&myRoom.game==='go'&&<GoOnline key={`go-${matchKey}`} socket={socket} room={myRoom} userData={userData} onGameOver={()=>setGameOver(true)}/>}
             {(!['pife','domino','dama','xadrez','poker','go'].includes(myRoom.game))&&(
               <div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,.3)",fontSize:13,fontFamily:"'Rajdhani',sans-serif"}}>
@@ -4201,7 +4209,11 @@ function OnlineLobby({socket,chips,userData,onChange}){
                 {rematchCountdown===null?(
                   <div style={{display:"flex",gap:8,flexDirection:"column"}}>
                     {euSouCriador?(
-                      <Btn full onClick={reiniciarJogo} c="#f1c40f" tc="#000">🔄 REINICIAR JOGO</Btn>
+                      chips>=(myRoom.game==='poker'?5:(myRoom.betAmount||1))
+                        ?<Btn full onClick={reiniciarJogo} c="#f1c40f" tc="#000">🔄 REINICIAR JOGO</Btn>
+                        :<div style={{textAlign:"center",padding:"10px",color:"#e74c3c",fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,border:"1px solid rgba(231,76,60,.2)",borderRadius:8}}>
+                          ❌ Saldo insuficiente para reiniciar ({chips} fichas)
+                        </div>
                     ):(
                       <div style={{textAlign:"center",padding:"10px",color:"rgba(255,255,255,.3)",fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,border:"1px solid rgba(255,255,255,.06)",borderRadius:8}}>
                         ⏳ Aguardando o criador reiniciar...
