@@ -3292,7 +3292,7 @@ function PokerOnline({socket,room,userData,onChange,chips,onGameOver}){
 }
 
 
-function OnlineLobby({socket,chips,userData,onChange}){
+function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const [rooms,setRooms]=useState([]);
   const [online,setOnline]=useState(0);
   const [connected,setConnected]=useState(false);
@@ -3398,14 +3398,12 @@ function OnlineLobby({socket,chips,userData,onChange}){
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
         if(isPoker){
-          // Poker: usa saldo definitivo enviado pelo servidor para evitar débito errado
-          if(winnerChips!==undefined && onChange){
-            const current=Math.max(0,userDataRef.current?.chips||0);
-            onChange(winnerChips - current);
-          } else if(prize && onChange){ onChange(prize); }
+          // Poker: re-busca saldo real do Firestore (servidor já atualizou)
+          db.collection('users').doc(eu).get().then(snap=>{
+            if(snap.exists && onRefreshUser) onRefreshUser(snap.data());
+          }).catch(()=>{});
         } else {
           if(prize && onChange) onChange(prize);
-          // Vitórias para jogos não-poker
           if(eu) db.collection('users').doc(eu).update({
             victories: firebase.firestore.FieldValue.increment(1)
           }).catch(()=>{});
@@ -3413,11 +3411,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
         if(isPoker){
-          // Poker: usa saldo definitivo enviado pelo servidor
-          if(loserChips!==undefined && onChange){
-            const current=Math.max(0,userDataRef.current?.chips||0);
-            onChange(loserChips - current);
-          } else if(prize && onChange){ onChange(-prize); }
+          // Poker: re-busca saldo real do Firestore (servidor já atualizou)
+          db.collection('users').doc(eu).get().then(snap=>{
+            if(snap.exists && onRefreshUser) onRefreshUser(snap.data());
+          }).catch(()=>{});
         } else {
           if(prize && onChange) onChange(-prize);
         }
@@ -3710,8 +3707,9 @@ function OnlineLobby({socket,chips,userData,onChange}){
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
     if(!socket.connected){setMsg('❌ Socket desconectado. Aguarde reconexão.');return;}
     const custoEntrada = newGame==='poker' ? 5 : newBet;
-    if(chips<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas, precisa de '+custoEntrada+'.');return;}
-    console.log('🎮 Emitindo create_room:', {game:newGame,betAmount:newBet,maxPlayers,socketId:socket.id});
+    const saldoAtual = Math.max(0, chips||0);
+    console.log('💰 criarSala chips:', chips, '| saldoAtual:', saldoAtual, '| custoEntrada:', custoEntrada);
+    if(saldoAtual<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+saldoAtual+' fichas, precisa de '+custoEntrada+'.');return;}
     setMsg('⏳ Criando sala...');
     socket.emit('create_room',{game:newGame,betAmount:newBet,maxPlayers});
     setTimeout(()=>{
@@ -6715,7 +6713,7 @@ function App(){
     xadrez:<Xadrez chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     poker:<Poker chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     go:<Go chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
-    lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange}/>,
+    lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange} onRefreshUser={setUserData}/>,
   };
 
   const nav=[
