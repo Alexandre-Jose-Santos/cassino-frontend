@@ -3350,7 +3350,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const [connected,setConnected]=useState(false);
   const [creating,setCreating]=useState(false);
   const [newGame,setNewGame]=useState('pife');
-  const [newBet,setNewBet]=useState(5);
+  const [newBet,setNewBet]=useState(0);
   const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
   const [msg,setMsg]=useState('');
   const userDataRef=React.useRef(userData);
@@ -4279,7 +4279,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
             <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>SERVIDOR</span>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-            <Btn sm onClick={()=>setCreating(v=>!v)} c="#2ecc71" tc="#000">+ Criar</Btn>
+            <Btn sm onClick={()=>{setCreating(v=>!v);setMsg('');}} c="#2ecc71" tc="#000">+ Criar</Btn>
             <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>NOVA SALA</span>
           </div>
         </div>
@@ -4311,11 +4311,16 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
               ? "Poker Texas Hold'em: aposta negociada antes de cada mao"
               : "Aposta negociada entre jogadores ao iniciar a partida"}
           </div>
-          {chips<5?(
-            <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (voce tem "+chips+" fichas, precisa de 5)"}</div>
-          ):(
-            <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>
-          )}
+          {(()=>{
+            const custoUI = newGame==='poker' ? 5 : newBet;
+            if(userData===null){
+              return <div style={{color:"#888",fontSize:12,textAlign:"center",padding:8}}>Carregando saldo...</div>;
+            }
+            if(chips<custoUI){
+              return <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (você tem "+chips+" fichas, precisa de "+custoUI+")"}</div>;
+            }
+            return <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>;
+          })()}
         </div>
       )}
 
