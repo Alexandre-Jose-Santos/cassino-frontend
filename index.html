@@ -3397,14 +3397,30 @@ function OnlineLobby({socket,chips,userData,onChange}){
       const isPoker = myRoomRef.current?.game==='poker';
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
-        if(prize && onChange) onChange(prize);
-        // Vitórias: para poker, já contadas nos eventos poker_win/poker_fold
-        if(eu&&!isPoker) db.collection('users').doc(eu).update({
-          victories: firebase.firestore.FieldValue.increment(1)
-        }).catch(()=>{});
+        if(isPoker){
+          // Poker: usa saldo definitivo enviado pelo servidor para evitar débito errado
+          if(winnerChips!==undefined && onChange){
+            const current=Math.max(0,userDataRef.current?.chips||0);
+            onChange(winnerChips - current);
+          } else if(prize && onChange){ onChange(prize); }
+        } else {
+          if(prize && onChange) onChange(prize);
+          // Vitórias para jogos não-poker
+          if(eu) db.collection('users').doc(eu).update({
+            victories: firebase.firestore.FieldValue.increment(1)
+          }).catch(()=>{});
+        }
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
-        if(prize && onChange) onChange(-prize);
+        if(isPoker){
+          // Poker: usa saldo definitivo enviado pelo servidor
+          if(loserChips!==undefined && onChange){
+            const current=Math.max(0,userDataRef.current?.chips||0);
+            onChange(loserChips - current);
+          } else if(prize && onChange){ onChange(-prize); }
+        } else {
+          if(prize && onChange) onChange(-prize);
+        }
       } else {
         setMsg('Partida encerrada.');
       }
@@ -3748,6 +3764,7 @@ function OnlineLobby({socket,chips,userData,onChange}){
     setMyRoom(null);
     localStorage.removeItem('cassino_my_room');
     setGameOver(false);setRematchMsg('');setRematchCountdown(null);
+    setBetNegScreen(false);setBetNegReady(false);setBetNegOppReady(false);setBetNegMsg('');
   };
 
   const enviarMsg=()=>{
