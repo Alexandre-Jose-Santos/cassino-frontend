@@ -3092,9 +3092,13 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
       }
       if(action==='poker_fold'){
         var won=data.winnerId===userData?.uid;
-        setMyChips(won?data.oppChips||0:data.myChips||0);
+        setMyChips(won?data.myChips||0:data.myChips||0);
         setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.',prize:won?(data.prize||0):0});
         setRevealOpp(!won);setMyTurn(false);
+        // Conta vitória no Firestore (chips gerenciados pelo game_result)
+        if(won&&userData?.uid){
+          db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        }
       }
       if(action==='poker_win'){
         setRevealOpp(true);setOppHand(data.oppHand||[]);
@@ -3103,6 +3107,10 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
         setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?(data.prize||0):0});
+        // Conta vitória no Firestore (chips gerenciados pelo game_result)
+        if(!data.tie&&won&&userData?.uid){
+          db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        }
       }
     }
     socket.on('game_action',onAct);
@@ -3336,7 +3344,7 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
 }
 
 
-function OnlineLobby({socket,chips,userData,onChange}){
+function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const [rooms,setRooms]=useState([]);
   const [online,setOnline]=useState(0);
   const [connected,setConnected]=useState(false);
@@ -3345,6 +3353,10 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [newBet,setNewBet]=useState(5);
   const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
   const [msg,setMsg]=useState('');
+  const userDataRef=React.useRef(userData);
+  useEffect(()=>{userDataRef.current=userData;},[userData]);
+  const myRoomRef=React.useRef(null);
+  useEffect(()=>{myRoomRef.current=myRoom;},[myRoom]);
   const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"},dama:{n:"Dama",i:"♟",c:"#ca6f1e"},xadrez:{n:"Xadrez",i:"♔",c:"#8e44ad"},poker:{n:"Poker",i:"♠",c:"#c0392b"},go:{n:"Go",i:"⚫",c:"#8B6914"}};
 
   useEffect(()=>{
@@ -3432,25 +3444,36 @@ function OnlineLobby({socket,chips,userData,onChange}){
       }
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
-      const eu = userData?.uid;
+      const eu = userDataRef.current?.uid;
+      const isPoker = myRoomRef.current?.game==='poker';
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
-        // Credita fichas ganhas no saldo
-        if(prize && onChange) onChange(prize);
-        // Incrementa vitórias no Firestore
-        if(eu) db.collection('users').doc(eu).update({
-          victories: firebase.firestore.FieldValue.increment(1)
-        }).catch(()=>{});
+        if(!isPoker){
+          // Não-poker: credita fichas e conta vitória
+          if(prize && onChange) onChange(prize);
+          db.collection('users').doc(eu).update({
+            victories: firebase.firestore.FieldValue.increment(1)
+          }).catch(()=>{});
+        } else {
+          // Poker: re-busca saldo real do Firestore (servidor já atualizou)
+          db.collection('users').doc(eu).get().then(snap=>{
+            if(snap.exists && onRefreshUser) onRefreshUser(snap.data());
+          }).catch(()=>{});
+        }
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
-        // Debita fichas perdidas do saldo
-        if(prize && onChange) onChange(-prize);
+        if(!isPoker){
+          if(prize && onChange) onChange(-prize);
+        } else {
+          // Poker: re-busca saldo real do Firestore
+          db.collection('users').doc(eu).get().then(snap=>{
+            if(snap.exists && onRefreshUser) onRefreshUser(snap.data());
+          }).catch(()=>{});
+        }
       } else {
         setMsg('Partida encerrada.');
       }
-      // Mostra botão reiniciar — contagem só começa quando clicar
       setGameOver(true);
-      // Não fecha automaticamente — jogadores decidem
     });
     socket.on('bet_proposal',({newBet,proposedBy})=>{
       setBetProposal({newBet,proposedBy});
@@ -6736,7 +6759,7 @@ function App(){
     xadrez:<Xadrez chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     poker:<Poker chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     go:<Go chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
-    lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange}/>,
+
   };
 
   const nav=[
@@ -6887,6 +6910,7 @@ function App(){
           </div>
         )}
         {GAMES[screen]}
+        {screen==='lobby'&&<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange} onRefreshUser={setUserData}/>}
       </div>
 
       {/* Bottom Nav */}
