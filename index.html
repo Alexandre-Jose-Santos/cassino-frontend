@@ -6713,7 +6713,6 @@ function App(){
     xadrez:<Xadrez chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     poker:<Poker chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
     go:<Go chips={displayChips} onChange={onChange} log={log} mode={gameMode}/>,
-    lobby:<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange} onRefreshUser={setUserData}/>,
   };
 
   const nav=[
@@ -6864,6 +6863,7 @@ function App(){
           </div>
         )}
         {GAMES[screen]}
+        {screen==='lobby'&&<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange} onRefreshUser={setUserData}/>}
       </div>
 
       {/* Bottom Nav */}
