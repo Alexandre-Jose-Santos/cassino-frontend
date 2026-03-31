@@ -3025,35 +3025,25 @@ function PokerOnline({socket,room,userData,onChange,chips,onGameOver}){
   var [lastAct,setLastAct]=useState(null);
   var [lastOppAct,setLastOppAct]=useState(null);
   var [stage,setStage]=useState('pre');
-  // Bet negotiation screen
-  var [betScreen,setBetScreen]=useState(true);
-  var [betVal,setBetVal]=useState(5);
-  var [betReady,setBetReady]=useState(false);
-  var [oppBetReady,setOppBetReady]=useState(false);
-  var [betMsg,setBetMsg]=useState('');
-  var betValRef=React.useRef(5);
+  var betValRef=React.useRef(room.betAmount||5);
 
   var opp=room.players.find(function(p){return p.uid!==userData?.uid;});
   var oppName=opp?opp.name:'Adversario';
   var BB=room.betAmount||5;
   var toCall=Math.max(0,curBet-myBet);
   var canCheck=toCall===0;
-
   var stageLabel={'pre':'PRE-FLOP','flop':'FLOP','turn':'TURN','river':'RIVER','showdown':'SHOWDOWN'};
 
   useEffect(function(){
     if(!socket)return;
+    // Auto-confirma aposta com o valor da sala imediatamente (sem tela de negociação)
+    setTimeout(function(){
+      socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betValRef.current,uid:userData?.uid}});
+    },400);
     function onAct(evt){
       var action=evt.action,data=evt.data||{},sUid=evt.uid;
-      if(action==='poker_bet_proposal'&&sUid!==userData?.uid){
-        setBetVal(data.bet||5);betValRef.current=data.bet||5;
-        setBetMsg(oppName+' quer apostar: '+data.bet+' fichas');
-      }
-      if(action==='poker_bet_waiting'&&sUid!==userData?.uid){
-        setOppBetReady(true);setBetMsg(oppName+' confirmou!');
-      }
       if(action==='poker_bet_agreed'){
-        setBetScreen(false);setBetMsg('');
+        // aposta confirmada pelo servidor — nada a fazer no cliente
       }
       if(action==='poker_deal'){
         setHand(data.hand||[]);setComm([]);
@@ -3092,12 +3082,11 @@ function PokerOnline({socket,room,userData,onChange,chips,onGameOver}){
       }
       if(action==='poker_fold'){
         var won=data.winnerId===userData?.uid;
-        setMyChips(won?(data.myChips||0):(data.myChips||0));
+        setMyChips(data.myChips||0);
         setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.',prize:won?(data.prize||0):0});
         setRevealOpp(!won);setMyTurn(false);
-        if(won){
-          if(data.prize&&onChange)onChange(data.prize);
-          if(userData?.uid)db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        if(won&&userData?.uid){
+          db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
         }
       }
       if(action==='poker_win'){
@@ -3107,15 +3096,12 @@ function PokerOnline({socket,room,userData,onChange,chips,onGameOver}){
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
         setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?(data.prize||0):0});
-        if(!data.tie&&won){
-          if(data.prize&&onChange)onChange(data.prize);
-          if(userData?.uid)db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        if(!data.tie&&won&&userData?.uid){
+          db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
         }
       }
     }
     socket.on('game_action',onAct);
-    betValRef.current=betVal;
-    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betValRef.current,uid:userData?.uid}});
     return function(){socket.off('game_action',onAct);};
   },[socket]);
 
@@ -3127,58 +3113,20 @@ function PokerOnline({socket,room,userData,onChange,chips,onGameOver}){
   function doCall(){if(!myTurn||phase!=='responding')return;setLastAct('call');emit('call');}
   function doBet(amt){if(!myTurn)return;setLastAct('bet');setShowRaise(false);emit('bet',{amount:amt});}
   function doRaise(amt){if(!myTurn)return;setLastAct('raise');setShowRaise(false);emit('raise',{amount:amt});}
-  function confirmBet(){
-    if(betReady)return;setBetReady(true);
-    socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betValRef.current,uid:userData?.uid}});
-  }
-  function changeBetVal(v){if(betReady)return;setBetVal(v);betValRef.current=v;
-    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:v,uid:userData?.uid}});
-  }
   function nextHand(){
     setResult(null);setRevealOpp(false);setOppHand([]);setComm([]);
     setHand([]);setPot(0);setMyBet(0);setOppBet(0);setCurBet(0);
-    setBetScreen(true);setBetReady(false);setOppBetReady(false);setBetMsg('');
-    socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betValRef.current,uid:userData?.uid}});
+    // Auto-confirma aposta para próxima mão
+    setTimeout(function(){
+      socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betValRef.current,uid:userData?.uid}});
+    },400);
   }
 
-  // Tela de negociacao de aposta
   // Aguardando distribuicao das cartas
-  if(!betScreen&&!result&&hand.length===0) return(
+  if(!result&&hand.length===0) return(
     <div style={{padding:'40px 16px',textAlign:'center'}}>
       <div style={{color:'#f1c40f',fontSize:28,marginBottom:12}}>🃏</div>
       <div style={{color:'rgba(255,255,255,.4)',fontSize:12,fontFamily:"'Rajdhani',sans-serif",letterSpacing:3}}>DISTRIBUINDO CARTAS...</div>
-    </div>
-  );
-
-  if(betScreen&&!result) return(
-    <div style={{padding:'16px 10px',maxWidth:460,margin:'0 auto'}}>
-      <div style={{background:'rgba(0,0,0,.85)',borderRadius:16,padding:'24px 16px',textAlign:'center',border:'1px solid rgba(241,196,15,.2)'}}>
-        <div style={{color:'#f1c40f',fontWeight:900,fontSize:16,fontFamily:"'Cinzel',serif",letterSpacing:2,marginBottom:4}}>APOSTA DA MAO</div>
-        <div style={{color:'rgba(255,255,255,.4)',fontSize:11,fontFamily:"'Rajdhani',sans-serif",marginBottom:16}}>Escolha o valor e confirme</div>
-        <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginBottom:16}}>
-          {[5,10,20,50,100].map(function(v){return(
-            <button key={v} onClick={function(){changeBetVal(v);}}
-              style={{padding:'10px 16px',background:betVal===v?'rgba(241,196,15,.2)':'rgba(255,255,255,.04)',border:'2px solid '+(betVal===v?'rgba(241,196,15,.6)':'rgba(255,255,255,.1)'),borderRadius:10,color:betVal===v?'#f1c40f':'#666',fontWeight:900,fontSize:14,cursor:betReady?'not-allowed':'pointer',opacity:betReady?.5:1}}>
-              {v}
-            </button>
-          );})}
-        </div>
-        <div style={{display:'flex',gap:16,justifyContent:'center',marginBottom:16}}>
-          <div style={{textAlign:'center'}}>
-            <div style={{fontSize:22,marginBottom:2}}>{betReady?'✅':'⏳'}</div>
-            <div style={{color:betReady?'#2ecc71':'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif"}}>VOCE</div>
-          </div>
-          <div style={{textAlign:'center'}}>
-            <div style={{fontSize:22,marginBottom:2}}>{oppBetReady?'✅':'⏳'}</div>
-            <div style={{color:oppBetReady?'#2ecc71':'#555',fontSize:10,fontFamily:"'Rajdhani',sans-serif"}}>{oppName.slice(0,10).toUpperCase()}</div>
-          </div>
-        </div>
-        {betMsg&&<div style={{color:'#f1c40f',fontSize:11,marginBottom:10,fontFamily:"'Rajdhani',sans-serif"}}>{betMsg}</div>}
-        <button onClick={confirmBet} disabled={betReady}
-          style={{padding:'12px 32px',background:!betReady?'linear-gradient(135deg,rgba(20,90,20,.8),rgba(10,50,10,.9))':'rgba(255,255,255,.04)',border:'1px solid rgba(46,204,113,.4)',borderRadius:12,color:!betReady?'#2ecc71':'#444',fontWeight:900,fontSize:14,cursor:betReady?'not-allowed':'pointer',fontFamily:"'Cinzel',serif",letterSpacing:2}}>
-          {betReady?'AGUARDANDO...':('CONFIRMAR '+betVal+' FICHAS')}
-        </button>
-      </div>
     </div>
   );
 
@@ -3351,8 +3299,13 @@ function OnlineLobby({socket,chips,userData,onChange}){
   const [creating,setCreating]=useState(false);
   const [newGame,setNewGame]=useState('pife');
   const [newBet,setNewBet]=useState(5);
-  const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
+  const [myRoom,setMyRoom]=useState(null);
   const [msg,setMsg]=useState('');
+  // Ref para userData — evita closure stale nos handlers de socket
+  const userDataRef=React.useRef(userData);
+  useEffect(()=>{userDataRef.current=userData;},[userData]);
+  const myRoomRef=React.useRef(null);
+  useEffect(()=>{myRoomRef.current=myRoom;},[myRoom]);
   const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"},dama:{n:"Dama",i:"♟",c:"#ca6f1e"},xadrez:{n:"Xadrez",i:"♔",c:"#8e44ad"},poker:{n:"Poker",i:"♠",c:"#c0392b"},go:{n:"Go",i:"⚫",c:"#8B6914"}};
 
   useEffect(()=>{
@@ -3440,25 +3393,22 @@ function OnlineLobby({socket,chips,userData,onChange}){
       }
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
-      const eu = userData?.uid;
+      const eu = userDataRef.current?.uid;
+      const isPoker = myRoomRef.current?.game==='poker';
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
-        // Credita fichas ganhas no saldo
         if(prize && onChange) onChange(prize);
-        // Incrementa vitórias no Firestore
-        if(eu) db.collection('users').doc(eu).update({
+        // Vitórias: para poker, já contadas nos eventos poker_win/poker_fold
+        if(eu&&!isPoker) db.collection('users').doc(eu).update({
           victories: firebase.firestore.FieldValue.increment(1)
         }).catch(()=>{});
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
-        // Debita fichas perdidas do saldo
         if(prize && onChange) onChange(-prize);
       } else {
         setMsg('Partida encerrada.');
       }
-      // Mostra botão reiniciar — contagem só começa quando clicar
       setGameOver(true);
-      // Não fecha automaticamente — jogadores decidem
     });
     socket.on('bet_proposal',({newBet,proposedBy})=>{
       setBetProposal({newBet,proposedBy});
