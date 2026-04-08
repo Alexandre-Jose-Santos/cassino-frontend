@@ -3025,13 +3025,13 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
   var [lastAct,setLastAct]=useState(null);
   var [lastOppAct,setLastOppAct]=useState(null);
   var [stage,setStage]=useState('pre');
-  // Bet negotiation screen
-  var [betScreen,setBetScreen]=useState(true);
-  var [betVal,setBetVal]=useState(5);
+  // Bet negotiation screen — desativada, usa betAmount da sala diretamente
+  var [betScreen,setBetScreen]=useState(false);
+  var [betVal,setBetVal]=useState(room.betAmount||5);
   var [betReady,setBetReady]=useState(false);
   var [oppBetReady,setOppBetReady]=useState(false);
   var [betMsg,setBetMsg]=useState('');
-  var betValRef=React.useRef(5);
+  var betValRef=React.useRef(room.betAmount||5);
 
   var opp=room.players.find(function(p){return p.uid!==userData?.uid;});
   var oppName=opp?opp.name:'Adversario';
@@ -3445,31 +3445,16 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
       const eu = userDataRef.current?.uid;
-      const isPoker = myRoomRef.current?.game==='poker';
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
-        if(!isPoker){
-          // Não-poker: credita fichas e conta vitória
-          if(prize && onChange) onChange(prize);
-          db.collection('users').doc(eu).update({
-            victories: firebase.firestore.FieldValue.increment(1)
-          }).catch(()=>{});
-        } else {
-          // Poker: re-busca saldo real do Firestore (servidor já atualizou)
-          db.collection('users').doc(eu).get().then(snap=>{
-            if(snap.exists && onRefreshUser) onRefreshUser(snap.data());
-          }).catch(()=>{});
-        }
+        // Credita fichas e conta vitória (poker e não-poker)
+        if(prize && onChange) onChange(prize);
+        db.collection('users').doc(eu).update({
+          victories: firebase.firestore.FieldValue.increment(1)
+        }).catch(()=>{});
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
-        if(!isPoker){
-          if(prize && onChange) onChange(-prize);
-        } else {
-          // Poker: re-busca saldo real do Firestore
-          db.collection('users').doc(eu).get().then(snap=>{
-            if(snap.exists && onRefreshUser) onRefreshUser(snap.data());
-          }).catch(()=>{});
-        }
+        if(prize && onChange) onChange(-prize);
       } else {
         setMsg('Partida encerrada.');
       }
