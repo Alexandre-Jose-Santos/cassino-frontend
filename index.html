@@ -3116,6 +3116,8 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
     socket.on('game_action',onAct);
     betValRef.current=betVal;
     socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betValRef.current,uid:userData?.uid}});
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betValRef.current,uid:userData?.uid}});
+    setBetReady(true);
     return function(){socket.off('game_action',onAct);};
   },[socket]);
 
@@ -3137,8 +3139,9 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
   function nextHand(){
     setResult(null);setRevealOpp(false);setOppHand([]);setComm([]);
     setHand([]);setPot(0);setMyBet(0);setOppBet(0);setCurBet(0);
-    setBetScreen(true);setBetReady(false);setOppBetReady(false);setBetMsg('');
+    setBetScreen(false);setBetReady(true);setOppBetReady(false);setBetMsg('');
     socket.emit('game_action',{roomId:room.id,action:'poker_bet_proposal',data:{bet:betValRef.current,uid:userData?.uid}});
+    socket.emit('game_action',{roomId:room.id,action:'poker_bet_confirm',data:{bet:betValRef.current,uid:userData?.uid}});
   }
 
   // Tela de negociacao de aposta
