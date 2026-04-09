@@ -343,8 +343,15 @@ window.AdMobHelper = (function(){
       const p = getPlugin(); if(!p){ resolve(false); return; }
       try {
         await p.prepareRewardVideoAd({ adId: IDS.rewarded, isTesting: false });
-        p.addListener('onRewardedVideoAdRewarded', () => resolve(true));
-        p.addListener('onRewardedVideoAdClosed',   () => resolve(false));
+        let resolved = false;
+        const onRewarded = p.addListener('onRewardVideoAdRewarded', () => {
+          if(resolved) return; resolved = true;
+          onRewarded.remove(); onClosed.remove(); resolve(true);
+        });
+        const onClosed = p.addListener('onRewardVideoAdClosed', () => {
+          if(resolved) return; resolved = true;
+          onRewarded.remove(); onClosed.remove(); resolve(false);
+        });
         await p.showRewardVideoAd();
       } catch(e){ console.warn('AdMob rewarded:', e); resolve(false); }
     });
@@ -6717,7 +6724,9 @@ function App(){
         return;
       } catch(e){ console.warn('AdMob rewarded error:', e); }
     }
-    // Fallback: simulação (browser/dev)
+    // Fallback: simulação apenas em localhost/dev
+    const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if(!isDev){ setAdWatching(false); return; } // sem AdMob e não é dev: não recompensa
     setAdTimer(30);
     const interval = setInterval(()=>{
       setAdTimer(t=>{
