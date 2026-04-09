@@ -3045,6 +3045,7 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
     if(!socket)return;
     function onAct(evt){
       var action=evt.action,data=evt.data||{},sUid=evt.uid;
+      if(action&&action.startsWith('poker_'))console.log('[POKER DEBUG]',action,JSON.stringify(data));
       if(action==='poker_bet_proposal'&&sUid!==userData?.uid){
         setBetVal(data.bet||5);betValRef.current=data.bet||5;
         setBetMsg(oppName+' quer apostar: '+data.bet+' fichas');
@@ -3092,10 +3093,15 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
       }
       if(action==='poker_fold'){
         var won=data.winnerId===userData?.uid;
+        var prize=data.prize||0;
         setMyChips(won?data.myChips||0:data.myChips||0);
-        setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.',prize:won?(data.prize||0):0});
+        setResult({outcome:won?'win':'lose',reason:won?oppName+' desistiu.':'Voce desistiu.',prize:won?prize:0});
         setRevealOpp(!won);setMyTurn(false);
-        // Conta vitória no Firestore (chips gerenciados pelo game_result)
+        // Credita/debita fichas imediatamente
+        if(prize>0){
+          if(won&&onChange) onChange(prize);
+          else if(!won&&onChange) onChange(-prize);
+        }
         if(won&&userData?.uid){
           db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
         }
@@ -3106,8 +3112,13 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
         if(data.oppChips!==undefined)setOppChips(data.oppChips);
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
-        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?(data.prize||0):0});
-        // Conta vitória no Firestore (chips gerenciados pelo game_result)
+        var prize=data.prize||0;
+        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?prize:0});
+        // Credita/debita fichas imediatamente
+        if(!data.tie&&prize>0){
+          if(won&&onChange) onChange(prize);
+          else if(!won&&onChange) onChange(-prize);
+        }
         if(!data.tie&&won&&userData?.uid){
           db.collection('users').doc(userData.uid).update({victories:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
         }
@@ -3448,16 +3459,21 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     });
     socket.on('game_result',({winnerId,loserId,prize,winnerChips,loserChips})=>{
       const eu = userDataRef.current?.uid;
+      const isPoker = myRoomRef.current?.game==='poker';
       if(eu===winnerId){
         setMsg(`🏆 Você ganhou ${prize} fichas!`);
-        // Credita fichas e conta vitória (poker e não-poker)
-        if(prize && onChange) onChange(prize);
-        db.collection('users').doc(eu).update({
-          victories: firebase.firestore.FieldValue.increment(1)
-        }).catch(()=>{});
+        if(!isPoker){
+          // Não-poker: credita fichas aqui (poker já creditou via poker_win/poker_fold)
+          if(prize && onChange) onChange(prize);
+          db.collection('users').doc(eu).update({
+            victories: firebase.firestore.FieldValue.increment(1)
+          }).catch(()=>{});
+        }
       } else if(eu===loserId){
         setMsg(`😔 Você perdeu ${prize} fichas.`);
-        if(prize && onChange) onChange(-prize);
+        if(!isPoker){
+          if(prize && onChange) onChange(-prize);
+        }
       } else {
         setMsg('Partida encerrada.');
       }
