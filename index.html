@@ -3484,6 +3484,18 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       } else {
         setMsg('Partida encerrada.');
       }
+      // Atualiza o score (vitórias) do vencedor dentro do objeto da sala localmente
+      if(winnerId){
+        setMyRoom(prev=>{
+          if(!prev)return prev;
+          return {
+            ...prev,
+            players: prev.players.map(p=>
+              p.uid===winnerId ? {...p, score:(p.score||0)+1} : p
+            )
+          };
+        });
+      }
       setGameOver(true);
     });
     socket.on('bet_proposal',({newBet,proposedBy})=>{
@@ -3609,6 +3621,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const [oppSpeaking,setOppSpeaking]=useState(false);
   const [oppVolume,setOppVolume]=useState(1); // 0..1
   const [pttActive,setPttActive]=useState(false); // push-to-talk pressionado
+  const [audioBlocked,setAudioBlocked]=useState(false); // autoplay bloqueado pelo browser
   const pcRef=React.useRef(null);
   const localStreamRef=React.useRef(null);
   const remoteAudioRef=React.useRef(null);
@@ -3634,6 +3647,10 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const ICE_SERVERS={iceServers:[
     {urls:'stun:stun.l.google.com:19302'},
     {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'stun:stun2.l.google.com:19302'},
+    {urls:'stun:stun3.l.google.com:19302'},
+    {urls:'stun:stun4.l.google.com:19302'},
+    {urls:'stun:global.stun.twilio.com:3478'},
   ]};
 
   // Ajusta volume do adversário (0..1)
@@ -3655,6 +3672,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     setSpeaking(false);
     setOppSpeaking(false);
     setPttActive(false);
+    setAudioBlocked(false);
   };
 
   // Push-to-talk: pressionar = habilita mic; soltar = desabilita
@@ -3686,7 +3704,10 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       if(remoteAudioRef.current){
         remoteAudioRef.current.srcObject=stream;
         remoteAudioRef.current.volume=1;
-        remoteAudioRef.current.play().catch(()=>{});
+        remoteAudioRef.current.muted=false;
+        remoteAudioRef.current.play().catch(()=>{
+          setAudioBlocked(true);
+        });
       }
     };
     pc.onconnectionstatechange=()=>{
@@ -3719,6 +3740,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       socket.once('webrtc_call_accept',async({answer})=>{
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
         setCallState('connected');
+        setAudioBlocked(false);
       });
       socket.once('webrtc_call_reject',()=>{encerrarChamada();});
     }catch(e){alert('Microfone não disponível.');}
@@ -3736,6 +3758,9 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       await pc.setLocalDescription(answer);
       socket.emit('webrtc_call_accept',{roomId:myRoom.id,answer,uid:userData?.uid});
       setCallState('connected');
+      setAudioBlocked(false);
+      // Tenta dar play imediatamente — aqui ainda estamos no contexto de interação do usuário
+      setTimeout(()=>{if(remoteAudioRef.current&&remoteAudioRef.current.srcObject){remoteAudioRef.current.play().catch(()=>setAudioBlocked(true));}},300);
     }catch(e){socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});}
   };
 
@@ -4072,7 +4097,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
               </div>
 
               {/* ── Barra de chamada de voz ── */}
-              <audio ref={remoteAudioRef} autoPlay playsInline style={{display:'none'}}/>
+              <audio ref={remoteAudioRef} autoPlay playsInline muted={false} style={{display:'none'}}/>
 
               {/* ── INCOMING CALL ── */}
               {callState==='incoming'&&(
@@ -4112,6 +4137,16 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
                     </button>
                   </div>
 
+                  {/* Botão fallback se autoplay bloqueado */}
+                  {audioBlocked&&(
+                    <div style={{margin:'4px 12px 0',padding:'6px 10px',background:'rgba(231,76,60,.12)',border:'1px solid rgba(231,76,60,.35)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                      <span style={{color:'#e74c3c',fontSize:11}}>🔇 Áudio bloqueado pelo navegador</span>
+                      <button onClick={()=>{if(remoteAudioRef.current){remoteAudioRef.current.muted=false;remoteAudioRef.current.play().then(()=>setAudioBlocked(false)).catch(()=>{});}}}
+                        style={{padding:'4px 12px',background:'rgba(46,204,113,.2)',border:'1px solid #2ecc71',borderRadius:6,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:11,whiteSpace:'nowrap'}}>
+                        🔊 Ativar Áudio
+                      </button>
+                    </div>
+                  )}
                   {/* Indicadores de fala */}
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-around',padding:'8px 12px 4px'}}>
                     {/* Você */}
