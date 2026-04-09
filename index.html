@@ -3617,6 +3617,8 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const audioChunksRef=React.useRef([]);
   // WebRTC chamada de voz
   const [callState,setCallState]=useState('idle'); // idle|calling|incoming|connected
+  const callStateRef=React.useRef('idle');
+  const _setCallState=(v)=>{callStateRef.current=v;setCallState(v);};
   const [speaking,setSpeaking]=useState(false);
   const [oppSpeaking,setOppSpeaking]=useState(false);
   const [oppVolume,setOppVolume]=useState(1); // 0..1
@@ -3668,7 +3670,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     remoteGainRef.current=null;
     oppAnalyserRef.current=null;
     if(remoteAudioRef.current){remoteAudioRef.current.srcObject=null;}
-    setCallState('idle');
+    _setCallState('idle');
     setSpeaking(false);
     setOppSpeaking(false);
     setPttActive(false);
@@ -3677,16 +3679,17 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
 
   // Push-to-talk: pressionar = habilita mic; soltar = desabilita
   const pttPress=()=>{
-    if(callState!=='connected')return;
-    const track=pttTrackRef.current;
-    if(track){track.enabled=true;}
+    if(callStateRef.current!=='connected')return;
+    // Busca track sempre do stream atual (evita closure stale)
+    const track=pttTrackRef.current||(localStreamRef.current?.getAudioTracks()[0]);
+    if(track){track.enabled=true;pttTrackRef.current=track;}
     setPttActive(true);
     setSpeaking(true);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:true});
   };
   const pttRelease=()=>{
-    const track=pttTrackRef.current;
-    if(track){track.enabled=false;}
+    const track=pttTrackRef.current||(localStreamRef.current?.getAudioTracks()[0]);
+    if(track){track.enabled=false;pttTrackRef.current=track;}
     setPttActive(false);
     setSpeaking(false);
     if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
@@ -3736,10 +3739,10 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       const offer=await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit('webrtc_call_request',{roomId:myRoom.id,offer,uid:userData?.uid});
-      setCallState('calling');
+      _setCallState('calling');
       socket.once('webrtc_call_accept',async({answer})=>{
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        setCallState('connected');
+        _setCallState('connected');
         setAudioBlocked(false);
       });
       socket.once('webrtc_call_reject',()=>{encerrarChamada();});
@@ -3757,7 +3760,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       const answer=await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit('webrtc_call_accept',{roomId:myRoom.id,answer,uid:userData?.uid});
-      setCallState('connected');
+      _setCallState('connected');
       setAudioBlocked(false);
       // Tenta dar play imediatamente — aqui ainda estamos no contexto de interação do usuário
       setTimeout(()=>{if(remoteAudioRef.current&&remoteAudioRef.current.srcObject){remoteAudioRef.current.play().catch(()=>setAudioBlocked(true));}},300);
@@ -3768,7 +3771,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     if(!socket)return;
     const onOffer=({offer,uid:callerUid})=>{
       if(callerUid===userData?.uid)return;
-      setCallState('incoming');
+      _setCallState('incoming');
       socket._pendingOffer={offer,callerUid};
     };
     const onIce=({candidate})=>{
@@ -3794,23 +3797,36 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
     if(!socket.connected){setMsg('❌ Socket desconectado. Aguarde reconexão.');return;}
+    if(creating){setMsg('⏳ Aguarde, já estamos criando sua sala...');return;}
     const custoEntrada = newGame==='poker' ? 5 : newBet;
     if(chips<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas, precisa de '+custoEntrada+'.');return;}
     console.log('🎮 Emitindo create_room:', {game:newGame,betAmount:newBet,maxPlayers,socketId:socket.id});
     setMsg('⏳ Criando sala...');
+    setCreating(true);
+    // Timeout de segurança — se servidor não responder em 6s, avisa e libera o botão
+    const safetyTimer=setTimeout(()=>{
+      setCreating(false);
+      setMsg('❌ Servidor não respondeu. Sala NÃO foi criada. Suas fichas não foram cobradas. Tente novamente.');
+    },6000);
+    // Cancela o timer se o servidor confirmar
+    socket.once('room_created',()=>clearTimeout(safetyTimer));
+    socket.once('error',()=>{clearTimeout(safetyTimer);setCreating(false);});
     socket.emit('create_room',{game:newGame,betAmount:newBet,maxPlayers});
-    setTimeout(()=>{
-      setMsg(m=>m==='⏳ Criando sala...'?'❌ Servidor não respondeu. Tente novamente.':m);
-    },5000);
   };
 
+  const [joining,setJoining]=useState(false);
   const entrarSala=(room)=>{
+    if(!socket||!socket.connected){setMsg('❌ Sem conexão com servidor.');return;}
+    if(joining){setMsg('⏳ Aguarde, já estamos entrando na sala...');return;}
     setMsg('⏳ Entrando...');
+    setJoining(true);
+    const safetyTimer=setTimeout(()=>{
+      setJoining(false);
+      setMsg('❌ Servidor não respondeu. Você NÃO entrou na sala. Suas fichas não foram cobradas. Tente novamente.');
+    },6000);
+    socket.once('room_joined',()=>{clearTimeout(safetyTimer);setJoining(false);});
+    socket.once('error',()=>{clearTimeout(safetyTimer);setJoining(false);});
     socket?.emit('join_room',{roomId:room.id});
-    // Timeout de segurança caso o servidor não responda
-    const t=setTimeout(()=>setMsg('❌ Sala não encontrada. Tente novamente.'),5000);
-    socket?.once('room_update',()=>clearTimeout(t));
-    socket?.once('error',()=>clearTimeout(t));
   };
 
   const sairSala=()=>{
@@ -4114,7 +4130,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
                       style={{padding:'7px 14px',background:'rgba(46,204,113,.25)',border:'1px solid rgba(46,204,113,.7)',borderRadius:8,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:12,letterSpacing:.5}}>
                       ✅ Atender
                     </button>
-                    <button onClick={()=>{socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});setCallState('idle');}}
+                    <button onClick={()=>{socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});_setCallState('idle');}}
                       style={{padding:'7px 11px',background:'rgba(231,76,60,.18)',border:'1px solid rgba(231,76,60,.5)',borderRadius:8,color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:13}}>
                       ✕
                     </button>
@@ -4365,7 +4381,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
             if(chips<custoUI){
               return <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (você tem "+chips+" fichas, precisa de "+custoUI+")"}</div>;
             }
-            return <Btn full onClick={criarSala} c="#2ecc71" tc="#000">Criar Sala</Btn>;
+            return <Btn full onClick={criarSala} c="#2ecc71" tc="#000" disabled={creating}>{creating?'⏳ Criando...':'Criar Sala'}</Btn>;
           })()}
         </div>
       )}
@@ -4394,8 +4410,8 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
                 </div>
                 {semSaldo&&!cheia&&<div style={{color:"#e74c3c",fontSize:10,marginTop:2}}>Saldo insuficiente ({chips} fichas)</div>}
               </div>
-              <Btn sm onClick={()=>!cheia&&!semSaldo&&entrarSala(room)} disabled={cheia||semSaldo} c={semSaldo?"#555":"#f1c40f"} tc="#000">
-                {cheia?"Cheia":semSaldo?"Sem saldo":"Entrar"}
+              <Btn sm onClick={()=>!cheia&&!semSaldo&&!joining&&entrarSala(room)} disabled={cheia||semSaldo||joining} c={semSaldo?'#555':'#f1c40f'} tc='#000'>
+                {joining?'⏳...':cheia?'Cheia':semSaldo?'Sem saldo':'Entrar'}
               </Btn>
             </div>
           );
