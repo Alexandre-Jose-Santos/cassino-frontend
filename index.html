@@ -718,130 +718,7 @@ function AboutScreen({onClose}){
 // ══════════════════════════════════════════════════════════════
 //  CAIXA — COMPRA DE FICHAS
 // ══════════════════════════════════════════════════════════════
-function ShopScreen({user,userData,token,chips,onClose}){
-  const [tab,setTab]=useState('buy');
-  const [loading,setLoading]=useState(false);
-  const [pixData,setPixData]=useState(null);
-  const [copied,setCopied]=useState(false);
-  const [selectedPkg,setSelectedPkg]=useState(null);
-  const [msg,setMsg]=useState('');
 
-  // 1 ficha = R$0,10
-  // Campo livre de compra
-  const [buyQty,setBuyQty]=useState('');
-  const buyAmount=parseInt(buyQty)||0;
-
-  const createPixCustom=async()=>{
-    if(buyAmount<1){setMsg('❌ Mínimo de 1 ficha (R$0,10).');return;}
-    if(buyAmount>100000){setMsg('❌ Máximo de 100.000 fichas por vez (R$10.000).');return;}
-    setLoading(true);setMsg('');
-    try{
-      const res=await fetch(`${BACKEND_URL}/api/payment/create`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-        body:JSON.stringify({packageId:'custom',chips:buyAmount,brl:parseFloat((buyAmount*0.10).toFixed(2))}),
-      });
-      const data=await res.json();
-      if(!res.ok)throw new Error(data.error||'Erro ao gerar PIX');
-      setPixData(data);setSelectedPkg({chips:buyAmount,brl:parseFloat((buyAmount*0.10).toFixed(2))});
-    }catch(e){setMsg('❌ '+e.message);}
-    setLoading(false);
-  };
-
-  const createPix=async(pkg)=>{
-    setLoading(true);setSelectedPkg(pkg);setMsg('');
-    try{
-      const res=await fetch(`${BACKEND_URL}/api/payment/create`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-        body:JSON.stringify({packageId:pkg.id}),
-      });
-      const data=await res.json();
-      if(!res.ok)throw new Error(data.error||'Erro ao gerar PIX');
-      setPixData(data);
-    }catch(e){setMsg('❌ '+e.message);}
-    setLoading(false);
-  };
-
-  const copyPix=()=>{
-    navigator.clipboard?.writeText(pixData.qrCode).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),3000);});
-  };
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.95)",zIndex:1000,overflowY:"auto"}}>
-      <div style={{maxWidth:480,margin:"0 auto",padding:"20px 16px 80px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-          <button onClick={()=>{if(pixData)setPixData(null);else onClose();}} style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:18}}>←</button>
-          <div>
-            <h2 style={{color:"#f1c40f",fontFamily:"Georgia,serif",fontSize:20}}>💰 Caixa</h2>
-            <p style={{color:"#555",fontSize:11}}>1 ficha = R$0,10  •  10 fichas = R$1,00</p>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid rgba(241,196,15,.3)",marginBottom:18}}>
-          {[['buy','🛒 Comprar Fichas']].map(([k,l])=>(
-            <button key={k} onClick={()=>{setTab(k);setPixData(null);setMsg('');}} style={{flex:1,padding:"11px 0",background:"#f1c40f",color:"#000",border:"none",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"Georgia,serif"}}>{l}</button>
-          ))}
-        </div>
-
-        {msg&&<div style={{padding:"10px 14px",borderRadius:8,background:"rgba(241,196,15,.08)",border:"1px solid rgba(241,196,15,.2)",color:"#f1c40f",fontSize:12,marginBottom:14,textAlign:"center"}}>{msg}</div>}
-
-        {/* COMPRAR — pacotes fixos */}
-        {tab==='buy'&&!pixData&&(
-          <div style={{animation:"fadeIn .3s ease"}}>
-            <div style={{color:"#888",fontSize:11,marginBottom:10,textAlign:"center"}}>Escolha um pacote</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-              {[
-                {id:'pkg_1',  chips:10,   brl:1.00,   label:'Iniciante', bonus:''},
-                {id:'pkg_2',  chips:20,   brl:2.00,   label:'Bronze',    bonus:''},
-                {id:'pkg_3',  chips:50,   brl:5.00,   label:'Prata',     bonus:''},
-                {id:'pkg_4',  chips:100,  brl:10.00,  label:'Ouro',      bonus:''},
-                {id:'pkg_5',  chips:200,  brl:20.00,  label:'Platina',   bonus:''},
-                {id:'pkg_6',  chips:500,  brl:50.00,  label:'Diamante',  bonus:''},
-                {id:'pkg_7',  chips:1000, brl:100.00, label:'Elite',     bonus:''},
-              ].map(pkg=>(
-                <button key={pkg.id} onClick={()=>createPix(pkg)} disabled={loading}
-                  style={{padding:"12px 8px",background:selectedPkg?.id===pkg.id?"rgba(241,196,15,.15)":"rgba(255,255,255,.03)",
-                    border:"1px solid "+(selectedPkg?.id===pkg.id?"rgba(241,196,15,.5)":"rgba(255,255,255,.08)"),
-                    borderRadius:10,cursor:"pointer",textAlign:"center",transition:"all .2s"}}>
-                  <div style={{color:"#f1c40f",fontSize:20,fontWeight:900,fontFamily:"Georgia,serif"}}>{pkg.chips} 🎰</div>
-                  {pkg.bonus&&<div style={{color:"#2ecc71",fontSize:9,marginBottom:2}}>{pkg.bonus}</div>}
-                  <div style={{color:"#fff",fontSize:13,fontWeight:700}}>R$ {pkg.brl.toFixed(2)}</div>
-                  <div style={{color:"#555",fontSize:10}}>{pkg.label}</div>
-                </button>
-              ))}
-            </div>
-            <div style={{color:"#555",fontSize:10,textAlign:"center",marginTop:4}}>
-              🔒 Pagamento 100% via PIX • Seguro pelo Mercado Pago<br/>
-              Fichas creditadas em até 1 minuto após confirmação
-            </div>
-          </div>
-        )}
-
-
-        {/* PIX GERADO */}
-        {tab==='buy'&&pixData&&(
-          <div style={{animation:"fadeIn .3s ease",textAlign:"center"}}>
-            <div style={{color:"#2ecc71",fontSize:15,fontWeight:700,marginBottom:4}}>✅ PIX gerado!</div>
-            <div style={{color:"#fff",fontSize:14,marginBottom:16}}>Pague R${selectedPkg?.brl} e receba {selectedPkg?.chips} fichas</div>
-            {pixData.qrCodeB64&&<div style={{background:"#fff",borderRadius:12,padding:16,display:"inline-block",marginBottom:14}}>
-              <img src={`data:image/png;base64,${pixData.qrCodeB64}`} alt="QR PIX" style={{width:200,height:200}}/>
-            </div>}
-            <div style={{background:"rgba(255,255,255,.04)",borderRadius:10,padding:12,marginBottom:12,textAlign:"left"}}>
-              <div style={{color:"#666",fontSize:11,marginBottom:6}}>Código PIX copia e cola:</div>
-              <div style={{color:"#aaa",fontSize:10,wordBreak:"break-all",fontFamily:"monospace"}}>{pixData.qrCode?.slice(0,80)}...</div>
-            </div>
-            <Btn full onClick={copyPix} c={copied?"#2ecc71":"#f1c40f"} tc="#000">{copied?"✅ Copiado!":"📋 Copiar código PIX"}</Btn>
-            <div style={{marginTop:10,color:"#555",fontSize:11}}>Fichas creditadas automaticamente após confirmação (até 1 min)</div>
-          </div>
-        )}
-
-
-      </div>
-    </div>
-  );
-}
 
 // ══════════════════════════════════════════════════════════════
 //  BLACKJACK
@@ -3378,6 +3255,8 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   useEffect(()=>{userDataRef.current=userData;},[userData]);
   const myRoomRef=React.useRef(null);
   useEffect(()=>{myRoomRef.current=myRoom;},[myRoom]);
+  const socketRef=React.useRef(socket);
+  useEffect(()=>{socketRef.current=socket;},[socket]);
   const GAMES_INFO={pife:{n:"Pife",i:"🃏",c:"#2471a3"},domino:{n:"Dominó",i:"🁣",c:"#1e8449"},dama:{n:"Dama",i:"♟",c:"#ca6f1e"},xadrez:{n:"Xadrez",i:"♔",c:"#8e44ad"},poker:{n:"Poker",i:"♠",c:"#c0392b"},go:{n:"Go",i:"⚫",c:"#8B6914"}};
 
   useEffect(()=>{
@@ -3677,23 +3556,26 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     setAudioBlocked(false);
   };
 
-  // Push-to-talk: pressionar = habilita mic; soltar = desabilita
-  const pttPress=()=>{
+  // Push-to-talk: usa APENAS refs — zero dependência de closure React
+  const pttPress=React.useCallback(()=>{
     if(callStateRef.current!=='connected')return;
-    // Busca track sempre do stream atual (evita closure stale)
     const track=pttTrackRef.current||(localStreamRef.current?.getAudioTracks()[0]);
     if(track){track.enabled=true;pttTrackRef.current=track;}
     setPttActive(true);
     setSpeaking(true);
-    if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:true});
-  };
-  const pttRelease=()=>{
+    const room=myRoomRef.current;
+    const sock=socketRef.current;
+    if(sock&&room)sock.emit('webrtc_speaking',{roomId:room.id,speaking:true});
+  },[]);
+  const pttRelease=React.useCallback(()=>{
     const track=pttTrackRef.current||(localStreamRef.current?.getAudioTracks()[0]);
-    if(track){track.enabled=false;pttTrackRef.current=track;}
+    if(track){track.enabled=false;}
     setPttActive(false);
     setSpeaking(false);
-    if(socket&&myRoom)socket.emit('webrtc_speaking',{roomId:myRoom.id,speaking:false});
-  };
+    const room=myRoomRef.current;
+    const sock=socketRef.current;
+    if(sock&&room)sock.emit('webrtc_speaking',{roomId:room.id,speaking:false});
+  },[]);
 
 
   const criarPC=(roomId2)=>{
@@ -6584,7 +6466,6 @@ function App(){
   const [token,setToken]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
   const [screen,setScreen]=useState('home');
-  const [showShop,setShowShop]=useState(false);
   const [showProfile,setShowProfile]=useState(false);
   const [showAbout,setShowAbout]=useState(false);
   const [socket,setSocket]=useState(null);
@@ -6835,7 +6716,7 @@ function App(){
     {k:"home",i:"&#x1F3E0;",l:"Inicio"},
     {k:"singleplayer",i:"&#x1F916;",l:"Single"},
     {k:"lobby",i:"&#x1F30D;",l:"Multi"},
-    {k:"shop_btn",i:"&#x1F4B0;",l:"Fichas"},
+        {k:'shop_btn',i:'&#x1F4FA;',l:'Fichas'},
   ];
 
   return(
@@ -6848,7 +6729,7 @@ function App(){
       <div style={{position:"sticky",top:0,zIndex:200,background:"rgba(4,4,4,.97)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(241,196,15,.22)",height:56,display:"flex",alignItems:"center",padding:"0 12px",gap:10}}>
         <div style={{flex:1,fontWeight:900,fontSize:18,color:"#f1c40f",letterSpacing:".06em",cursor:"pointer"}} onClick={()=>setScreen('home')}>🎰 CASSINO AR</div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div onClick={()=>setShowShop(true)} style={{cursor:"pointer",textAlign:"right"}}>
+          <div onClick={()=>setShowAdModal(true)} style={{cursor:"pointer",textAlign:"right"}}>
             <div style={{color:"#f1c40f",fontWeight:900,fontSize:15}}>{chips.toLocaleString()}</div>
             <div style={{color:"#555",fontSize:9}}>fichas</div>
           </div>
@@ -6883,7 +6764,7 @@ function App(){
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    <button onClick={()=>setShowShop(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#1a4a1a,#0d2e0d)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10,color:"#2ecc71",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>+ COMPRAR</button>
+                    <button onClick={()=>setShowAdModal(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#1a4a1a,#0d2e0d)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10,color:"#2ecc71",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>📺 GANHAR FICHAS</button>
                     <button onClick={()=>setShowAdModal(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#2a1800,#1a1000)",border:"1px solid rgba(212,172,13,.35)",borderRadius:10,color:"#d4ac0d",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,textAlign:"center",lineHeight:1.4}}>
                       📺 +10 FICHAS<br/><span style={{fontSize:8,opacity:.6}}>ANÚNCIO GRÁTIS</span>
                     </button>
@@ -6985,14 +6866,14 @@ function App(){
       {/* Bottom Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:200,background:"rgba(4,4,4,.98)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(241,196,15,.18)",display:"flex",minHeight:60,paddingBottom:"env(safe-area-inset-bottom)"}}>
         {nav.map(item=>(
-          <button key={item.k} onClick={()=>{if(item.k==='shop_btn'){setShowShop(true);return;}if(item.k==='lobby'){setGameMode('online');}else{setGameMode('offline');}setScreen(item.k);}} style={{flex:1,minWidth:44,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:(screen===item.k||(item.k==="singleplayer"&&["pife","domino","dama","xadrez","poker","go"].includes(screen)))?"#f1c40f":"#3a3a3a",borderTop:(screen===item.k||(item.k==="singleplayer"&&["pife","domino","dama","xadrez","poker","go"].includes(screen)))?"2px solid #f1c40f":"2px solid transparent",transition:"all .2s",fontSize:8,fontWeight:700,padding:"8px 0"}}>
+          <button key={item.k} onClick={()=>{if(item.k==='shop_btn'){setShowAdModal(true);return;}if(item.k==='lobby'){setGameMode('online');}else{setGameMode('offline');}setScreen(item.k);}} style={{flex:1,minWidth:44,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:(screen===item.k||(item.k==="singleplayer"&&["pife","domino","dama","xadrez","poker","go"].includes(screen)))?"#f1c40f":"#3a3a3a",borderTop:(screen===item.k||(item.k==="singleplayer"&&["pife","domino","dama","xadrez","poker","go"].includes(screen)))?"2px solid #f1c40f":"2px solid transparent",transition:"all .2s",fontSize:8,fontWeight:700,padding:"8px 0"}}>
             <span style={{fontSize:16}} dangerouslySetInnerHTML={{__html:item.i}}/><span>{item.l}</span>
           </button>
         ))}
       </div>
 
       {/* Modais */}
-      {showShop&&<ShopScreen user={authUser} userData={userData} token={token} chips={chips} onClose={()=>setShowShop(false)}/>}
+      
       {showAdModal&&(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"#111",border:"2px solid #f1c40f",borderRadius:16,padding:28,maxWidth:340,width:"100%",textAlign:"center"}}>
