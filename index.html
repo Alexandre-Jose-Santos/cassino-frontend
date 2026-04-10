@@ -13,7 +13,8 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"/>
 <title>🎰 Cassino AR</title>
 <!-- Capacitor é injetado automaticamente após `npx cap sync` -->
-<!-- AdMob App ID — substitua com o seu após criar no AdMob console -->
+<!-- AdMob App ID — substitua pelo App ID do seu app no console AdMob -->
+<!-- https://apps.admob.com → Aplicativos → Configurações do app → App ID -->
 <meta name="admob-app-id" content="ca-app-pub-XXXXXXXXXX~XXXXXXXXXX"/>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -282,28 +283,38 @@ select option{background:#111;color:#fff;}
 </style>
 
 <script>
-// ── AdMob helper — funciona dentro do Capacitor, no-op no browser ──
+// ── AdMob helper — @capacitor-community/admob v4+ ──────────────────
+// PARA USAR: substitua os IDs abaixo pelos do seu console AdMob
+// https://apps.admob.com → Aplicativos → Unidades de anúncio
 window.AdMobHelper = (function(){
+
+  // ── ⚙️  CONFIGURAÇÃO — substitua aqui ──────────────────────────────
+  const APP_ID    = 'ca-app-pub-XXXXXXXXXX~XXXXXXXXXX'; // App ID (mesmo do meta tag)
   const IDS = {
-    // Substitua pelos seus Ad Unit IDs do console AdMob
-    banner:        'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
-    interstitial:  'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
-    rewarded:      'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
-    // IDs de TESTE (use durante desenvolvimento)
-    // banner:       'ca-app-pub-3940256099942544/6300978111',
-    // interstitial: 'ca-app-pub-3940256099942544/1033173712',
-    // rewarded:     'ca-app-pub-3940256099942544/5224354917',
+    banner:       'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
+    interstitial: 'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
+    rewarded:     'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
   };
+  // IDs de TESTE — descomente para testar sem conta AdMob aprovada:
+  // const IDS = {
+  //   banner:       'ca-app-pub-3940256099942544/6300978111',
+  //   interstitial: 'ca-app-pub-3940256099942544/1033173712',
+  //   rewarded:     'ca-app-pub-3940256099942544/5224354917',
+  // };
+  // ───────────────────────────────────────────────────────────────────
+
+  // Valida se os IDs reais foram inseridos
+  const isConfigured = (id) => id && !id.includes('XXXXXXXXXX');
 
   function getPlugin(){
-    try{ return window.Capacitor?.Plugins?.AdMob; } catch(e){ return null; }
+    try{ return window.Capacitor?.Plugins?.AdMob || null; } catch(e){ return null; }
   }
 
   async function init(){
     const p = getPlugin(); if(!p) return;
     try {
       await p.initialize({
-        requestTrackingAuthorization: true,
+        requestTrackingAuthorization: true, // iOS — pede permissão ATT
         testingDevices: [],
         initializeForTesting: false,
       });
@@ -312,13 +323,15 @@ window.AdMobHelper = (function(){
 
   async function showBanner(){
     const p = getPlugin(); if(!p) return;
+    if(!isConfigured(IDS.banner)){ console.warn('AdMob: banner ID não configurado'); return; }
     try {
       await p.showBanner({
         adId: IDS.banner,
         adSize: 'BANNER',
         position: 'BOTTOM_CENTER',
-        margin: 56, // acima da nav bar
+        margin: 56,
         isTesting: false,
+        npa: false,
       });
     } catch(e){ console.warn('AdMob banner:', e); }
   }
@@ -330,27 +343,36 @@ window.AdMobHelper = (function(){
 
   async function showInterstitial(){
     const p = getPlugin(); if(!p) return false;
+    if(!isConfigured(IDS.interstitial)){ console.warn('AdMob: interstitial ID não configurado'); return false; }
     try {
-      await p.prepareInterstitial({ adId: IDS.interstitial, isTesting: false });
+      await p.prepareInterstitial({ adId: IDS.interstitial, isTesting: false, npa: false });
       await p.showInterstitial();
       return true;
     } catch(e){ console.warn('AdMob interstitial:', e); return false; }
   }
 
-  // Rewarded: retorna true se o usuário assistiu até o fim
+  // Rewarded: retorna true se o usuário assistiu até o fim e recebeu a recompensa
   function showRewarded(){
-    return new Promise(async resolve => {
-      const p = getPlugin(); if(!p){ resolve(false); return; }
+    return new Promise(async (resolve) => {
+      const p = getPlugin();
+      if(!p){ resolve(false); return; }
+      if(!isConfigured(IDS.rewarded)){ console.warn('AdMob: rewarded ID não configurado'); resolve(false); return; }
       try {
-        await p.prepareRewardVideoAd({ adId: IDS.rewarded, isTesting: false });
+        // Carrega o anúncio
+        await p.prepareRewardVideoAd({ adId: IDS.rewarded, isTesting: false, npa: false });
         let resolved = false;
-        const onRewarded = p.addListener('onRewardVideoAdRewarded', () => {
+        const done = (val) => {
           if(resolved) return; resolved = true;
-          onRewarded.remove(); onClosed.remove(); resolve(true);
-        });
-        const onClosed = p.addListener('onRewardVideoAdClosed', () => {
-          if(resolved) return; resolved = true;
-          onRewarded.remove(); onClosed.remove(); resolve(false);
+          try { lRewarded?.remove(); } catch(e){}
+          try { lDismissed?.remove(); } catch(e){}
+          resolve(val);
+        };
+        // Listener: recompensa concedida (usuário assistiu até o fim)
+        const lRewarded = p.addListener('onRewardedVideoAdRewarded', () => done(true));
+        // Listener: anúncio fechado (sem recompensa se fechou antes)
+        const lDismissed = p.addListener('onRewardedVideoAdClosed', () => {
+          // Pequeno delay: às vezes o rewarded chega logo antes do closed
+          setTimeout(() => done(false), 300);
         });
         await p.showRewardVideoAd();
       } catch(e){ console.warn('AdMob rewarded:', e); resolve(false); }
@@ -358,7 +380,7 @@ window.AdMobHelper = (function(){
   }
 
   init();
-  return { showBanner, hideBanner, showInterstitial, showRewarded };
+  return { showBanner, hideBanner, showInterstitial, showRewarded, isConfigured, IDS };
 })();
 </script>
 </head>
@@ -2890,6 +2912,45 @@ function XadrezOnline({socket,room,userData,onGameOver}){
   );
 }
 
+// Retorna os índices (no array all7) das 5 cartas que formam a melhor mão de poker
+function bestFiveCards(all7){
+  if(!all7||all7.length<2)return[];
+  var RANK_ORDER='23456789TJQKA';
+  var rv=function(c){var r=c.r||c.rank||'';return RANK_ORDER.indexOf(r==='10'?'T':r);};
+  var sv=function(c){return c.s||c.suit||'';};
+  // Gera todas as combinações C(n,5)
+  var combos=[];
+  var n=all7.length;
+  for(var a=0;a<n-4;a++)for(var b=a+1;b<n-3;b++)for(var cc=b+1;cc<n-2;cc++)for(var d=cc+1;d<n-1;d++)for(var e=d+1;e<n;e++)combos.push([a,b,cc,d,e]);
+  // Pontua uma combinação de 5 cartas (maior = melhor)
+  var score5=function(idx){
+    var cs=idx.map(function(i){return all7[i];});
+    var ranks=cs.map(rv).sort(function(a,b){return b-a;});
+    var suits=cs.map(sv);
+    var flush=suits.every(function(s){return s===suits[0];});
+    var straight=ranks[0]-ranks[4]===4&&new Set(ranks).size===5;
+    // Roda especial A-2-3-4-5
+    var wheel=ranks[0]===12&&ranks[1]===3&&ranks[2]===2&&ranks[3]===1&&ranks[4]===0;
+    if(wheel)straight=true;
+    var cnt={};ranks.forEach(function(r){cnt[r]=(cnt[r]||0)+1;});
+    var groups=Object.values(cnt).sort(function(a,b){return b-a;});
+    var cat;
+    if(flush&&straight)cat=8;
+    else if(groups[0]===4)cat=7;
+    else if(groups[0]===3&&groups[1]===2)cat=6;
+    else if(flush)cat=5;
+    else if(straight)cat=4;
+    else if(groups[0]===3)cat=3;
+    else if(groups[0]===2&&groups[1]===2)cat=2;
+    else if(groups[0]===2)cat=1;
+    else cat=0;
+    var tiebreak=ranks.slice(0,5).reduce(function(acc,r,i){return acc+r*Math.pow(15,4-i);},0);
+    return cat*1000000+tiebreak;
+  };
+  var best=combos.reduce(function(bst,idx){return score5(idx)>score5(bst)?idx:bst;},combos[0]);
+  return best||[];
+}
+
 function PokerOnline({socket,room,userData,onChange,onGameOver}){
   var [hand,setHand]=useState([]);
   var [comm,setComm]=useState([]);
@@ -3109,7 +3170,12 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
           </div>
           <div style={{display:'flex',gap:5,justifyContent:'center'}}>
             {revealOpp&&oppHand.length>0
-              ? oppHand.map(function(c,i){return <CardV key={i} card={c} hidden={false}/>;})
+              ? oppHand.map(function(c,i){
+                  var all7opp=oppHand.concat(comm);
+                  var bestIdxOpp=isSD?bestFiveCards(all7opp):[];
+                  var hl=isSD&&c&&bestIdxOpp.indexOf(i)>=0;
+                  return <CardV key={i} card={c} hidden={false} highlight={hl}/>;
+                })
               : [null,null].map(function(_,i){return <CardV key={i} card={null} hidden={true}/>;})
             }
           </div>
@@ -3118,7 +3184,16 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
         {/* Comunitarias + Pote */}
         <div style={{borderTop:'1px solid rgba(255,255,255,.08)',borderBottom:'1px solid rgba(255,255,255,.08)',padding:'10px 4px',margin:'0 0 12px',textAlign:'center'}}>
           <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:8}}>
-            {[0,1,2,3,4].map(function(i){return <CardV key={i} card={comm[i]||null} hidden={false}/>;}) }
+            {(function(){
+              var all7=hand.concat(comm);
+              var bestIdx=isSD?bestFiveCards(all7):[];
+              // índices das comunitárias dentro de all7 começam em hand.length
+              return [0,1,2,3,4].map(function(i){
+                var commIdxInAll=hand.length+i;
+                var hl=isSD&&comm[i]&&bestIdx.indexOf(commIdxInAll)>=0;
+                return <CardV key={i} card={comm[i]||null} hidden={false} highlight={hl}/>;
+              });
+            })()}
           </div>
           <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(0,0,0,.35)',border:'1px solid rgba(241,196,15,.2)',borderRadius:10,padding:'4px 16px'}}>
             <span style={{color:'rgba(255,255,255,.3)',fontSize:9,letterSpacing:2,fontFamily:"'Rajdhani',sans-serif"}}>POTE</span>
@@ -3129,7 +3204,14 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
         {/* Jogador */}
         <div>
           <div style={{display:'flex',gap:5,justifyContent:'center',marginBottom:6}}>
-            {(hand.length>0?hand:[null,null]).map(function(c,i){return <CardV key={i} card={c} hidden={false}/>;}) }
+            {(function(){
+              var all7=hand.concat(comm);
+              var bestIdx=isSD?bestFiveCards(all7):[];
+              return (hand.length>0?hand:[null,null]).map(function(c,i){
+                var hl=isSD&&c&&bestIdx.indexOf(i)>=0;
+                return <CardV key={i} card={c} hidden={false} highlight={hl}/>;
+              });
+            })()}
           </div>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
@@ -5400,13 +5482,19 @@ function pkHN(v){if(!v)return'?';if(v.rank===8)return'Royal Flush';if(v.rank<0)r
 
 var PK_SS={s:'♠',h:'♥',d:'♦',c:'♣',spade:'♠',heart:'♥',diam:'♦',club:'♣'};
 var PK_SC={s:'#222',h:'#e74c3c',d:'#e74c3c',c:'#222',spade:'#222',heart:'#e74c3c',diam:'#e74c3c',club:'#222'};
-function CardV({card,hidden}){
+function CardV({card,hidden,highlight}){
   if(hidden)return <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(135deg,#1a3a6b,#0d1f3c)',border:'1px solid rgba(52,100,180,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🂠</div>;
   if(!card)return <div style={{width:44,height:62,borderRadius:6,background:'rgba(255,255,255,.03)',border:'1px dashed rgba(255,255,255,.08)',flexShrink:0}}/>;
   var r=card.r||card.rank; var s=card.s||card.suit;
   var col=PK_SC[s]||'#222'; var sym=PK_SS[s]||s||'?';
   return(
-    <div style={{width:44,height:62,borderRadius:6,background:'linear-gradient(145deg,#f8f3e8,#ede5d0)',border:'1px solid rgba(0,0,0,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,boxShadow:'0 2px 8px rgba(0,0,0,.6)',flexShrink:0}}>
+    <div style={{width:44,height:62,borderRadius:6,
+      background:highlight?'linear-gradient(145deg,#fffde7,#fff9c4)':'linear-gradient(145deg,#f8f3e8,#ede5d0)',
+      border:highlight?'2px solid #f1c40f':'1px solid rgba(0,0,0,.15)',
+      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:1,
+      boxShadow:highlight?'0 0 12px rgba(241,196,15,.7), 0 2px 8px rgba(0,0,0,.6)':'0 2px 8px rgba(0,0,0,.6)',
+      flexShrink:0,transform:highlight?'translateY(-5px) scale(1.08)':'none',
+      transition:'all .2s'}}>
       <div style={{fontSize:12,fontWeight:900,color:col,lineHeight:1}}>{r}</div>
       <div style={{fontSize:16,color:col,lineHeight:1}}>{sym}</div>
     </div>
@@ -6605,7 +6693,7 @@ function App(){
   const chips=Math.max(0,userData?.chips||0);
 
   // ── Sistema de fichas ÚNICO — online e offline usam o mesmo saldo ──
-  const FREE_CHIPS_PER_AD = 10; // 10 fichas = R$1,00 por anúncio
+  const FREE_CHIPS_PER_AD = 5; // 5 fichas por anúncio
   const [showAdModal, setShowAdModal] = useState(false);
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
@@ -6781,7 +6869,7 @@ function App(){
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
                     <button onClick={()=>setShowAdModal(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#1a4a1a,#0d2e0d)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10,color:"#2ecc71",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>📺 GANHAR FICHAS</button>
                     <button onClick={()=>setShowAdModal(true)} style={{padding:"8px 14px",background:"linear-gradient(135deg,#2a1800,#1a1000)",border:"1px solid rgba(212,172,13,.35)",borderRadius:10,color:"#d4ac0d",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,textAlign:"center",lineHeight:1.4}}>
-                      📺 +10 FICHAS<br/><span style={{fontSize:8,opacity:.6}}>ANÚNCIO GRÁTIS</span>
+                      📺 +5 FICHAS<br/><span style={{fontSize:8,opacity:.6}}>ANÚNCIO GRÁTIS</span>
                     </button>
                   </div>
                 </div>
@@ -6894,19 +6982,19 @@ function App(){
       <div style={{background:"#111",border:"2px solid #f1c40f",borderRadius:16,padding:28,maxWidth:340,width:"100%",textAlign:"center"}}>
         {!adWatching?<>
           <div style={{fontSize:44,marginBottom:8}}>📺</div>
-          <div style={{color:"#f1c40f",fontSize:18,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif",marginBottom:4,letterSpacing:1}}>GANHE 1 FICHA</div>
+          <div style={{color:"#f1c40f",fontSize:18,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif",marginBottom:4,letterSpacing:1}}>GANHE 5 FICHAS</div>
           <div style={{color:"rgba(255,255,255,.4)",fontSize:11,marginBottom:14,fontFamily:"'Rajdhani',sans-serif"}}>grátis assistindo um anúncio</div>
           <div style={{background:"rgba(46,204,113,.08)",border:"1px solid rgba(46,204,113,.2)",borderRadius:12,padding:"12px",marginBottom:14}}>
-            <div style={{color:"#2ecc71",fontSize:30,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>+10 🎰</div>
+            <div style={{color:"#2ecc71",fontSize:30,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif"}}>+5 🎰</div>
             <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>CREDITADO AUTOMATICAMENTE</div>
           </div>
           <div style={{color:"rgba(255,255,255,.3)",fontSize:11,marginBottom:14,lineHeight:1.6,textAlign:"left",background:"rgba(255,255,255,.03)",borderRadius:8,padding:"10px 12px"}}>
             1️⃣ Clique no botão abaixo<br/>
             2️⃣ Assista o anúncio até o final<br/>
-            3️⃣ Receba <strong style={{color:"#2ecc71"}}>+10 fichas</strong> automaticamente!
+            3️⃣ Receba <strong style={{color:"#2ecc71"}}>+5 fichas</strong> automaticamente!
           </div>
           <button onClick={watchAd} style={{width:"100%",padding:"16px",background:"linear-gradient(135deg,#d4ac0d,#a07d08)",border:"none",borderRadius:12,color:"#000",fontSize:15,fontWeight:900,cursor:"pointer",fontFamily:"'Cinzel',Georgia,serif",marginBottom:10,boxShadow:"0 4px 20px rgba(212,172,13,.4)",letterSpacing:1}}>
-            📺 ASSISTIR E GANHAR +10 FICHAS
+            📺 ASSISTIR E GANHAR +5 FICHAS
           </button>
           <button onClick={()=>setShowAdModal(false)} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,color:"#444",fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
             AGORA NÃO
