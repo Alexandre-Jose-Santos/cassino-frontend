@@ -3618,13 +3618,13 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     {urls:'stun:global.stun.twilio.com:3478'},
   ]};
 
-  // Ajusta volume do adversário (0..1)
   const setVolume=(v)=>{
     setOppVolume(v);
     if(remoteAudioRef.current)remoteAudioRef.current.volume=v;
   };
 
-  const encerrarChamada=()=>{
+  // Todas as funções WebRTC usam APENAS refs — zero stale closure
+  const encerrarChamada=React.useCallback(()=>{
     if(vadTimerRef.current)cancelAnimationFrame(vadTimerRef.current);
     if(oppVadRef.current)cancelAnimationFrame(oppVadRef.current);
     if(pcRef.current){pcRef.current.close();pcRef.current=null;}
@@ -3638,9 +3638,8 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     setOppSpeaking(false);
     setPttActive(false);
     setAudioBlocked(false);
-  };
+  },[]);
 
-  // Push-to-talk: usa APENAS refs — zero dependência de closure React
   const pttPress=React.useCallback(()=>{
     if(callStateRef.current!=='connected')return;
     const track=pttTrackRef.current||(localStreamRef.current?.getAudioTracks()[0]);
@@ -3651,6 +3650,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     const sock=socketRef.current;
     if(sock&&room)sock.emit('webrtc_speaking',{roomId:room.id,speaking:true});
   },[]);
+
   const pttRelease=React.useCallback(()=>{
     const track=pttTrackRef.current||(localStreamRef.current?.getAudioTracks()[0]);
     if(track){track.enabled=false;}
@@ -3661,12 +3661,11 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     if(sock&&room)sock.emit('webrtc_speaking',{roomId:room.id,speaking:false});
   },[]);
 
-
-  const criarPC=(roomId2)=>{
+  const criarPC=React.useCallback((roomId2)=>{
     const pc=new RTCPeerConnection(ICE_SERVERS);
     pc.onicecandidate=e=>{
-      if(e.candidate&&socket)
-        socket.emit('webrtc_ice',{roomId:roomId2,candidate:e.candidate});
+      const sock=socketRef.current;
+      if(e.candidate&&sock)sock.emit('webrtc_ice',{roomId:roomId2,candidate:e.candidate});
     };
     pc.ontrack=e=>{
       const stream=e.streams[0]||new MediaStream([e.track]);
@@ -3674,69 +3673,80 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
         remoteAudioRef.current.srcObject=stream;
         remoteAudioRef.current.volume=1;
         remoteAudioRef.current.muted=false;
-        remoteAudioRef.current.play().catch(()=>{
-          setAudioBlocked(true);
-        });
+        remoteAudioRef.current.play().catch(()=>setAudioBlocked(true));
       }
     };
     pc.onconnectionstatechange=()=>{
       if(['disconnected','failed','closed'].includes(pc.connectionState))encerrarChamada();
     };
     return pc;
-  };
+  },[encerrarChamada]);
 
-  const setupLocalStream=async()=>{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},video:false});
-    // PTT começa com mic MUDO — só ativa ao pressionar
+  const setupLocalStream=React.useCallback(async()=>{
+    const stream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,sampleRate:48000},
+      video:false
+    });
     const track=stream.getAudioTracks()[0];
-    if(track)track.enabled=false;
+    if(track)track.enabled=false; // começa mudo — PTT ativa
     pttTrackRef.current=track;
     localStreamRef.current=stream;
     return stream;
-  };
+  },[]);
 
-  const iniciarChamada=async()=>{
-    if(!myRoom||callState!=='idle')return;
+  const iniciarChamada=React.useCallback(async()=>{
+    const room=myRoomRef.current;
+    const sock=socketRef.current;
+    if(!room||callStateRef.current!=='idle')return;
     try{
       const stream=await setupLocalStream();
-      const pc=criarPC(myRoom.id);
+      const pc=criarPC(room.id);
       pcRef.current=pc;
       stream.getTracks().forEach(t=>pc.addTrack(t,stream));
       const offer=await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socket.emit('webrtc_call_request',{roomId:myRoom.id,offer,uid:userData?.uid});
+      sock.emit('webrtc_call_request',{roomId:room.id,offer,uid:userDataRef.current?.uid});
       _setCallState('calling');
-      socket.once('webrtc_call_accept',async({answer})=>{
+      sock.once('webrtc_call_accept',async({answer})=>{
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
         _setCallState('connected');
         setAudioBlocked(false);
       });
-      socket.once('webrtc_call_reject',()=>{encerrarChamada();});
+      sock.once('webrtc_call_reject',()=>encerrarChamada());
     }catch(e){alert('Microfone não disponível.');}
-  };
+  },[setupLocalStream,criarPC,encerrarChamada]);
 
-  const aceitarChamada=async(offer,callerUid)=>{
-    if(!myRoom)return;
+  const aceitarChamada=React.useCallback(async(offer,callerUid)=>{
+    const room=myRoomRef.current;
+    const sock=socketRef.current;
+    if(!room)return;
     try{
       const stream=await setupLocalStream();
-      const pc=criarPC(myRoom.id);
+      const pc=criarPC(room.id);
       pcRef.current=pc;
       stream.getTracks().forEach(t=>pc.addTrack(t,stream));
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer=await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit('webrtc_call_accept',{roomId:myRoom.id,answer,uid:userData?.uid});
+      sock.emit('webrtc_call_accept',{roomId:room.id,answer,uid:userDataRef.current?.uid});
       _setCallState('connected');
       setAudioBlocked(false);
-      // Tenta dar play imediatamente — aqui ainda estamos no contexto de interação do usuário
-      setTimeout(()=>{if(remoteAudioRef.current&&remoteAudioRef.current.srcObject){remoteAudioRef.current.play().catch(()=>setAudioBlocked(true));}},300);
-    }catch(e){socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});}
-  };
+      // Tenta play em contexto de interação do usuário
+      setTimeout(()=>{
+        const el=remoteAudioRef.current;
+        if(el&&el.srcObject)el.play().catch(()=>setAudioBlocked(true));
+      },300);
+    }catch(e){
+      const sock2=socketRef.current;
+      const room2=myRoomRef.current;
+      if(sock2&&room2)sock2.emit('webrtc_call_reject',{roomId:room2.id,uid:userDataRef.current?.uid});
+    }
+  },[setupLocalStream,criarPC]);
 
   React.useEffect(()=>{
     if(!socket)return;
     const onOffer=({offer,uid:callerUid})=>{
-      if(callerUid===userData?.uid)return;
+      if(callerUid===userDataRef.current?.uid)return;
       _setCallState('incoming');
       socket._pendingOffer={offer,callerUid};
     };
@@ -3746,7 +3756,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
     };
     const onEnd=()=>encerrarChamada();
     const onSpeaking=({uid:sUid,speaking:s})=>{
-      if(sUid!==userData?.uid)setOppSpeaking(s);
+      if(sUid!==userDataRef.current?.uid)setOppSpeaking(s);
     };
     socket.on('webrtc_call_request',onOffer);
     socket.on('webrtc_ice',onIce);
@@ -3758,7 +3768,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       socket.off('webrtc_call_end',onEnd);
       socket.off('webrtc_speaking',onSpeaking);
     };
-  },[socket,userData]);
+  },[socket,encerrarChamada]);
 
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
@@ -4090,11 +4100,11 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
                     </div>
                   </div>
                   <div style={{display:'flex',gap:7}}>
-                    <button onClick={()=>{const p=socket._pendingOffer;if(p)aceitarChamada(p.offer,p.callerUid);}}
+                    <button onClick={()=>{const p=socketRef.current?._pendingOffer;if(p)aceitarChamada(p.offer,p.callerUid);}}
                       style={{padding:'7px 14px',background:'rgba(46,204,113,.25)',border:'1px solid rgba(46,204,113,.7)',borderRadius:8,color:'#2ecc71',fontWeight:900,cursor:'pointer',fontSize:12,letterSpacing:.5}}>
                       ✅ Atender
                     </button>
-                    <button onClick={()=>{socket.emit('webrtc_call_reject',{roomId:myRoom.id,uid:userData?.uid});_setCallState('idle');}}
+                    <button onClick={()=>{const s=socketRef.current;const r=myRoomRef.current;if(s&&r)s.emit('webrtc_call_reject',{roomId:r.id,uid:userDataRef.current?.uid});_setCallState('idle');}}
                       style={{padding:'7px 11px',background:'rgba(231,76,60,.18)',border:'1px solid rgba(231,76,60,.5)',borderRadius:8,color:'#e74c3c',fontWeight:900,cursor:'pointer',fontSize:13}}>
                       ✕
                     </button>
@@ -4111,7 +4121,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
                       <div style={{width:7,height:7,borderRadius:'50%',background:'#2ecc71',boxShadow:'0 0 6px #2ecc71',animation:'mic-pulse 2s ease-in-out infinite'}}/>
                       <span style={{color:'#2ecc71',fontSize:10,fontWeight:900,letterSpacing:2}}>EM CHAMADA</span>
                     </div>
-                    <button onClick={()=>{socket.emit('webrtc_call_end',{roomId:myRoom.id});encerrarChamada();}}
+                    <button onClick={()=>{const s=socketRef.current;const r=myRoomRef.current;if(s&&r)s.emit('webrtc_call_end',{roomId:r.id});encerrarChamada();}}
                       style={{padding:'3px 9px',background:'rgba(231,76,60,.18)',border:'1px solid rgba(231,76,60,.4)',borderRadius:6,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:10}}>
                       📵 Encerrar
                     </button>
@@ -4200,7 +4210,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
                     <span style={{animation:'mic-pulse 1s ease-in-out infinite',fontSize:16}}>📞</span>
                     <span style={{color:'#f1c40f',fontSize:11,fontWeight:700,letterSpacing:1}}>CHAMANDO...</span>
                   </div>
-                  <button onClick={()=>{socket.emit('webrtc_call_end',{roomId:myRoom.id});encerrarChamada();}}
+                  <button onClick={()=>{const s=socketRef.current;const r=myRoomRef.current;if(s&&r)s.emit('webrtc_call_end',{roomId:r.id});encerrarChamada();}}
                     style={{padding:'4px 10px',background:'rgba(231,76,60,.12)',border:'1px solid rgba(231,76,60,.35)',borderRadius:6,color:'#e74c3c',fontWeight:700,cursor:'pointer',fontSize:11}}>
                     Cancelar
                   </button>
