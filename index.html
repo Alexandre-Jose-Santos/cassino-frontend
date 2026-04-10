@@ -4196,36 +4196,51 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   // Lobby principal
   return(
     <div style={{padding:"14px 10px",maxWidth:500,margin:"0 auto"}}>
+      {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div>
           <h2 style={{color:"#f1c40f",fontFamily:"'Cinzel',Georgia,serif",fontSize:18,letterSpacing:1}}>🌐 SALAS ONLINE</h2>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
-            <div style={{color:online>0?"#2ecc71":connected?"#2ecc71":"#f1c40f",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>
-              {online>0?`● ${online} online agora`:connected?"● Conectado":"● Conectando..."}
-            </div>
+          <div style={{color:connected?"#2ecc71":"#f1c40f",fontSize:11,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,marginTop:2}}>
+            {online>0?`● ${online} online agora`:connected?"● Conectado":"● Conectando..."}
           </div>
         </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-            <button onClick={()=>socket?.emit('get_rooms')} style={{padding:"7px 12px",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:8,color:"#888",fontSize:12,cursor:"pointer",fontWeight:700}}>🔄</button>
-            <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>ATUALIZAR</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-            <button onClick={async()=>{
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {/* Atualizar */}
+          <button onClick={()=>socket?.emit('get_rooms')}
+            title="Atualizar salas"
+            style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
+              padding:"8px 14px",background:"rgba(255,255,255,.05)",
+              border:"1px solid rgba(255,255,255,.15)",borderRadius:10,
+              color:"#aaa",fontSize:18,cursor:"pointer",fontWeight:700,minWidth:52}}>
+            🔄
+            <span style={{fontSize:9,color:"#555",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>ATUALIZAR</span>
+          </button>
+          {/* Servidor ON/OFF */}
+          <button onClick={async()=>{
               try{ await fetch(BACKEND_URL+'/wake'); }catch(e){}
               if(socket&&!socket.connected){ socket.connect(); }
               else if(socket){ socket.disconnect(); setTimeout(()=>socket.connect(),500); }
               setConnected(false);
               setTimeout(()=>{ if(socket&&socket.connected){ setConnected(true); socket.emit('get_rooms'); } },2500);
-            }} style={{padding:"7px 12px",background:connected?"rgba(46,204,113,.08)":"rgba(231,76,60,.08)",border:"1px solid "+(connected?"rgba(46,204,113,.3)":"rgba(231,76,60,.3)"),borderRadius:8,color:connected?"#2ecc71":"#e74c3c",fontSize:12,cursor:"pointer",fontWeight:700}}>
-              {connected?"🟢 ON":"🔴 OFF"}
-            </button>
-            <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>SERVIDOR</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-            <Btn sm onClick={()=>{setCreating(v=>!v);setMsg('');}} c="#2ecc71" tc="#000">+ Criar</Btn>
-            <span style={{color:"#444",fontSize:8,fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>NOVA SALA</span>
-          </div>
+            }}
+            title="Reconectar servidor"
+            style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
+              padding:"8px 14px",
+              background:connected?"rgba(46,204,113,.1)":"rgba(231,76,60,.1)",
+              border:"1px solid "+(connected?"rgba(46,204,113,.35)":"rgba(231,76,60,.35)"),
+              borderRadius:10,color:connected?"#2ecc71":"#e74c3c",fontSize:13,cursor:"pointer",fontWeight:900,minWidth:52}}>
+            {connected?"🟢 ON":"🔴 OFF"}
+            <span style={{fontSize:9,color:connected?"#2ecc71":"#e74c3c",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,opacity:.7}}>SERVIDOR</span>
+          </button>
+          {/* Nova Sala */}
+          <button onClick={()=>{setCreating(v=>!v);setMsg('');}}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
+              padding:"8px 14px",background:creating?"rgba(46,204,113,.25)":"rgba(46,204,113,.12)",
+              border:"2px solid "+(creating?"#2ecc71":"rgba(46,204,113,.4)"),
+              borderRadius:10,color:"#2ecc71",fontSize:13,cursor:"pointer",fontWeight:900,minWidth:52}}>
+            {creating?"✕ Fechar":"＋ Criar"}
+            <span style={{fontSize:9,color:"#2ecc71",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,opacity:.7}}>NOVA SALA</span>
+          </button>
         </div>
       </div>
 
