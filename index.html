@@ -3246,7 +3246,8 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const [rooms,setRooms]=useState([]);
   const [online,setOnline]=useState(0);
   const [connected,setConnected]=useState(false);
-  const [creating,setCreating]=useState(false);
+  const [showCreating,setShowCreating]=useState(false); // painel nova sala aberto
+  const [pendingCreate,setPendingCreate]=useState(false); // aguardando servidor criar
   const [newGame,setNewGame]=useState('pife');
   const [newBet,setNewBet]=useState(0);
   const [myRoom,setMyRoom]=useState(null); // sala que estou dentro
@@ -3272,7 +3273,8 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
       const r={...room,id:roomId};
       setMyRoom(r);
       localStorage.setItem('cassino_my_room',JSON.stringify({roomId,game:r.game,betAmount:r.betAmount,maxPlayers:r.maxPlayers,savedAt:Date.now()}));
-      setCreating(false);
+      setPendingCreate(false);
+      setShowCreating(false);
       setMsg('');
     });
     socket.on('room_update',room=>{
@@ -3679,20 +3681,18 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
   const criarSala=()=>{
     if(!socket){setMsg('❌ Sem conexão com servidor.');return;}
     if(!socket.connected){setMsg('❌ Socket desconectado. Aguarde reconexão.');return;}
-    if(creating){setMsg('⏳ Aguarde, já estamos criando sua sala...');return;}
+    if(pendingCreate){setMsg('⏳ Aguarde, já estamos criando sua sala...');return;}
     const custoEntrada = newGame==='poker' ? 5 : newBet;
     if(chips<custoEntrada){setMsg('❌ Saldo insuficiente. Você tem '+chips+' fichas, precisa de '+custoEntrada+'.');return;}
     console.log('🎮 Emitindo create_room:', {game:newGame,betAmount:newBet,maxPlayers,socketId:socket.id});
     setMsg('⏳ Criando sala...');
-    setCreating(true);
-    // Timeout de segurança — se servidor não responder em 6s, avisa e libera o botão
+    setPendingCreate(true);
     const safetyTimer=setTimeout(()=>{
-      setCreating(false);
+      setPendingCreate(false);
       setMsg('❌ Servidor não respondeu. Sala NÃO foi criada. Suas fichas não foram cobradas. Tente novamente.');
     },6000);
-    // Cancela o timer se o servidor confirmar
-    socket.once('room_created',()=>clearTimeout(safetyTimer));
-    socket.once('error',()=>{clearTimeout(safetyTimer);setCreating(false);});
+    socket.once('room_created',()=>{clearTimeout(safetyTimer);setPendingCreate(false);setShowCreating(false);});
+    socket.once('error',()=>{clearTimeout(safetyTimer);setPendingCreate(false);});
     socket.emit('create_room',{game:newGame,betAmount:newBet,maxPlayers});
   };
 
@@ -4233,12 +4233,12 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
             <span style={{fontSize:9,color:connected?"#2ecc71":"#e74c3c",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,opacity:.7}}>SERVIDOR</span>
           </button>
           {/* Nova Sala */}
-          <button onClick={()=>{setCreating(v=>!v);setMsg('');}}
+          <button onClick={()=>{setShowCreating(v=>!v);setMsg('');}}
             style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
-              padding:"8px 14px",background:creating?"rgba(46,204,113,.25)":"rgba(46,204,113,.12)",
-              border:"2px solid "+(creating?"#2ecc71":"rgba(46,204,113,.4)"),
+              padding:"8px 14px",background:showCreating?"rgba(46,204,113,.25)":"rgba(46,204,113,.12)",
+              border:"2px solid "+(showCreating?"#2ecc71":"rgba(46,204,113,.4)"),
               borderRadius:10,color:"#2ecc71",fontSize:13,cursor:"pointer",fontWeight:900,minWidth:52}}>
-            {creating?"✕ Fechar":"＋ Criar"}
+            {showCreating?"✕ Fechar":"＋ Criar"}
             <span style={{fontSize:9,color:"#2ecc71",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1,opacity:.7}}>NOVA SALA</span>
           </button>
         </div>
@@ -4246,7 +4246,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
 
       {msg&&<div style={{color:"#e74c3c",fontSize:12,marginBottom:10,textAlign:"center"}}>{msg}</div>}
 
-      {creating&&(
+      {showCreating&&(
         <div style={{background:"rgba(46,204,113,.06)",border:"1px solid rgba(46,204,113,.2)",borderRadius:12,padding:14,marginBottom:14}}>
           <div style={{color:"#2ecc71",fontWeight:700,marginBottom:10,fontSize:12}}>Nova Sala</div>
           <div style={{color:"#888",fontSize:11,marginBottom:6}}>Jogo:</div>
@@ -4278,7 +4278,7 @@ function OnlineLobby({socket,chips,userData,onChange,onRefreshUser}){
             if(chips<custoUI){
               return <div style={{color:"#e74c3c",fontSize:12,textAlign:"center",padding:8,fontWeight:700}}>{"SALDO INSUFICIENTE (você tem "+chips+" fichas, precisa de "+custoUI+")"}</div>;
             }
-            return <Btn full onClick={criarSala} c="#2ecc71" tc="#000" disabled={creating}>{creating?'⏳ Criando...':'Criar Sala'}</Btn>;
+            return <Btn full onClick={criarSala} c="#2ecc71" tc="#000" disabled={pendingCreate}>{pendingCreate?'⏳ Criando...':'Criar Sala'}</Btn>;
           })()}
         </div>
       )}
