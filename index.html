@@ -3058,7 +3058,49 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
         setPot(0);setMyTurn(false);
         var won=data.winnerId===userData?.uid;
         var prize=data.prize||0;
-        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:data.reason||'',myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?prize:0});
+        // Build a precise reason describing kicker tiebreaks when server sends generic "X bate X"
+        var buildReason=function(reason,myHN,oppHN,myCards,oppCards,commCards,isWin,isTie){
+          try{
+            var RANK_ORDER='23456789TJQKA';
+            var RANK_NAME={'2':'2','3':'3','4':'4','5':'5','6':'6','7':'7','8':'8','9':'9','T':'10','J':'Valete','Q':'Dama','K':'Rei','A':'Ás'};
+            var rv=function(c){var r=(c.r||c.rank||'');return RANK_ORDER.indexOf(r==='10'?'T':r);};
+            var rn=function(c){var r=(c.r||c.rank||'');return RANK_NAME[r==='10'?'T':r]||r;};
+            // Only enhance when same hand category (reason contains "bate" with same hand on both sides)
+            if(!myHN||!oppHN)return reason;
+            var sameRank=myHN===oppHN;
+            if(!sameRank)return (isWin?'Sua mão: '+myHN+' vence '+oppHN:'Mão do adversário: '+oppHN+' vence '+myHN);
+            // Same category — find kicker difference using bestFiveCards
+            if(!myCards||!oppCards||myCards.length<2)return reason;
+            var all7my=(myCards||[]).concat(commCards||[]);
+            var all7op=(oppCards||[]).concat(commCards||[]);
+            var bestIdxMy=bestFiveCards(all7my);
+            var bestIdxOp=bestFiveCards(all7op);
+            if(!bestIdxMy.length||!bestIdxOp.length)return reason;
+            var myBest=bestIdxMy.map(function(i){return all7my[i];}).sort(function(a,b){return rv(b)-rv(a);});
+            var opBest=bestIdxOp.map(function(i){return all7op[i];}).sort(function(a,b){return rv(b)-rv(a);});
+            // Find first differing card
+            for(var ki=0;ki<myBest.length;ki++){
+              var mv=rv(myBest[ki]),ov=rv(opBest[ki]||{r:'2'});
+              if(mv!==ov){
+                var kickerName=isWin?rn(myBest[ki]):rn(opBest[ki]||myBest[ki]);
+                return myHN+' — kicker '+kickerName+(isWin?' (sua)':' (adversário)')+' decide';
+              }
+            }
+            if(isTie)return 'Empate! '+myHN+' idênticos — kickers iguais';
+            return reason;
+          }catch(e){return reason;}
+        };
+        var builtReason=buildReason(
+          data.reason||'',
+          data.myHandName||'',
+          data.oppHandName||'',
+          hand, // current hand state
+          data.oppHand||[],
+          comm, // current comm state (already set)
+          won,
+          data.tie||false
+        );
+        setResult({outcome:data.tie?'tie':(won?'win':'lose'),reason:builtReason,myHandName:data.myHandName||'',oppHandName:data.oppHandName||'',prize:won?prize:0});
         // Credita/debita fichas imediatamente
         if(!data.tie&&prize>0){
           if(won&&onChange) onChange(prize);
@@ -5577,9 +5619,28 @@ function Poker({chips,onChange,log,mode}){
     var aV=pkEval7(g.ah.concat(g.comm));
     var cmp=pkCmpV(pV,aV);
     var winner,reason,nps,nas;
-    if(cmp>0){winner='player';reason='Sua mão: '+pkHN(pV)+' bate '+pkHN(aV);nps=g.ps+g.pot;nas=g.as;}
-    else if(cmp<0){winner='ai';reason='IA: '+pkHN(aV)+' bate '+pkHN(pV);nps=g.ps;nas=g.as+g.pot;}
-    else{winner='tie';reason='Empate! '+pkHN(pV);var h2=Math.floor(g.pot/2);nps=g.ps+h2;nas=g.as+(g.pot-h2);}
+    var RANK_ORDER2='23456789TJQKA';
+    var RANK_NAME2={'2':'2','3':'3','4':'4','5':'5','6':'6','7':'7','8':'8','9':'9','T':'10','J':'Valete','Q':'Dama','K':'Rei','A':'Ás'};
+    var rv2=function(c){var r=(c.r||c.rank||'');return RANK_ORDER2.indexOf(r==='10'?'T':r);};
+    var rn2=function(c){var r=(c.r||c.rank||'');return RANK_NAME2[r==='10'?'T':r]||r;};
+    var kickerDesc=function(phCards,ahCards,commCards,isPlayer){
+      try{
+        var all7p=phCards.concat(commCards),all7a=ahCards.concat(commCards);
+        var biP=bestFiveCards(all7p),biA=bestFiveCards(all7a);
+        if(!biP.length||!biA.length)return'';
+        var bp=biP.map(function(i){return all7p[i];}).sort(function(a,b){return rv2(b)-rv2(a);});
+        var ba=biA.map(function(i){return all7a[i];}).sort(function(a,b){return rv2(b)-rv2(a);});
+        for(var ki=0;ki<bp.length;ki++){
+          var mv=rv2(bp[ki]),ov=rv2(ba[ki]||{r:'2'});
+          if(mv!==ov){return' — kicker '+(isPlayer?rn2(bp[ki])+' (sua)':rn2(ba[ki]||bp[ki])+' (IA)')+' decide';}
+        }
+        return'';
+      }catch(e){return'';}
+    };
+    var sameRankHands=pkHN(pV)===pkHN(aV);
+    if(cmp>0){winner='player';reason='Sua mão: '+pkHN(pV)+(sameRankHands?' vence'+kickerDesc(g.ph,g.ah,g.comm,true):' vence '+pkHN(aV));nps=g.ps+g.pot;nas=g.as;}
+    else if(cmp<0){winner='ai';reason='IA: '+pkHN(aV)+(sameRankHands?' vence'+kickerDesc(g.ph,g.ah,g.comm,false):' vence '+pkHN(pV));nps=g.ps;nas=g.as+g.pot;}
+    else{winner='tie';reason='Empate! '+pkHN(pV)+' — kickers iguais';var h2=Math.floor(g.pot/2);nps=g.ps+h2;nas=g.as+(g.pot-h2);}
     G.current={...g,ps:nps,as:nas,street:'showdown',acting:null,result:{winner:winner,reason:reason,ph:pkHN(pV),ah:pkHN(aV),nps:nps,nas:nas}};
     if(winner==='player')log('♠ Poker — vitória: '+pkHN(pV));
     else if(winner==='ai')log('♠ Poker — derrota');
