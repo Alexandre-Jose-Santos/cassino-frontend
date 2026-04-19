@@ -15,7 +15,7 @@
 <!-- Capacitor é injetado automaticamente após `npx cap sync` -->
 <!-- AdMob App ID — substitua pelo App ID do seu app no console AdMob -->
 <!-- https://apps.admob.com → Aplicativos → Configurações do app → App ID -->
-<meta name="admob-app-id" content="ca-app-pub-XXXXXXXXXX~XXXXXXXXXX"/>
+<meta name="admob-app-id" content="ca-app-pub-7022290203658940~4171937076"/>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -289,17 +289,17 @@ select option{background:#111;color:#fff;}
 window.AdMobHelper = (function(){
 
   // ── ⚙️  CONFIGURAÇÃO — substitua aqui ──────────────────────────────
-  const APP_ID    = 'ca-app-pub-XXXXXXXXXX~XXXXXXXXXX'; // App ID (mesmo do meta tag)
+  const APP_ID    = 'ca-app-pub-7022290203658940~4171937076'; // App ID (mesmo do meta tag)
   const IDS = {
-    banner:       'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
-    interstitial: 'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
-    rewarded:     'ca-app-pub-XXXXXXXXXX/XXXXXXXXXX',
+    banner:       'ca-app-pub-7022290203658940/9197853887',
+    interstitial: 'ca-app-pub-7022290203658940/9197853887',
+    rewarded:     'ca-app-pub-7022290203658940/9197853887',
   };
   // IDs de TESTE — descomente para testar sem conta AdMob aprovada:
   // const IDS = {
-  //   banner:       'ca-app-pub-3940256099942544/6300978111',
-  //   interstitial: 'ca-app-pub-3940256099942544/1033173712',
-  //   rewarded:     'ca-app-pub-3940256099942544/5224354917',
+  //   banner:       'ca-app-pub-7022290203658940/9197853887',
+  //   interstitial: 'ca-app-pub-7022290203658940/9197853887',
+  //   rewarded:     'ca-app-pub-7022290203658940/9197853887',
   // };
   // ───────────────────────────────────────────────────────────────────
 
@@ -496,11 +496,16 @@ function LoginScreen(){
     if(pending){
       setRedirecting(true);
       localStorage.removeItem('cassino_google_pending');
-      // Dá tempo para o Firebase processar o redirect result
-      const timer = setTimeout(()=>{
+      auth.getRedirectResult().then(result=>{
+        if(result && result.user){
+          // Login bem sucedido - Firebase onAuthStateChanged vai tratar
+        } else {
+          setRedirecting(false);
+        }
+      }).catch(e=>{
+        console.error('Redirect error:', e);
         setRedirecting(false);
-      }, 6000);
-      return ()=>clearTimeout(timer);
+      });
     }
   },[]);
 
@@ -517,12 +522,15 @@ function LoginScreen(){
     try{
       const provider=new firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({prompt:'select_account'});
-      await auth.signInWithPopup(provider);
+      // Capacitor WebView: usa redirect com retorno garantido
+      localStorage.setItem('cassino_google_pending','1');
+      await auth.signInWithRedirect(provider);
     }catch(e){
+      localStorage.removeItem('cassino_google_pending');
       const msgs={
         'auth/popup-closed-by-user':'Login cancelado.',
         'auth/cancelled-popup-request':'Login cancelado.',
-        'auth/popup-blocked':'Popup bloqueado pelo navegador. Use e-mail e senha.',
+        'auth/popup-blocked':'Popup bloqueado. Use e-mail e senha.',
         'auth/network-request-failed':'Sem conexão. Verifique sua internet.',
         'auth/unauthorized-domain':'Domínio não autorizado no Firebase.',
       };
