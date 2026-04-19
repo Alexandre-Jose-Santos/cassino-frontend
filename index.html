@@ -358,8 +358,6 @@ window.AdMobHelper = (function(){
       if(!p){ resolve(false); return; }
       if(!isConfigured(IDS.rewarded)){ console.warn('AdMob: rewarded ID não configurado'); resolve(false); return; }
       try {
-        // Carrega o anúncio
-        await p.prepareRewardVideoAd({ adId: IDS.rewarded, isTesting: false, npa: false });
         let resolved = false;
         const done = (val) => {
           if(resolved) return; resolved = true;
@@ -367,14 +365,24 @@ window.AdMobHelper = (function(){
           try { lDismissed?.remove(); } catch(e){}
           resolve(val);
         };
-        // Listener: recompensa concedida (usuário assistiu até o fim)
-        const lRewarded = p.addListener('onRewardedVideoAdRewarded', () => done(true));
-        // Listener: anúncio fechado (sem recompensa se fechou antes)
-        const lDismissed = p.addListener('onRewardedVideoAdClosed', () => {
-          // Pequeno delay: às vezes o rewarded chega logo antes do closed
-          setTimeout(() => done(false), 300);
+
+        // Carrega o anúncio
+        await p.prepareRewardVideoAd({ adId: IDS.rewarded, isTesting: false, npa: false });
+
+        // Listeners v4+ (@capacitor-community/admob)
+        // Tenta ambos os formatos de evento (v3 e v4) para garantir compatibilidade
+        const lRewarded = p.addListener?.('onRewardedVideoAdRewarded', () => done(true))
+                       || p.addListener?.('rewarded', () => done(true));
+        const lDismissed = p.addListener?.('onRewardedVideoAdClosed', () => {
+          setTimeout(() => done(false), 400);
+        }) || p.addListener?.('rewardedVideoAdClosed', () => {
+          setTimeout(() => done(false), 400);
         });
+
         await p.showRewardVideoAd();
+
+        // Timeout de segurança: se após 60s nada aconteceu, resolve false
+        setTimeout(() => done(false), 60000);
       } catch(e){ console.warn('AdMob rewarded:', e); resolve(false); }
     });
   }
