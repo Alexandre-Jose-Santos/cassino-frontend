@@ -490,23 +490,9 @@ function LoginScreen(){
   const [birthdate,setBirthdate]=useState('');
   const [ageOk,setAgeOk]=useState(false);
 
-  // Detecta se está voltando de um redirect do Google
+  // Inicialização
   useEffect(()=>{
-    const pending = localStorage.getItem('cassino_google_pending');
-    if(pending){
-      setRedirecting(true);
-      localStorage.removeItem('cassino_google_pending');
-      auth.getRedirectResult().then(result=>{
-        if(result && result.user){
-          // Login bem sucedido - Firebase onAuthStateChanged vai tratar
-        } else {
-          setRedirecting(false);
-        }
-      }).catch(e=>{
-        console.error('Redirect error:', e);
-        setRedirecting(false);
-      });
-    }
+    localStorage.removeItem('cassino_google_pending');
   },[]);
 
   const checkAge=d=>{
@@ -522,11 +508,8 @@ function LoginScreen(){
     try{
       const provider=new firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({prompt:'select_account'});
-      // Capacitor WebView: usa redirect com retorno garantido
-      localStorage.setItem('cassino_google_pending','1');
-      await auth.signInWithRedirect(provider);
+      await auth.signInWithPopup(provider);
     }catch(e){
-      localStorage.removeItem('cassino_google_pending');
       const msgs={
         'auth/popup-closed-by-user':'Login cancelado.',
         'auth/cancelled-popup-request':'Login cancelado.',
