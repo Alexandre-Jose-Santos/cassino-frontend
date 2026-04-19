@@ -506,9 +506,20 @@ function LoginScreen(){
     if(isRegister&&!ageOk){setError('Você precisa ter 18 anos ou mais para jogar.');return;}
     setError('');setLoading(true);
     try{
-      const provider=new firebase.auth.GoogleAuthProvider();
-      provider.setCustomParameters({prompt:'select_account'});
-      await auth.signInWithPopup(provider);
+      // Usa plugin nativo do Capacitor se disponível (APK)
+      const isNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+      if(isNative){
+        const { FirebaseAuthentication } = window.Capacitor.Plugins;
+        if(!FirebaseAuthentication) throw new Error('Plugin não disponível');
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        const credential = firebase.auth.GoogleAuthProvider.credential(result.credential.idToken);
+        await auth.signInWithCredential(credential);
+      } else {
+        // Web: usa popup normal
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({prompt:'select_account'});
+        await auth.signInWithPopup(provider);
+      }
     }catch(e){
       const msgs={
         'auth/popup-closed-by-user':'Login cancelado.',
@@ -517,7 +528,7 @@ function LoginScreen(){
         'auth/network-request-failed':'Sem conexão. Verifique sua internet.',
         'auth/unauthorized-domain':'Domínio não autorizado no Firebase.',
       };
-      setError(msgs[e.code]||e.message);
+      setError(msgs[e.code]||e.message||'Erro no login Google.');
       setLoading(false);
     }
   };
