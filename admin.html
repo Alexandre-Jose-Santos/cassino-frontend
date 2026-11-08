@@ -2,14 +2,15 @@
 <style>body{font:15px system-ui,sans-serif;background:#0d0d10;color:#eee;margin:0 auto;padding:14px;max-width:560px}input,button{font:inherit;padding:10px;border-radius:8px;border:1px solid #333;background:#1b1b21;color:#eee;width:100%;box-sizing:border-box;margin:4px 0}button{cursor:pointer;background:#7c3aed;border:0;font-weight:700}.c{background:#17171c;border:1px solid #2a2a33;border-radius:10px;padding:10px;margin:8px 0}.r{display:flex;gap:6px}.r button{width:auto;flex:1}.no{background:#7f1d1d}.mut{color:#999;font-size:12px}label{display:flex;gap:8px;align-items:center;margin:6px 0}label input{width:auto}</style></head><body>
 <h2>Doações — admin</h2>
 <input id="sec" type="password" placeholder="ADMIN_SECRET (não fica salvo)" autocomplete="off">
-<div class="r"><button id="bp">Pendentes</button><button id="bc">Confirmadas</button></div>
-<div id="list" class="mut">Digite o segredo e toque em Pendentes.</div>
+<div class="r"><button id="bp">Aguardando Pix</button><button id="bc">Confirmadas</button></div>
+<div id="list" class="mut">Digite o segredo e toque em Aguardando Pix.</div>
 <h3>Adicionar doação manual</h3>
+<div class="mut">Pagamentos pelo Asaas são confirmados sozinhos. Use esta página só se o webhook falhar ou para registrar uma doação feita fora do site.</div>
 <input id="mn" placeholder="Nome ou apelido" maxlength="30"><input id="ma" type="number" step="0.01" placeholder="Valor (R$)"><input id="mm" placeholder="Mensagem (opcional)" maxlength="80">
 <label><input id="ms" type="checkbox"> mostrar valor no mural</label>
 <button id="madd">Adicionar já confirmada</button>
 <script>
-const API="https://cassino-backend-b1ck.onrender.com";
+const API="https://cassino-backend-24ha.onrender.com";
 const $=i=>document.getElementById(i);
 async function call(path,method,body){
   const r=await fetch(API+path,{method:method||'GET',headers:{'Content-Type':'application/json','x-admin-secret':$('sec').value},body:body?JSON.stringify(body):undefined});

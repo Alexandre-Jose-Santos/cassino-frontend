@@ -403,13 +403,12 @@ const FIREBASE_CONFIG={
   messagingSenderId:"867828758597",
   appId:"1:867828758597:web:43343146fd97f991c38b2c",
 };
-const BACKEND_URL="https://cassino-backend-b1ck.onrender.com";
+const BACKEND_URL="https://cassino-backend-24ha.onrender.com";
 firebase.initializeApp(FIREBASE_CONFIG);
 const auth=firebase.auth();
 const db=firebase.firestore();
 // Auth inicializado
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script type="text/babel">
 const{useState,useEffect,useCallback,useRef}=React;
 
@@ -420,10 +419,8 @@ const PIP={1:[[50,50]],2:[[28,25],[72,75]],3:[[28,25],[50,50],[72,75]],4:[[28,25
 const CHIP_COLORS={1:"#e8e8e8",5:"#c0392b",10:"#2471a3",25:"#1e8449",50:"#7d3c98",100:"#ca6f1e",200:"#148f77",500:"#111"};
 // Fichas são virtuais: não têm valor em dinheiro, não são compradas nem sacadas.
 
-// ── DOAÇÃO (preencha com os seus dados) ──────────────────────
-const DONATE_PIX_KEY = "";          // sua chave Pix (e-mail, telefone, CPF/CNPJ ou aleatória)
-const DONATE_PIX_COPIA_COLA = "";   // opcional: código "Pix copia e cola" para gerar o QR Code
-const DONATE_GOAL = { meta: 50, atual: 0, desc: "servidor online (R$/mês)" }; // "atual" é reserva; o valor real vem do mural (doações confirmadas no mês)
+// ── DOAÇÃO (Pix gerado pelo Asaas no servidor; nada a configurar aqui além da meta) ──
+const DONATE_GOAL = { meta: 50, atual: 0, desc: "servidor online (R$/mês)" }; // "atual" é reserva; o valor real vem do mural
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
 function cVal(r){if(["J","Q","K"].includes(r))return 10;if(r==="A")return 11;return+r;}
@@ -6649,39 +6646,48 @@ function GoOnline({socket,room,userData,onGameOver}){
 
 
 function DonateModal({onClose,userName}){
-  const qrRef=React.useRef(null);
-  const [copied,setCopied]=React.useState(false);
+  const [step,setStep]=React.useState("form");           // form | pay | done
   const [mural,setMural]=React.useState(null);
-  const [form,setForm]=React.useState({name:userName||"",amount:"",message:"",showAmount:false});
-  const [sent,setSent]=React.useState(null);
-  const [sending,setSending]=React.useState(false);
+  const [form,setForm]=React.useState({name:userName||"",amount:"10",message:"",showAmount:false});
+  const [qr,setQr]=React.useState(null);
+  const [loading,setLoading]=React.useState(false);
   const [err,setErr]=React.useState("");
+  const [copied,setCopied]=React.useState(false);
+  const loadMural=()=>fetch(`${BACKEND_URL}/api/donations/public`).then(r=>r.json()).then(setMural).catch(()=>{});
+  React.useEffect(()=>{loadMural();},[]);
+  // Depois de gerar o Pix, consulta o servidor a cada 4s até o pagamento ser detectado (máx. 15 min)
   React.useEffect(()=>{
-    if(DONATE_PIX_COPIA_COLA&&window.QRCode&&qrRef.current){
-      qrRef.current.innerHTML="";
-      new window.QRCode(qrRef.current,{text:DONATE_PIX_COPIA_COLA,width:170,height:170,colorDark:"#000000",colorLight:"#ffffff"});
-    }
-    fetch(`${BACKEND_URL}/api/donations/public`).then(r=>r.json()).then(setMural).catch(()=>{});
-  },[]);
+    if(step!=="pay"||!qr)return;
+    let stop=false;const t0=Date.now();
+    const iv=setInterval(async()=>{
+      if(stop||Date.now()-t0>15*60*1000){clearInterval(iv);return;}
+      try{
+        const t=await auth.currentUser.getIdToken();
+        const r=await fetch(`${BACKEND_URL}/api/donations/${qr.id}/status`,{headers:{Authorization:"Bearer "+t}});
+        const j=await r.json();
+        if(j.status==="confirmed"){stop=true;clearInterval(iv);setStep("done");setTimeout(loadMural,800);}
+      }catch{}
+    },4000);
+    return()=>{stop=true;clearInterval(iv);};
+  },[step,qr]);
   const copy=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),2000);}catch{window.prompt("Copie:",txt);}};
-  const send=async()=>{
+  const gerar=async()=>{
     setErr("");
-    if(!form.name.trim()){setErr("Informe um nome ou apelido");return;}
     const v=parseFloat(String(form.amount).replace(",","."));
-    if(!(v>=1)){setErr("Informe o valor que você doou (mínimo R$ 1)");return;}
-    setSending(true);
+    if(!(v>=1)){setErr("Informe um valor de pelo menos R$ 1");return;}
+    setLoading(true);
     try{
       const t=await auth.currentUser.getIdToken();
-      const r=await fetch(`${BACKEND_URL}/api/donations/intent`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({displayName:form.name,amount:v,message:form.message,showAmount:form.showAmount})});
+      const r=await fetch(`${BACKEND_URL}/api/donations/pix`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({displayName:form.name,amount:v,message:form.message,showAmount:form.showAmount})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok)setSent(j);else setErr(j.error||"Não foi possível registrar agora.");
+      if(r.ok){setQr(j);setStep("pay");}else setErr(j.error||"Não foi possível gerar o Pix agora.");
     }catch{setErr("Servidor acordando, tente de novo em 1 minuto.");}
-    setSending(false);
+    setLoading(false);
   };
   const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:DONATE_GOAL.atual;
   const pct=Math.min(100,Math.round((atual/DONATE_GOAL.meta)*100));
-  const key=DONATE_PIX_KEY||DONATE_PIX_COPIA_COLA;
   const inp={width:"100%",boxSizing:"border-box",padding:"10px",marginBottom:6,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,color:"#fff",fontSize:13,outline:"none"};
+  const btn={width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:8};
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{background:"#111",border:"2px solid #e74c8b",borderRadius:16,padding:24,maxWidth:340,width:"100%",textAlign:"center",maxHeight:"90vh",overflowY:"auto"}}>
@@ -6698,36 +6704,44 @@ function DonateModal({onClose,userName}){
             <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#e74c8b,#f1c40f)"}}/>
           </div>
         </div>
-        {DONATE_PIX_COPIA_COLA&&<div ref={qrRef} style={{background:"#fff",padding:10,borderRadius:10,display:"inline-block",marginBottom:10}}/>}
-        {key?(
-          <>
-            <div style={{color:"rgba(255,255,255,.4)",fontSize:10,marginBottom:4,letterSpacing:1}}>{DONATE_PIX_KEY?"CHAVE PIX":"PIX COPIA E COLA"}</div>
-            <div style={{color:"#fff",fontSize:12,wordBreak:"break-all",background:"rgba(255,255,255,.05)",borderRadius:8,padding:"8px 10px",marginBottom:10}}>{key.length>60?key.slice(0,60)+"…":key}</div>
-            <button onClick={()=>copy(key)} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:8}}>{copied?"✅ COPIADO!":"📋 COPIAR PIX"}</button>
-          </>
-        ):(<div style={{color:"#e74c3c",fontSize:12,marginBottom:10}}>Chave Pix ainda não configurada.</div>)}
-        <div style={{color:"rgba(255,255,255,.3)",fontSize:10,lineHeight:1.5,marginBottom:12}}>Doar é opcional e não dá vantagem no jogo nem fichas.</div>
 
-        <div style={{textAlign:"left",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:12,marginBottom:12}}>
-          <div style={{color:"#f1c40f",fontSize:12,fontWeight:800,marginBottom:4}}>🏆 QUER APARECER NO MURAL? (opcional)</div>
-          {sent?(
-            <div style={{color:"#2ecc71",fontSize:12,lineHeight:1.6}}>
-              ✅ Registrado! Seu código é <b>{sent.code}</b>. Seu nome aparece no mural assim que o Pix for confirmado. Se o seu banco permitir, escreva esse código na mensagem do Pix.
+        {step==="form"&&(
+          <div style={{textAlign:"left",marginBottom:12}}>
+            <div style={{color:"rgba(255,255,255,.4)",fontSize:10,lineHeight:1.5,marginBottom:8}}>Escolha o valor. Nome e mensagem são opcionais: se deixar o nome em branco, você aparece como "Anônimo" no mural. Seu e-mail nunca aparece.</div>
+            <div style={{display:"flex",gap:6,marginBottom:6}}>
+              {[5,10,20,50].map(v=>(
+                <button key={v} onClick={()=>setForm(f=>({...f,amount:String(v)}))} style={{flex:1,padding:"9px 0",borderRadius:8,border:"1px solid "+(String(v)===String(form.amount)?"#f1c40f":"rgba(255,255,255,.12)"),background:String(v)===String(form.amount)?"rgba(241,196,15,.15)":"rgba(255,255,255,.04)",color:String(v)===String(form.amount)?"#f1c40f":"#bbb",fontWeight:800,fontSize:13,cursor:"pointer"}}>R$ {v}</button>
+              ))}
             </div>
-          ):(
-            <>
-              <div style={{color:"rgba(255,255,255,.4)",fontSize:10,lineHeight:1.5,marginBottom:8}}>Depois de fazer o Pix, informe como quer ser chamado. Só nome ou apelido e mensagem ficam públicos; seu e-mail nunca aparece. Se preferir, não preencha e fique anônimo.</div>
-              <input style={inp} maxLength={30} placeholder="Nome ou apelido" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
-              <input style={inp} inputMode="decimal" placeholder="Valor doado (R$)" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
-              <input style={inp} maxLength={80} placeholder="Mensagem (opcional)" value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))}/>
-              <label style={{display:"flex",alignItems:"center",gap:8,color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:8}}>
-                <input type="checkbox" checked={form.showAmount} onChange={e=>setForm(f=>({...f,showAmount:e.target.checked}))}/> Mostrar o valor no mural
-              </label>
-              {err&&<div style={{color:"#e74c3c",fontSize:11,marginBottom:6}}>{err}</div>}
-              <button onClick={send} disabled={sending} style={{width:"100%",padding:"11px",background:"rgba(241,196,15,.15)",border:"1px solid rgba(241,196,15,.4)",borderRadius:10,color:"#f1c40f",fontWeight:800,fontSize:13,cursor:"pointer"}}>{sending?"Enviando...":"Registrar minha doação"}</button>
-            </>
-          )}
-        </div>
+            <input style={inp} inputMode="decimal" placeholder="Outro valor (R$)" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
+            <input style={inp} maxLength={30} placeholder="Seu nome ou apelido (opcional)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+            <input style={inp} maxLength={80} placeholder="Mensagem (opcional)" value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))}/>
+            <label style={{display:"flex",alignItems:"center",gap:8,color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:10}}>
+              <input type="checkbox" checked={form.showAmount} onChange={e=>setForm(f=>({...f,showAmount:e.target.checked}))}/> Mostrar o valor no mural
+            </label>
+            {err&&<div style={{color:"#e74c3c",fontSize:11,marginBottom:6}}>{err}</div>}
+            <button onClick={gerar} disabled={loading} style={btn}>{loading?"Gerando Pix...":"💠 GERAR PIX"}</button>
+            <div style={{color:"rgba(255,255,255,.3)",fontSize:10,lineHeight:1.5,textAlign:"center"}}>Doar é opcional e não dá vantagem no jogo nem fichas.</div>
+          </div>
+        )}
+
+        {step==="pay"&&qr&&(
+          <div style={{marginBottom:12}}>
+            <div style={{color:"#fff",fontSize:12,marginBottom:8}}>Escaneie o QR Code ou copie o código no app do seu banco:</div>
+            {qr.encodedImage&&<img alt="QR Code Pix" src={"data:image/png;base64,"+qr.encodedImage} style={{width:190,height:190,background:"#fff",padding:8,borderRadius:10,marginBottom:10}}/>}
+            <button onClick={()=>copy(qr.payload)} style={btn}>{copied?"✅ COPIADO!":"📋 COPIAR PIX COPIA E COLA"}</button>
+            <div style={{color:"#f1c40f",fontSize:12,marginTop:4}}>⏳ Aguardando o pagamento...</div>
+            <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:4,lineHeight:1.5}}>Assim que o Pix cair, esta tela confirma sozinha. Pode fechar: seu nome entra no mural mesmo assim.</div>
+          </div>
+        )}
+
+        {step==="done"&&(
+          <div style={{marginBottom:12,padding:14,background:"rgba(46,204,113,.08)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10}}>
+            <div style={{fontSize:32}}>🎉</div>
+            <div style={{color:"#2ecc71",fontWeight:900,fontSize:15,margin:"4px 0"}}>Doação recebida!</div>
+            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.5}}>Muito obrigado por apoiar o projeto! ❤️ Você já aparece no mural abaixo.</div>
+          </div>
+        )}
 
         <div style={{textAlign:"left",marginBottom:12}}>
           <div style={{color:"#e74c8b",fontSize:12,fontWeight:800,marginBottom:6}}>💖 MURAL DE APOIADORES</div>
