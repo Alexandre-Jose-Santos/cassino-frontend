@@ -409,6 +409,7 @@ const auth=firebase.auth();
 const db=firebase.firestore();
 // Auth inicializado
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script type="text/babel">
 const{useState,useEffect,useCallback,useRef}=React;
 
@@ -417,10 +418,12 @@ const SUITS=["♠","♥","♦","♣"],RANKS=["A","2","3","4","5","6","7","8","9"
 const RED=new Set(["♥","♦"]);
 const PIP={1:[[50,50]],2:[[28,25],[72,75]],3:[[28,25],[50,50],[72,75]],4:[[28,25],[72,25],[28,75],[72,75]],5:[[28,25],[72,25],[50,50],[28,75],[72,75]],6:[[28,20],[72,20],[28,50],[72,50],[28,75],[72,75]]};
 const CHIP_COLORS={1:"#e8e8e8",5:"#c0392b",10:"#2471a3",25:"#1e8449",50:"#7d3c98",100:"#ca6f1e",200:"#148f77",500:"#111"};
-// 1 ficha = R$0,10
-const CHIP_RATE = 0.10; // R$ por ficha
-const CHIP_TO_BRL = v => (v * CHIP_RATE).toFixed(2);
-const BRL_TO_CHIPS = r => Math.round(r / CHIP_RATE);
+// Fichas são virtuais: não têm valor em dinheiro, não são compradas nem sacadas.
+
+// ── DOAÇÃO (preencha com os seus dados) ──────────────────────
+const DONATE_PIX_KEY = "";          // sua chave Pix (e-mail, telefone, CPF/CNPJ ou aleatória)
+const DONATE_PIX_COPIA_COLA = "";   // opcional: código "Pix copia e cola" para gerar o QR Code
+const DONATE_GOAL = { meta: 50, atual: 0, desc: "servidor online (R$/mês)" }; // "atual" é reserva; o valor real vem do mural (doações confirmadas no mês)
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
 function cVal(r){if(["J","Q","K"].includes(r))return 10;if(r==="A")return 11;return+r;}
@@ -737,6 +740,7 @@ function AboutScreen({onClose}){
         <div style={{background:"rgba(231,76,60,.05)",border:"1px solid rgba(231,76,60,.15)",borderRadius:12,padding:14}}>
           <div style={{color:"#e74c3c",fontWeight:700,fontSize:12,marginBottom:6}}>⚖️ AVISO LEGAL</div>
           <div style={{color:"#888",fontSize:11,lineHeight:1.7}}>
+            🎰 As fichas são virtuais: não têm valor em dinheiro e não podem ser compradas, vendidas ou sacadas.<br/>
             🔞 Proibido para menores de 18 anos.<br/>
             Jogue com responsabilidade. O jogo pode causar dependência.<br/>
             Em caso de problemas, ligue para o CVV: 188.
@@ -748,7 +752,7 @@ function AboutScreen({onClose}){
 }
 
 // ══════════════════════════════════════════════════════════════
-//  CAIXA — COMPRA DE FICHAS
+//  CONSTANTES
 // ══════════════════════════════════════════════════════════════
 
 
@@ -6644,6 +6648,103 @@ function GoOnline({socket,room,userData,onGameOver}){
 }
 
 
+function DonateModal({onClose,userName}){
+  const qrRef=React.useRef(null);
+  const [copied,setCopied]=React.useState(false);
+  const [mural,setMural]=React.useState(null);
+  const [form,setForm]=React.useState({name:userName||"",amount:"",message:"",showAmount:false});
+  const [sent,setSent]=React.useState(null);
+  const [sending,setSending]=React.useState(false);
+  const [err,setErr]=React.useState("");
+  React.useEffect(()=>{
+    if(DONATE_PIX_COPIA_COLA&&window.QRCode&&qrRef.current){
+      qrRef.current.innerHTML="";
+      new window.QRCode(qrRef.current,{text:DONATE_PIX_COPIA_COLA,width:170,height:170,colorDark:"#000000",colorLight:"#ffffff"});
+    }
+    fetch(`${BACKEND_URL}/api/donations/public`).then(r=>r.json()).then(setMural).catch(()=>{});
+  },[]);
+  const copy=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),2000);}catch{window.prompt("Copie:",txt);}};
+  const send=async()=>{
+    setErr("");
+    if(!form.name.trim()){setErr("Informe um nome ou apelido");return;}
+    const v=parseFloat(String(form.amount).replace(",","."));
+    if(!(v>=1)){setErr("Informe o valor que você doou (mínimo R$ 1)");return;}
+    setSending(true);
+    try{
+      const t=await auth.currentUser.getIdToken();
+      const r=await fetch(`${BACKEND_URL}/api/donations/intent`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({displayName:form.name,amount:v,message:form.message,showAmount:form.showAmount})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok)setSent(j);else setErr(j.error||"Não foi possível registrar agora.");
+    }catch{setErr("Servidor acordando, tente de novo em 1 minuto.");}
+    setSending(false);
+  };
+  const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:DONATE_GOAL.atual;
+  const pct=Math.min(100,Math.round((atual/DONATE_GOAL.meta)*100));
+  const key=DONATE_PIX_KEY||DONATE_PIX_COPIA_COLA;
+  const inp={width:"100%",boxSizing:"border-box",padding:"10px",marginBottom:6,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,color:"#fff",fontSize:13,outline:"none"};
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#111",border:"2px solid #e74c8b",borderRadius:16,padding:24,maxWidth:340,width:"100%",textAlign:"center",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:40}}>❤️</div>
+        <div style={{color:"#f1c40f",fontSize:17,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif",margin:"4px 0 8px"}}>APOIE O PROJETO</div>
+        <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.6,marginBottom:12}}>
+          O jogo é grátis e as fichas são virtuais. Sua doação voluntária ajuda a manter o servidor do multiplayer e os jogos tradicionais no ar.
+        </div>
+        <div style={{background:"rgba(255,255,255,.04)",borderRadius:10,padding:10,marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:6}}>
+            <span>Meta: {DONATE_GOAL.desc}</span><span>R$ {atual.toFixed(0)} / R$ {DONATE_GOAL.meta}</span>
+          </div>
+          <div style={{height:6,background:"rgba(255,255,255,.08)",borderRadius:3,overflow:"hidden"}}>
+            <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#e74c8b,#f1c40f)"}}/>
+          </div>
+        </div>
+        {DONATE_PIX_COPIA_COLA&&<div ref={qrRef} style={{background:"#fff",padding:10,borderRadius:10,display:"inline-block",marginBottom:10}}/>}
+        {key?(
+          <>
+            <div style={{color:"rgba(255,255,255,.4)",fontSize:10,marginBottom:4,letterSpacing:1}}>{DONATE_PIX_KEY?"CHAVE PIX":"PIX COPIA E COLA"}</div>
+            <div style={{color:"#fff",fontSize:12,wordBreak:"break-all",background:"rgba(255,255,255,.05)",borderRadius:8,padding:"8px 10px",marginBottom:10}}>{key.length>60?key.slice(0,60)+"…":key}</div>
+            <button onClick={()=>copy(key)} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:8}}>{copied?"✅ COPIADO!":"📋 COPIAR PIX"}</button>
+          </>
+        ):(<div style={{color:"#e74c3c",fontSize:12,marginBottom:10}}>Chave Pix ainda não configurada.</div>)}
+        <div style={{color:"rgba(255,255,255,.3)",fontSize:10,lineHeight:1.5,marginBottom:12}}>Doar é opcional e não dá vantagem no jogo nem fichas.</div>
+
+        <div style={{textAlign:"left",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",borderRadius:10,padding:12,marginBottom:12}}>
+          <div style={{color:"#f1c40f",fontSize:12,fontWeight:800,marginBottom:4}}>🏆 QUER APARECER NO MURAL? (opcional)</div>
+          {sent?(
+            <div style={{color:"#2ecc71",fontSize:12,lineHeight:1.6}}>
+              ✅ Registrado! Seu código é <b>{sent.code}</b>. Seu nome aparece no mural assim que o Pix for confirmado. Se o seu banco permitir, escreva esse código na mensagem do Pix.
+            </div>
+          ):(
+            <>
+              <div style={{color:"rgba(255,255,255,.4)",fontSize:10,lineHeight:1.5,marginBottom:8}}>Depois de fazer o Pix, informe como quer ser chamado. Só nome ou apelido e mensagem ficam públicos; seu e-mail nunca aparece. Se preferir, não preencha e fique anônimo.</div>
+              <input style={inp} maxLength={30} placeholder="Nome ou apelido" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+              <input style={inp} inputMode="decimal" placeholder="Valor doado (R$)" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
+              <input style={inp} maxLength={80} placeholder="Mensagem (opcional)" value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))}/>
+              <label style={{display:"flex",alignItems:"center",gap:8,color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:8}}>
+                <input type="checkbox" checked={form.showAmount} onChange={e=>setForm(f=>({...f,showAmount:e.target.checked}))}/> Mostrar o valor no mural
+              </label>
+              {err&&<div style={{color:"#e74c3c",fontSize:11,marginBottom:6}}>{err}</div>}
+              <button onClick={send} disabled={sending} style={{width:"100%",padding:"11px",background:"rgba(241,196,15,.15)",border:"1px solid rgba(241,196,15,.4)",borderRadius:10,color:"#f1c40f",fontWeight:800,fontSize:13,cursor:"pointer"}}>{sending?"Enviando...":"Registrar minha doação"}</button>
+            </>
+          )}
+        </div>
+
+        <div style={{textAlign:"left",marginBottom:12}}>
+          <div style={{color:"#e74c8b",fontSize:12,fontWeight:800,marginBottom:6}}>💖 MURAL DE APOIADORES</div>
+          {!mural?<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Carregando...</div>
+            :mural.apoiadores&&mural.apoiadores.length?mural.apoiadores.slice(0,15).map((a,i)=>(
+              <div key={i} style={{padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.05)",fontSize:12,color:"#ddd"}}>
+                ❤️ <b>{a.name}</b>{a.amount?<span style={{color:"#f1c40f"}}> · R$ {Number(a.amount).toFixed(2).replace(".",",")}</span>:null}
+                {a.message?<div style={{color:"rgba(255,255,255,.4)",fontSize:11,marginLeft:20}}>{a.message}</div>:null}
+              </div>))
+            :<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Seja o primeiro a apoiar!</div>}
+        </div>
+        <button onClick={onClose} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,color:"#777",fontSize:12,cursor:"pointer"}}>FECHAR</button>
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const [authUser,setAuthUser]=useState(null);
   const [userData,setUserData]=useState(null);
@@ -6697,7 +6798,7 @@ function App(){
             localStorage.setItem('cassino_user_'+u.uid, JSON.stringify(snap.data()));
           } else {
             // Novo usuário — cria perfil
-            const newUser={uid:u.uid,name:u.displayName||u.email?.split('@')[0]||'Jogador',email:u.email,avatar:'🎰',chips:15,totalDeposited:0,totalWithdrawn:0,createdAt:new Date().toISOString()};
+            const newUser={uid:u.uid,name:u.displayName||u.email?.split('@')[0]||'Jogador',email:u.email,avatar:'🎰',chips:15,createdAt:new Date().toISOString()};
             await db.collection('users').doc(u.uid).set(newUser);
             setUserData(newUser);
             localStorage.setItem('cassino_user_'+u.uid, JSON.stringify(newUser));
@@ -6777,6 +6878,7 @@ function App(){
   // ── Sistema de fichas ÚNICO — online e offline usam o mesmo saldo ──
   const FREE_CHIPS_PER_AD = 5; // 5 fichas por anúncio
   const [showAdModal, setShowAdModal] = useState(false);
+  const [showDonate, setShowDonate] = useState(false);
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
 
@@ -6824,6 +6926,21 @@ function App(){
     } catch { return 0; }
   };
 
+  const claimBonus = async () => {
+    try{
+      const r = await fetch(`${BACKEND_URL}/api/user/bonus`,{method:'POST',headers:{'Authorization':`Bearer ${token}`}});
+      const j = await r.json().catch(()=>({}));
+      if(r.ok){
+        const n = j.chips||50;
+        setUserData(d=>{const u={...d,chips:(d.chips||0)+n};localStorage.setItem('cassino_user_'+d.uid,JSON.stringify(u));return u;});
+        showToast('🎁 +'+n+' fichas grátis!','success');
+      }else if(r.status===429){
+        const h=Math.max(1,Math.ceil((j.waitMs||0)/3600000));
+        showToast('⏳ Próximas fichas grátis em cerca de '+h+'h','error');
+      }else{ showToast('❌ Não foi possível resgatar agora.','error'); }
+    }catch{ showToast('❌ Servidor acordando, tente de novo em 1 minuto.','error'); }
+  };
+
   const watchAd = async () => {
     setAdWatching(true);
     // Tenta anúncio real via AdMob (Capacitor)
@@ -6843,7 +6960,7 @@ function App(){
     }
     // Fallback: simulação apenas em localhost/dev
     const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    if(!isDev){ setAdWatching(false); return; } // sem AdMob e não é dev: não recompensa
+    if(!isDev){ setAdWatching(false); setShowAdModal(false); claimBonus(); return; } // web sem AdMob: usa fichas grátis do servidor
     setAdTimer(30);
     const interval = setInterval(()=>{
       setAdTimer(t=>{
@@ -6944,7 +7061,6 @@ function App(){
                     </span>
                     <span style={{color:"rgba(241,196,15,.4)",fontSize:13,fontFamily:"'Rajdhani',sans-serif",letterSpacing:2}}>FIC</span>
                   </div>
-                  {chips>0&&<div style={{color:"rgba(255,255,255,.25)",fontSize:10,marginTop:2,letterSpacing:1}}>≈ R$ {CHIP_TO_BRL(chips)}</div>}
                   {gameMode==='offline'&&<div style={{color:"#2ecc71",fontSize:10,marginTop:2,letterSpacing:1,fontFamily:"'Rajdhani',sans-serif"}}>● MODO OFFLINE</div>}
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -6962,6 +7078,12 @@ function App(){
                   <div style={{color:"rgba(255,255,255,.35)",fontSize:10,marginTop:2}}>Toque aqui → assista um anúncio → ganhe +1 ficha</div>
                 </button>
               )}
+            </div>
+
+            {/* Fichas grátis e apoio */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+              <button onClick={claimBonus} style={{padding:"12px 8px",background:"linear-gradient(135deg,#1a4a1a,#0d2e0d)",border:"1px solid rgba(46,204,113,.4)",borderRadius:12,color:"#2ecc71",fontWeight:900,fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>🎁 +50 FICHAS GRÁTIS<div style={{fontSize:9,opacity:.6,fontWeight:600}}>a cada 12 horas</div></button>
+              <button onClick={()=>setShowDonate(true)} style={{padding:"12px 8px",background:"linear-gradient(135deg,#3a1226,#220a15)",border:"1px solid rgba(231,76,139,.4)",borderRadius:12,color:"#e74c8b",fontWeight:900,fontSize:12,cursor:"pointer",fontFamily:"'Rajdhani',sans-serif",letterSpacing:1}}>❤️ APOIAR O PROJETO<div style={{fontSize:9,opacity:.6,fontWeight:600}}>manter o servidor no ar</div></button>
             </div>
 
             {/* Botoes */}
@@ -7095,6 +7217,7 @@ function App(){
       </div>
     </div>
   )}
+  {showDonate&&<DonateModal userName={userData?.name} onClose={()=>setShowDonate(false)}/>}
   {showProfile&&<ProfileScreen user={authUser} userData={userData} onSave={d=>setUserData(u=>({...u,...d}))} onClose={()=>setShowProfile(false)}/>}
       {showAbout&&<AboutScreen onClose={()=>setShowAbout(false)}/>}
     </div>
