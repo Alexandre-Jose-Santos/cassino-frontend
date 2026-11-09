@@ -6659,17 +6659,26 @@ function DonateModal({onClose,userName}){
   // Depois de gerar o Pix, consulta o servidor a cada 4s até o pagamento ser detectado (máx. 15 min)
   React.useEffect(()=>{
     if(step!=="pay"||!qr)return;
-    let stop=false;const t0=Date.now();
-    const iv=setInterval(async()=>{
-      if(stop||Date.now()-t0>15*60*1000){clearInterval(iv);return;}
+    let stop=false,timer=null;const t0=Date.now();
+    const check=async()=>{
+      if(stop)return;
       try{
         const t=await auth.currentUser.getIdToken();
         const r=await fetch(`${BACKEND_URL}/api/donations/${qr.id}/status`,{headers:{Authorization:"Bearer "+t}});
         const j=await r.json();
-        if(j.status==="confirmed"){stop=true;clearInterval(iv);setStep("done");setTimeout(loadMural,800);}
+        if(j.status==="confirmed"&&!stop){stop=true;clearTimeout(timer);setStep("done");setTimeout(loadMural,800);}
       }catch{}
-    },4000);
-    return()=>{stop=true;clearInterval(iv);};
+    };
+    // 4s nos primeiros 10 min, depois 15s, até 2h (o Pix vale 24h)
+    const loop=()=>{
+      if(stop||Date.now()-t0>2*60*60*1000)return;
+      timer=setTimeout(async()=>{await check();loop();},Date.now()-t0<10*60*1000?4000:15000);
+    };
+    // Ao voltar do app do banco o navegador pode ter pausado os timers: confere na hora
+    const onVis=()=>{if(document.visibilityState==="visible")check();};
+    document.addEventListener("visibilitychange",onVis);window.addEventListener("focus",onVis);
+    loop();
+    return()=>{stop=true;clearTimeout(timer);document.removeEventListener("visibilitychange",onVis);window.removeEventListener("focus",onVis);};
   },[step,qr]);
   const copy=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),2000);}catch{window.prompt("Copie:",txt);}};
   const pickPhoto=(e)=>{
