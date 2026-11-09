@@ -6649,6 +6649,7 @@ function DonateModal({onClose,userName}){
   const [step,setStep]=React.useState("form");           // form | pay | done
   const [mural,setMural]=React.useState(null);
   const [form,setForm]=React.useState({name:userName||"",amount:"10",message:"",showAmount:false});
+  const [avatar,setAvatar]=React.useState("");
   const [qr,setQr]=React.useState(null);
   const [loading,setLoading]=React.useState(false);
   const [err,setErr]=React.useState("");
@@ -6671,6 +6672,20 @@ function DonateModal({onClose,userName}){
     return()=>{stop=true;clearInterval(iv);};
   },[step,qr]);
   const copy=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),2000);}catch{window.prompt("Copie:",txt);}};
+  const pickPhoto=(e)=>{
+    const f=e.target.files&&e.target.files[0];e.target.value="";
+    if(!f)return;
+    if(!f.type.startsWith("image/")){setErr("Escolha um arquivo de imagem");return;}
+    const img=new Image(),url=URL.createObjectURL(f);
+    img.onload=()=>{
+      const c=document.createElement("canvas");c.width=c.height=96;
+      const x=c.getContext("2d"),s=Math.min(img.width,img.height);
+      x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,96,96);
+      setAvatar(c.toDataURL("image/jpeg",0.78));URL.revokeObjectURL(url);setErr("");
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);setErr("Não consegui ler essa imagem");};
+    img.src=url;
+  };
   const gerar=async()=>{
     setErr("");
     const v=parseFloat(String(form.amount).replace(",","."));
@@ -6678,7 +6693,7 @@ function DonateModal({onClose,userName}){
     setLoading(true);
     try{
       const t=await auth.currentUser.getIdToken();
-      const r=await fetch(`${BACKEND_URL}/api/donations/pix`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({displayName:form.name,amount:v,message:form.message,showAmount:form.showAmount})});
+      const r=await fetch(`${BACKEND_URL}/api/donations/pix`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({displayName:form.name,amount:v,message:form.message,showAmount:form.showAmount,avatar:form.name.trim()?avatar:""})});
       const j=await r.json().catch(()=>({}));
       if(r.ok){setQr(j);setStep("pay");}else setErr(j.error||"Não foi possível gerar o Pix agora.");
     }catch{setErr("Servidor acordando, tente de novo em 1 minuto.");}
@@ -6687,6 +6702,7 @@ function DonateModal({onClose,userName}){
   const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:DONATE_GOAL.atual;
   const pct=Math.min(100,Math.round((atual/DONATE_GOAL.meta)*100));
   const inp={width:"100%",boxSizing:"border-box",padding:"10px",marginBottom:6,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,color:"#fff",fontSize:13,outline:"none"};
+  const lab={color:"rgba(255,255,255,.5)",fontSize:11,margin:"8px 0 3px"};
   const btn={width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:8};
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
@@ -6713,9 +6729,22 @@ function DonateModal({onClose,userName}){
                 <button key={v} onClick={()=>setForm(f=>({...f,amount:String(v)}))} style={{flex:1,padding:"9px 0",borderRadius:8,border:"1px solid "+(String(v)===String(form.amount)?"#f1c40f":"rgba(255,255,255,.12)"),background:String(v)===String(form.amount)?"rgba(241,196,15,.15)":"rgba(255,255,255,.04)",color:String(v)===String(form.amount)?"#f1c40f":"#bbb",fontWeight:800,fontSize:13,cursor:"pointer"}}>R$ {v}</button>
               ))}
             </div>
-            <input style={inp} inputMode="decimal" placeholder="Outro valor (R$)" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
-            <input style={inp} maxLength={30} placeholder="Seu nome ou apelido (opcional)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
-            <input style={inp} maxLength={80} placeholder="Mensagem (opcional)" value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))}/>
+            <div style={lab}>Valor da doação (digite o quanto quiser)</div>
+            <div style={{position:"relative",marginBottom:6}}>
+              <span style={{position:"absolute",left:12,top:10,color:"#f1c40f",fontWeight:800,fontSize:13}}>R$</span>
+              <input style={{...inp,paddingLeft:38,marginBottom:0,color:"#f1c40f",fontWeight:800}} inputMode="decimal" placeholder="0,00" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
+            </div>
+            <div style={lab}>Seu nome ou apelido (opcional)</div>
+            <input style={inp} maxLength={30} placeholder="Anônimo" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+            <div style={lab}>Mensagem (opcional)</div>
+            <input style={inp} maxLength={80} placeholder="Ex.: Bora jogar truco!" value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))}/>
+            <div style={lab}>Sua foto (opcional, precisa de um nome)</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+              {avatar?<img alt="" src={avatar} style={{width:48,height:48,borderRadius:"50%",objectFit:"cover",border:"2px solid #e74c8b"}}/>:<div style={{width:48,height:48,borderRadius:"50%",background:"rgba(255,255,255,.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>👤</div>}
+              <label style={{padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.05)",color:"#ddd",fontSize:12,fontWeight:700,cursor:"pointer"}}>📷 Escolher foto<input type="file" accept="image/*" onChange={pickPhoto} style={{display:"none"}}/></label>
+              {avatar&&<button onClick={()=>setAvatar("")} style={{padding:"9px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,.12)",background:"transparent",color:"#999",fontSize:12,cursor:"pointer"}}>Remover</button>}
+            </div>
+            <div style={{color:"rgba(255,255,255,.35)",fontSize:10,lineHeight:1.4,marginBottom:6}}>A foto só aparece no mural depois que o administrador aprovar. Use uma imagem sua ou de sua escolha, sem conteúdo impróprio.</div>
             <label style={{display:"flex",alignItems:"center",gap:8,color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:10}}>
               <input type="checkbox" checked={form.showAmount} onChange={e=>setForm(f=>({...f,showAmount:e.target.checked}))}/> Mostrar o valor no mural
             </label>
@@ -6748,7 +6777,7 @@ function DonateModal({onClose,userName}){
           {!mural?<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Carregando...</div>
             :mural.apoiadores&&mural.apoiadores.length?mural.apoiadores.slice(0,15).map((a,i)=>(
               <div key={i} style={{padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.05)",fontSize:12,color:"#ddd"}}>
-                ❤️ <b>{a.name}</b>{a.amount?<span style={{color:"#f1c40f"}}> · R$ {Number(a.amount).toFixed(2).replace(".",",")}</span>:null}
+                {a.avatarUrl?<img alt="" src={BACKEND_URL+a.avatarUrl} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",verticalAlign:"middle",marginRight:6}}/>:"❤️ "}<b>{a.name}</b>{a.amount?<span style={{color:"#f1c40f"}}> · R$ {Number(a.amount).toFixed(2).replace(".",",")}</span>:null}
                 {a.message?<div style={{color:"rgba(255,255,255,.4)",fontSize:11,marginLeft:20}}>{a.message}</div>:null}
               </div>))
             :<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Seja o primeiro a apoiar!</div>}
