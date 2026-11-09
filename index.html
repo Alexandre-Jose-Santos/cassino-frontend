@@ -420,7 +420,6 @@ const CHIP_COLORS={1:"#e8e8e8",5:"#c0392b",10:"#2471a3",25:"#1e8449",50:"#7d3c98
 // Fichas são virtuais: não têm valor em dinheiro, não são compradas nem sacadas.
 
 // ── DOAÇÃO (Pix gerado pelo Asaas no servidor; nada a configurar aqui além da meta) ──
-const DONATE_GOAL = { meta: 50, atual: 0, desc: "servidor online (R$/mês)" }; // "atual" é reserva; o valor real vem do mural
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
 function cVal(r){if(["J","Q","K"].includes(r))return 10;if(r==="A")return 11;return+r;}
@@ -6645,7 +6644,7 @@ function GoOnline({socket,room,userData,onGameOver}){
 }
 
 
-function DonateModal({onClose,userName}){
+function DonateModal({onClose,userName,onMural}){
   const [step,setStep]=React.useState("form");           // form | pay | done
   const [mural,setMural]=React.useState(null);
   const [form,setForm]=React.useState({name:userName||"",amount:"10",message:"",showAmount:false});
@@ -6708,8 +6707,7 @@ function DonateModal({onClose,userName}){
     }catch{setErr("Servidor acordando, tente de novo em 1 minuto.");}
     setLoading(false);
   };
-  const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:DONATE_GOAL.atual;
-  const pct=Math.min(100,Math.round((atual/DONATE_GOAL.meta)*100));
+  const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:0;
   const inp={width:"100%",boxSizing:"border-box",padding:"10px",marginBottom:6,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,color:"#fff",fontSize:13,outline:"none"};
   const lab={color:"rgba(255,255,255,.5)",fontSize:11,margin:"8px 0 3px"};
   const btn={width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:8};
@@ -6721,13 +6719,8 @@ function DonateModal({onClose,userName}){
         <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.6,marginBottom:12}}>
           O jogo é grátis e as fichas são virtuais. Sua doação voluntária ajuda a manter o servidor do multiplayer e os jogos tradicionais no ar.
         </div>
-        <div style={{background:"rgba(255,255,255,.04)",borderRadius:10,padding:10,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:6}}>
-            <span>Meta: {DONATE_GOAL.desc}</span><span>R$ {atual.toFixed(0)} / R$ {DONATE_GOAL.meta}</span>
-          </div>
-          <div style={{height:6,background:"rgba(255,255,255,.08)",borderRadius:3,overflow:"hidden"}}>
-            <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#e74c8b,#f1c40f)"}}/>
-          </div>
+        <div style={{background:"rgba(255,255,255,.04)",borderRadius:10,padding:"8px 10px",marginBottom:12,color:"rgba(255,255,255,.6)",fontSize:12}}>
+          💖 Arrecadado este mês: <b style={{color:"#f1c40f"}}>R$ {atual.toFixed(2).replace(".",",")}</b>
         </div>
 
         {step==="form"&&(
@@ -6777,22 +6770,92 @@ function DonateModal({onClose,userName}){
           <div style={{marginBottom:12,padding:14,background:"rgba(46,204,113,.08)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10}}>
             <div style={{fontSize:32}}>🎉</div>
             <div style={{color:"#2ecc71",fontWeight:900,fontSize:15,margin:"4px 0"}}>Doação recebida!</div>
-            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.5}}>Muito obrigado por apoiar o projeto! ❤️ Você já aparece no mural abaixo.</div>
+            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.5}}>Muito obrigado por apoiar o projeto! ❤️ Você já aparece no mural de apoiadores.</div>
           </div>
         )}
 
-        <div style={{textAlign:"left",marginBottom:12}}>
-          <div style={{color:"#e74c8b",fontSize:12,fontWeight:800,marginBottom:6}}>💖 MURAL DE APOIADORES</div>
-          {!mural?<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Carregando...</div>
-            :mural.apoiadores&&mural.apoiadores.length?mural.apoiadores.slice(0,15).map((a,i)=>(
-              <div key={i} style={{padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.05)",fontSize:12,color:"#ddd"}}>
-                {a.avatarUrl?<img alt="" src={BACKEND_URL+a.avatarUrl} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",verticalAlign:"middle",marginRight:6}}/>:"❤️ "}<b>{a.name}</b>{a.amount?<span style={{color:"#f1c40f"}}> · R$ {Number(a.amount).toFixed(2).replace(".",",")}</span>:null}
-                {a.message?<div style={{color:"rgba(255,255,255,.4)",fontSize:11,marginLeft:20}}>{a.message}</div>:null}
-              </div>))
-            :<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Seja o primeiro a apoiar!</div>}
-        </div>
+        {onMural&&<button onClick={onMural} style={{width:"100%",padding:"10px",marginBottom:8,background:"rgba(231,76,139,.08)",border:"1px solid rgba(231,76,139,.35)",borderRadius:10,color:"#e74c8b",fontSize:12,fontWeight:800,cursor:"pointer"}}>💖 VER MURAL DE APOIADORES</button>}
         <button onClick={onClose} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,color:"#777",fontSize:12,cursor:"pointer"}}>FECHAR</button>
       </div>
+    </div>
+  );
+}
+
+function MuralPage({onDonate}){
+  const PAGE=20;
+  const [d,setD]=React.useState(null);          // {totalMes,total,top}
+  const [items,setItems]=React.useState([]);
+  const [hasMore,setHasMore]=React.useState(false);
+  const [more,setMore]=React.useState(false);
+  const [fail,setFail]=React.useState(false);
+  const brl=v=>Number(v).toFixed(2).replace(".",",");
+  const fetchPage=(offset)=>fetch(`${BACKEND_URL}/api/donations/public?offset=${offset}&limit=${PAGE}`).then(r=>{if(!r.ok)throw new Error("http");return r.json();});
+  const load=()=>{
+    setFail(false);
+    fetchPage(0).then(j=>{setD(j);setItems(j.apoiadores||[]);setHasMore(!!j.hasMore);}).catch(()=>setFail(true));
+  };
+  React.useEffect(()=>{load();},[]);
+  const loadMore=()=>{
+    if(more)return;
+    setMore(true);
+    fetchPage(items.length).then(j=>{
+      setItems(prev=>{const seen=new Set(prev.map(x=>x.id));return prev.concat((j.apoiadores||[]).filter(x=>!seen.has(x.id)));});
+      setHasMore(!!j.hasMore);
+    }).catch(()=>{}).finally(()=>setMore(false));
+  };
+  const foto=(a,sz)=>a.avatarUrl
+    ?<img alt="" src={BACKEND_URL+a.avatarUrl} style={{width:sz,height:sz,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+    :<div style={{width:sz,height:sz,borderRadius:"50%",background:"rgba(231,76,139,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.45,flexShrink:0}}>❤️</div>;
+  const top=d&&d.top?d.top:[];
+  return(
+    <div style={{padding:"16px 12px",maxWidth:500,margin:"0 auto",animation:"fadeIn .4s ease"}}>
+      <div style={{textAlign:"center",marginBottom:14}}>
+        <div style={{fontSize:38}}>💖</div>
+        <div style={{color:"#f1c40f",fontSize:18,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1}}>MURAL DE APOIADORES</div>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:4,lineHeight:1.5}}>Obrigado a quem ajuda a manter o servidor no ar!</div>
+      </div>
+      <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",borderRadius:12,padding:12,marginBottom:12,textAlign:"center"}}>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Arrecadado este mês</div>
+        <div style={{color:"#f1c40f",fontSize:22,fontWeight:900}}>R$ {brl(d&&typeof d.totalMes==="number"?d.totalMes:0)}</div>
+        {d&&d.total>0&&<div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginTop:2}}>{d.total} {d.total===1?"apoio":"apoios"} no total</div>}
+      </div>
+      <button onClick={onDonate} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:14}}>❤️ APOIAR O PROJETO</button>
+      {top.length>0&&(
+        <div style={{background:"linear-gradient(135deg,rgba(241,196,15,.08),rgba(231,76,139,.06))",border:"1px solid rgba(241,196,15,.3)",borderRadius:12,padding:12,marginBottom:14}}>
+          <div style={{color:"#f1c40f",fontSize:12,fontWeight:900,letterSpacing:1,marginBottom:6}}>🏆 MAIORES APOIADORES</div>
+          {top.map((a,i)=>(
+            <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,.06)":"none"}}>
+              <span style={{width:26,textAlign:"center",fontSize:i<3?20:13,color:"#f1c40f",fontWeight:900}}>{["🥇","🥈","🥉","4º","5º"][i]}</span>
+              {foto(a,32)}
+              <span style={{flex:1,minWidth:0,color:"#fff",fontSize:13,fontWeight:800,wordBreak:"break-word"}}>{a.name}</span>
+              <span style={{color:"#f1c40f",fontSize:13,fontWeight:800}}>R$ {brl(a.amount)}</span>
+            </div>))}
+          <div style={{color:"rgba(255,255,255,.3)",fontSize:10,marginTop:6}}>Aparecem aqui só quem escolheu mostrar o valor e informou um nome.</div>
+        </div>
+      )}
+      {fail?(
+        <div style={{textAlign:"center",color:"rgba(255,255,255,.5)",fontSize:12,lineHeight:1.6}}>
+          Não consegui carregar o mural agora (o servidor pode estar acordando).
+          <button onClick={load} style={{display:"block",margin:"8px auto 0",padding:"8px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,.15)",background:"transparent",color:"#ddd",fontSize:12,cursor:"pointer"}}>Tentar de novo</button>
+        </div>
+      ):!d?(
+        <div style={{textAlign:"center",color:"rgba(255,255,255,.3)",fontSize:12}}>Carregando...</div>
+      ):items.length?(
+        <div>
+          <div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginBottom:6}}>Mais recentes</div>
+          {items.map(a=>(
+            <div key={a.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",marginBottom:6,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:10}}>
+              {foto(a,40)}
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{color:"#fff",fontSize:14,fontWeight:800,wordBreak:"break-word"}}>{a.name}{a.amount?<span style={{color:"#f1c40f",fontWeight:700}}> · R$ {brl(a.amount)}</span>:null}</div>
+                {a.message?<div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:2,wordBreak:"break-word"}}>{a.message}</div>:null}
+              </div>
+            </div>))}
+          {hasMore&&<button onClick={loadMore} disabled={more} style={{width:"100%",padding:"12px",marginTop:4,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.15)",borderRadius:10,color:"#ddd",fontWeight:800,fontSize:13,cursor:"pointer"}}>{more?"Carregando...":"Ver mais"}</button>}
+        </div>
+      ):(
+        <div style={{textAlign:"center",color:"rgba(255,255,255,.4)",fontSize:13,padding:"20px 0"}}>Seja o primeiro a apoiar! ❤️</div>
+      )}
     </div>
   );
 }
@@ -7071,6 +7134,7 @@ function App(){
     {k:"singleplayer",i:"&#x1F916;",l:"Single"},
     {k:"lobby",i:"&#x1F30D;",l:"Multi"},
         {k:'shop_btn',i:'&#x1F4FA;',l:'Fichas'},
+    {k:'mural',i:'&#x1F496;',l:'Mural'},
   ];
 
   return(
@@ -7219,6 +7283,7 @@ function App(){
           </div>
         )}
         {GAMES[screen]}
+        {screen==='mural'&&<MuralPage onDonate={()=>setShowDonate(true)}/>}
         {screen==='lobby'&&<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange} onRefreshUser={setUserData}/>}
       </div>
 
@@ -7269,7 +7334,7 @@ function App(){
       </div>
     </div>
   )}
-  {showDonate&&<DonateModal userName={userData?.name} onClose={()=>setShowDonate(false)}/>}
+  {showDonate&&<DonateModal userName={userData?.name} onClose={()=>setShowDonate(false)} onMural={()=>{setShowDonate(false);setGameMode('offline');setScreen('mural');}}/>}
   {showProfile&&<ProfileScreen user={authUser} userData={userData} onSave={d=>setUserData(u=>({...u,...d}))} onClose={()=>setShowProfile(false)}/>}
       {showAbout&&<AboutScreen onClose={()=>setShowAbout(false)}/>}
     </div>
