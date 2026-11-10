@@ -4756,20 +4756,31 @@ function findKing(board,col){
   return null;
 }
 
-function isInCheck(board,col){
-  const king=findKing(board,col); if(!king) return false;
-  const opp=col==='w'?'b':'w';
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]?.col===opp){
-      const ms=getChessMoves(board,r,c);
-      if(ms.some(m=>m.to[0]===king[0]&&m.to[1]===king[1]))return true;
-    }
-  }
+const _N_D=[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const _K_D=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const _DIAG=[[-1,-1],[-1,1],[1,-1],[1,1]], _ORTH=[[-1,0],[1,0],[0,-1],[0,1]];
+// A casa (r,c) é atacada por peças da cor "by"? Olha direto as casas de ataque (sem gerar lances,
+// sem recursão: a versão antiga gerava os lances do rei inimigo, incluindo o roque, que chamava
+// isInCheck de novo e entrava em loop infinito quando os dois reis podiam rocar).
+function isSquareAttacked(board,r,c,by){
+  const pr=by==='w'?r+1:r-1;
+  for(const dc of[-1,1]){const x=board[pr]?.[c+dc];if(x&&x.col===by&&x.t==='P')return true;}
+  for(const[dr,dc]of _N_D){const x=board[r+dr]?.[c+dc];if(x&&x.col===by&&x.t==='N')return true;}
+  for(const[dr,dc]of _K_D){const x=board[r+dr]?.[c+dc];if(x&&x.col===by&&x.t==='K')return true;}
+  for(const[dr,dc]of _DIAG){let nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<8&&nc>=0&&nc<8){const x=board[nr][nc];if(x){if(x.col===by&&(x.t==='B'||x.t==='Q'))return true;break;}nr+=dr;nc+=dc;}}
+  for(const[dr,dc]of _ORTH){let nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<8&&nc>=0&&nc<8){const x=board[nr][nc];if(x){if(x.col===by&&(x.t==='R'||x.t==='Q'))return true;break;}nr+=dr;nc+=dc;}}
   return false;
 }
 
+function isInCheck(board,col){
+  const king=findKing(board,col); if(!king) return false;
+  return isSquareAttacked(board,king[0],king[1],col==='w'?'b':'w');
+}
+
 function applyChessMove(board,mv,promo='Q'){
-  const nb=board.map(r=>r.map(c=>c?{...c}:null));
+  const nb=board.map(r=>r.slice());   // peças não são alteradas no lugar, então podem ser compartilhadas
   const p={...nb[mv.from[0]][mv.from[1]]};
   nb[mv.from[0]][mv.from[1]]=null;
   if(mv.ep&&mv.capAt)nb[mv.capAt[0]][mv.capAt[1]]=null;
@@ -4815,24 +4826,31 @@ function evalChess(board){
   return s;
 }
 
+let _chessDeadline=0,_chessAbort=false,_chessNodes=0;
+function chessOrder(board,moves){
+  // capturas valiosas por peças baratas primeiro (melhora muito a poda alfa-beta)
+  for(const m of moves){
+    const cap=board[m.to[0]][m.to[1]],mover=board[m.from[0]][m.from[1]];
+    m._o=(cap?(PIECE_VALUE[cap.t]||0)*10-(PIECE_VALUE[mover.t]||0)/10:0)+(m.promo?800:0)+(m.ep?1000:0);
+  }
+  moves.sort((a,b)=>b._o-a._o);
+}
+
 function minimaxChess(board,depth,alpha,beta,maximizing,ep,castling){
   if(depth===0)return evalChess(board);
+  if((++_chessNodes&255)===0&&Date.now()>_chessDeadline)_chessAbort=true;
+  if(_chessAbort)return 0;
   const col=maximizing?'w':'b';
   const moves=getAllChessMoves(board,col,ep,castling);
-  if(!moves.length)return isInCheck(board,col)?(maximizing?-50000:50000):0;
-  // Ordena capturas primeiro
-  moves.sort((a,b)=>{
-    const va=board[a.to[0]][a.to[1]]?PIECE_VALUE[board[a.to[0]][a.to[1]].t]||0:0;
-    const vb=board[b.to[0]][b.to[1]]?PIECE_VALUE[board[b.to[0]][b.to[1]].t]||0:0;
-    return vb-va;
-  });
+  if(!moves.length)return isInCheck(board,col)?(maximizing?-50000-depth:50000+depth):0;
+  chessOrder(board,moves);
   if(maximizing){
     let best=-Infinity;
     for(const mv of moves){
       const nb=applyChessMove(board,mv);
       const ep2=mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null;
       best=Math.max(best,minimaxChess(nb,depth-1,alpha,beta,false,ep2,castling));
-      alpha=Math.max(alpha,best); if(beta<=alpha)break;
+      alpha=Math.max(alpha,best); if(beta<=alpha||_chessAbort)break;
     }
     return best;
   } else {
@@ -4841,26 +4859,39 @@ function minimaxChess(board,depth,alpha,beta,maximizing,ep,castling){
       const nb=applyChessMove(board,mv);
       const ep2=mv.double?[mv.to[0]+(mv.from[0]===1?1:-1),mv.to[1]]:null;
       best=Math.min(best,minimaxChess(nb,depth-1,alpha,beta,true,ep2,castling));
-      beta=Math.min(beta,best); if(beta<=alpha)break;
+      beta=Math.min(beta,best); if(beta<=alpha||_chessAbort)break;
     }
     return best;
   }
 }
 
-function bestChessMove(board,col,ep,castling){
+// Aprofundamento iterativo com limite de tempo: joga o melhor lance da maior profundidade que terminou
+function bestChessMove(board,col,ep,castling,maxMs=1200){
   const moves=getAllChessMoves(board,col,ep,castling);
   if(!moves.length)return null;
-  // Embaralha para variedade
+  const clean=m=>{const{_o,...r}=m;return r;};
+  if(moves.length===1)return clean(moves[0]);
   for(let i=moves.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[moves[i],moves[j]]=[moves[j],moves[i]];}
   const max=col==='w';
-  let best=max?-Infinity:Infinity, bestMv=moves[0];
-  for(const mv of moves){
-    const nb=applyChessMove(board,mv);
-    const ep2=mv.double?[mv.to[0]+(mv.from[0]===(col==='w'?6:1)?1:-1),mv.to[1]]:null;
-    const s=minimaxChess(nb,3,-Infinity,Infinity,!max,ep2,castling);
-    if(max?s>best:s<best){best=s;bestMv=mv;}
+  _chessDeadline=Date.now()+maxMs;_chessAbort=false;_chessNodes=0;
+  let bestMv=moves[0];
+  for(let depth=1;depth<=4;depth++){
+    chessOrder(moves.length?board:board,moves);
+    if(depth>1){const k=moves.indexOf(bestMv);if(k>0){moves.splice(k,1);moves.unshift(bestMv);}}
+    let alpha=-Infinity,beta=Infinity,bestScore=max?-Infinity:Infinity,iterBest=null;
+    for(const mv of moves){
+      const nb=applyChessMove(board,mv);
+      const ep2=mv.double?[mv.to[0]+(mv.from[0]===(col==='w'?6:1)?1:-1),mv.to[1]]:null;
+      const s=minimaxChess(nb,depth-1,alpha,beta,!max,ep2,castling);
+      if(_chessAbort)break;
+      if(max?s>bestScore:s<bestScore){bestScore=s;iterBest=mv;}
+      if(max)alpha=Math.max(alpha,bestScore);else beta=Math.min(beta,bestScore);
+    }
+    if(_chessAbort)break;            // iteração incompleta: descarta
+    if(iterBest)bestMv=iterBest;
+    if(Math.abs(bestScore)>=49000)break;   // mate encontrado
   }
-  return bestMv;
+  return clean(bestMv);
 }
 
 
@@ -5198,7 +5229,9 @@ function Xadrez({chips,onChange,log,mode}){
       setStatus(chk?'⚠️ Xeque! IA pensando...':'⏳ IA pensando...');
       setTurn('b'); setAiThinking(true);
       setTimeout(()=>{
-        const aiMv=bestChessMove(nb,'b',ep2,nc2);
+        let aiMv=null;
+        try{aiMv=bestChessMove(nb,'b',ep2,nc2);}
+        catch(e){console.error('IA xadrez:',e);const lm=getAllChessMoves(nb,'b',ep2,nc2);aiMv=lm.length?lm[Math.floor(Math.random()*lm.length)]:null;}
         if(!aiMv){setStatus('½ Empate!');setOver(true);setAiThinking(false);return;}
         const{nb:nb2,ep2:ep3,nc2:nc3}=doMove(nb,aiMv,ep2,nc2);
         setBoard(nb2); setCastling(nc3); setEnPassant(ep3); setLastMove(aiMv); setMoveCount(n=>n+1);
@@ -5211,7 +5244,7 @@ function Xadrez({chips,onChange,log,mode}){
           setTurn('w');
         }
         setAiThinking(false);
-      },600);
+      },150);
     } else {
       setStatus(isInCheck(nb,'w')?'⚠️ Você está em xeque!':'Sua vez ⬜');
       setTurn('w');
