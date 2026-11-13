@@ -420,7 +420,6 @@ const CHIP_COLORS={1:"#e8e8e8",5:"#c0392b",10:"#2471a3",25:"#1e8449",50:"#7d3c98
 // Fichas são virtuais: não têm valor em dinheiro, não são compradas nem sacadas.
 
 // ── DOAÇÃO (Pix gerado pelo Asaas no servidor; nada a configurar aqui além da meta) ──
-const DONATE_GOAL = { meta: 50, atual: 0, desc: "servidor online (R$/mês)" }; // "atual" é reserva; o valor real vem do mural
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
 function cVal(r){if(["J","Q","K"].includes(r))return 10;if(r==="A")return 11;return+r;}
@@ -443,133 +442,6 @@ const Btn=({c="#f1c40f",tc="#000",onClick,disabled,children,full,sm,loading})=>(
 );
 
 // ── Carta ────────────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════
-//  EFEITOS SONOROS — gerados no próprio navegador (Web Audio API).
-//  Não usa arquivos de áudio, então não tem direitos autorais e não pesa.
-//  Botão 🔊/🔇 no canto da tela liga e desliga (fica salvo).
-// ══════════════════════════════════════════════════════════════
-const SFX=(function(){
-  var AC=window.AudioContext||window.webkitAudioContext,ctx=null,master=null,nb=null,on=true,last={},lastAny=0;
-  try{on=localStorage.getItem('cassino_sfx')!=='off';}catch(e){}
-  function init(){
-    if(!AC)return false;
-    try{
-      if(!ctx){
-        ctx=new AC();master=ctx.createGain();master.gain.value=.55;master.connect(ctx.destination);
-        nb=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
-        var d=nb.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=Math.random()*2-1;
-      }
-      if(ctx.state==='suspended')ctx.resume();
-      return true;
-    }catch(e){return false;}
-  }
-  function can(k,ms){
-    if(!on||!init())return false;
-    var n=performance.now();
-    if(ms&&last[k]&&n-last[k]<ms)return false;
-    last[k]=n;lastAny=n;return true;
-  }
-  function tone(f,t,d,type,v,f2){
-    var o=ctx.createOscillator(),g=ctx.createGain();o.type=type||'sine';
-    o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+d);
-    g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v||.2,t+.008);g.gain.exponentialRampToValueAtTime(.0001,t+d);
-    o.connect(g);g.connect(master);o.start(t);o.stop(t+d+.03);
-  }
-  function noise(t,d,v,fc,q,type){
-    var s=ctx.createBufferSource(),f=ctx.createBiquadFilter(),g=ctx.createGain();
-    s.buffer=nb;f.type=type||'bandpass';f.frequency.value=fc||2000;f.Q.value=q||1;
-    g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v||.2,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+d);
-    s.connect(f);f.connect(g);g.connect(master);s.start(t,Math.random()*.4);s.stop(t+d+.03);
-  }
-  var S={
-    click:function(t){tone(900,t,.05,'triangle',.07,620);},
-    tick:function(t){tone(1300,t,.03,'square',.035);},
-    card:function(t){noise(t,.07,.28,2600,.9);noise(t+.04,.05,.14,5200,1.2,'highpass');},
-    shuffle:function(t){for(var i=0;i<9;i++)noise(t+i*.055,.05,.16,2200+Math.random()*1500,.8);},
-    chip:function(t){tone(2300,t,.09,'sine',.13);tone(3100,t+.035,.08,'sine',.1);noise(t,.04,.08,6000,1,'highpass');},
-    dice:function(t){for(var i=0;i<9;i++)noise(t+i*.05+Math.random()*.02,.045,.18,1200+Math.random()*900,1.5);tone(160,t+.5,.09,'triangle',.25,80);noise(t+.5,.06,.2,500,.8,'lowpass');},
-    tile:function(t){tone(190,t,.09,'triangle',.32,90);noise(t,.05,.2,700,.8,'lowpass');},
-    move:function(t){tone(240,t,.07,'triangle',.26,120);noise(t,.04,.14,900,.8,'lowpass');},
-    stone:function(t){tone(1150,t,.05,'sine',.2,700);noise(t,.03,.12,3500,1,'highpass');},
-    win:function(t,big){var q=[523,659,784,1047,1319],c=big?5:4;for(var i=0;i<c;i++)tone(q[i],t+i*.09,.28,'triangle',.18);tone(1047,t+c*.09,.5,'sine',.12);if(big)for(var j=0;j<4;j++)tone(2400+j*300,t+.1+j*.07,.08,'sine',.07);},
-    lose:function(t){tone(392,t,.28,'sawtooth',.08,370);tone(330,t+.22,.28,'sawtooth',.08,310);tone(262,t+.44,.5,'sawtooth',.09,230);},
-    tie:function(t){tone(520,t,.18,'triangle',.12);tone(520,t+.2,.18,'triangle',.12);},
-    start:function(t){tone(659,t,.14,'sine',.15);tone(988,t+.13,.28,'sine',.15);},
-    error:function(t){tone(150,t,.18,'square',.07);}
-  };
-  function play(name,cool,arg){if(!can(name,cool))return;try{S[name](ctx.currentTime+.005,arg);}catch(e){}}
-  var api={
-    get on(){return on;},
-    init:init,
-    lastAny:function(){return lastAny;},
-    toggle:function(){on=!on;try{localStorage.setItem('cassino_sfx',on?'on':'off');}catch(e){}if(on){init();play('click',0);}return on;},
-    click:function(){play('click',30);},
-    tick:function(){play('tick',60);},
-    card:function(){play('card',60);},
-    deal:function(n){if(!on||!init())return;for(var i=0;i<(n||2);i++)(function(i){setTimeout(function(){play('card',0);},i*110);})(i);},
-    shuffle:function(){play('shuffle',300);},
-    chip:function(){play('chip',90);},
-    dice:function(){play('dice',400);},
-    tile:function(){play('tile',120);},
-    move:function(){play('move',120);},
-    stone:function(){play('stone',120);},
-    win:function(d){play('win',1500,(d||0)>=10);},
-    lose:function(){play('lose',1500);},
-    tie:function(){play('tie',1500);},
-    start:function(){play('start',800);},
-    error:function(){play('error',300);},
-    // ações do multiplayer (minhas e do adversário)
-    action:function(a){
-      if(a==='dice_rolled')return api.dice();
-      if(a==='domino_play'||a==='domino_played')return api.tile();
-      if(a==='domino_draw'||a==='domino_drew'||a==='pife_draw'||a==='pife_drew'||a==='pife_draw_discard'||a==='pife_discard')return api.card();
-      if(a==='dama_move'||a==='dama_update'||a==='xadrez_move'||a==='xadrez_update')return api.move();
-      if(a==='go_move')return api.stone();
-      if(/_pass$/.test(a))return api.tick();
-      if(a==='poker_action')return api.chip();
-      if(a==='poker_deal')return api.deal(2);
-      if(a==='poker_community')return api.card();
-      if(a==='pife_invalid')return api.error();
-    },
-    fromLog:function(m){
-      var s=String(m||'');
-      if(/IA foldou|vit[oó]ria|\+\d/i.test(s))api.win(3);
-      else if(/derrota|perdeu|bust|IA ganhou|\s-\d/i.test(s))api.lose();
-      else if(/empate/i.test(s))api.tie();
-    },
-    attach:function(s,uid){
-      var oe=s.emit.bind(s);
-      s.emit=function(ev,p){
-        if(ev==='game_action'&&p&&p.action&&!/_init$|bet_|rules|decks|draw_offer|draw_accept|draw_decline|forfeit|resign|confirm|declare/.test(p.action))api.action(p.action);
-        return oe.apply(null,arguments);
-      };
-      s.on('game_action',function(e){if(e&&e.action&&e.uid!==uid)api.action(e.action);});
-      s.on('game_start',function(){api.start();});
-      s.on('game_result',function(r){if(!r)return;if(uid===r.winnerId)api.win(10);else if(uid===r.loserId)api.lose();});
-    }
-  };
-  return api;
-})();
-(function(){
-  document.addEventListener('pointerdown',function(){SFX.init();},{passive:true});
-  // som de clique em qualquer botão, sem atrapalhar os sons específicos de cada jogo
-  document.addEventListener('click',function(e){
-    var el=e.target&&e.target.closest&&e.target.closest('button');
-    if(!el||el.id==='sfxBtn'||!SFX.on)return;
-    var t0=performance.now();
-    setTimeout(function(){if(SFX.lastAny()<t0)SFX.click();},45);
-  },true);
-  function mk(){
-    if(document.getElementById('sfxBtn'))return;
-    var b=document.createElement('button');b.id='sfxBtn';b.setAttribute('aria-label','Ligar ou desligar o som');
-    b.style.cssText='position:fixed;left:8px;bottom:calc(74px + env(safe-area-inset-bottom,0px));width:34px;height:34px;padding:0;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.55);color:#fff;font-size:16px;line-height:32px;text-align:center;z-index:9000;opacity:.7;cursor:pointer';
-    var up=function(){b.textContent=SFX.on?'🔊':'🔇';};up();
-    b.onclick=function(){SFX.toggle();up();};
-    document.body.appendChild(b);
-  }
-  if(document.body)mk();else document.addEventListener('DOMContentLoaded',mk);
-})();
-
 function Card({card,hidden,W=68,H=96,glow,isNew,onClick}){
   if(!card)return null;
   const isRed=RED.has(card.s),nv=parseInt(card.r),pips=PIP[nv]||[];
@@ -891,11 +763,11 @@ function Blackjack({chips,onChange,log,mode}){
   const BET_OPTS=[10,20,50,100,200,500];
   useEffect(()=>{setDeck(mkDeck(2));},[]);
   const flashNew=idx=>{setNewCardIdx(idx);setTimeout(()=>setNewCardIdx(null),1500);};
-  const addBet=v=>{SFX.chip();setBet(b=>b+v);};
+  const addBet=v=>{setBet(b=>b+v);};
   const clearBet=()=>{setBet(0);};
-  const deal=()=>{if(!bet)return;SFX.deal(4);const d=[...deck];const p=[d.pop(),d.pop()],dl=[d.pop(),d.pop()];setDeck(d);setPlayer(p);setDealer(dl);setRevealed(false);flashNew(1);if(hVal(p)===21){setTimeout(()=>resolve(d,p,dl),400);setPhase("dealer");}else setPhase("play");};
-  const hit=()=>{SFX.card();const d=[...deck],p=[...player,d.pop()];setDeck(d);setPlayer(p);flashNew(p.length-1);if(hVal(p)>21){setResult("💥 Bust!");setPhase("result");log("❌ BJ Bust!");}};
-  const stand=()=>{SFX.card();setPhase("dealer");resolve(deck,player,dealer);};
+  const deal=()=>{if(!bet)return;const d=[...deck];const p=[d.pop(),d.pop()],dl=[d.pop(),d.pop()];setDeck(d);setPlayer(p);setDealer(dl);setRevealed(false);flashNew(1);if(hVal(p)===21){setTimeout(()=>resolve(d,p,dl),400);setPhase("dealer");}else setPhase("play");};
+  const hit=()=>{const d=[...deck],p=[...player,d.pop()];setDeck(d);setPlayer(p);flashNew(p.length-1);if(hVal(p)>21){setResult("💥 Bust!");setPhase("result");log("❌ BJ Bust!");}};
+  const stand=()=>{setPhase("dealer");resolve(deck,player,dealer);};
   const resolve=(d,p,dl)=>{
     setRevealed(true);let dd=[...d],hand=[...dl];
     while(hVal(hand)<17)hand.push(dd.pop());
@@ -1003,7 +875,7 @@ function Dados({chips,onChange,log}){
   const addBet=v=>{if(chips<v)return;setBet(b=>b+v);onChange(-v);};
   const clearBet=()=>{setBet(0);};
 
-  const rolarDados=()=>{SFX.dice();
+  const rolarDados=()=>{
     setRolling(true);setResult('');setTotal(null);
     let count=0;
     const interval=setInterval(()=>{
@@ -1152,7 +1024,7 @@ function Pife({chips,onChange,log,mode}){
   const [dragIdx,setDragIdx]=useState(null);
   const [dragOver,setDragOver]=useState(null);
 
-  const start=(decks)=>{SFX.shuffle();setTimeout(()=>SFX.deal(5),350);
+  const start=(decks)=>{
     if(chips<COST)return;
     onChange(-COST);
     setConfig({bet:COST,decks});
@@ -1161,9 +1033,9 @@ function Pife({chips,onChange,log,mode}){
     setPhase("draw");setMsg("Sua vez: compre do monte ou do descarte.");
   };
 
-  const drawDeck=()=>{if(phase!=="draw"||!deck.length)return;SFX.card();const d=[...deck],c=d.pop();setDeck(d);setPh(h=>{const nh=[...h,c];flashNew(nh.length-1);return nh;});setPhase("meld");setMsg("Descarte uma carta!");};
-  const drawDisc=()=>{if(phase!=="draw"||!disc.length)return;SFX.card();const c=disc[disc.length-1];setDisc(d=>d.slice(0,-1));setPh(h=>{const nh=[...h,c];flashNew(nh.length-1);return nh;});setPhase("meld");setMsg("Descarte uma carta!");};
-  const discard=idx=>{SFX.card();
+  const drawDeck=()=>{if(phase!=="draw"||!deck.length)return;const d=[...deck],c=d.pop();setDeck(d);setPh(h=>{const nh=[...h,c];flashNew(nh.length-1);return nh;});setPhase("meld");setMsg("Descarte uma carta!");};
+  const drawDisc=()=>{if(phase!=="draw"||!disc.length)return;const c=disc[disc.length-1];setDisc(d=>d.slice(0,-1));setPh(h=>{const nh=[...h,c];flashNew(nh.length-1);return nh;});setPhase("meld");setMsg("Descarte uma carta!");};
+  const discard=idx=>{
     if(phase!=="meld")return;
     const c=ph[idx],nh=ph.filter((_,i)=>i!==idx);
     setPh(nh);setDisc(d=>[...d,c]);setNewCardIdx(null);
@@ -1430,7 +1302,7 @@ function Dominoes({chips,onChange,log,mode}){
     setMsg(`Sua vez! ${np} jogadores — você e ${np-1} IA(s).`);
   };
 
-  const playTile=t=>{SFX.tile();
+  const playTile=t=>{
     if(turn!=="p"||phase!=="play")return;
     if(!canPlay(t,chain)){setMsg("Não encaixa!");return;}
     const nc=addToChain(t,chain),nh=ph.filter(x=>x.id!==t.id);
@@ -1451,7 +1323,7 @@ function Dominoes({chips,onChange,log,mode}){
     setTimeout(()=>aiTurn(nc,0,nis=>{ setAis(nis); aiContinue(nc,nis,1,nh); }),700);
   };
 
-  const aiTurn=(ch,idx,cb)=>{SFX.tile();
+  const aiTurn=(ch,idx,cb)=>{
     const a=[...ais];
     const hand=a[idx]||[];
     const playable=hand.filter(t=>canPlay(t,ch));
@@ -1492,7 +1364,7 @@ function Dominoes({chips,onChange,log,mode}){
     },600);
   };
 
-  const draw=()=>{SFX.card();
+  const draw=()=>{
     if(!by.length){setMsg("Monte vazio!");return;}
     const t=by[0],nb=by.slice(1),nh=[...ph,t];
     setPh(nh);setBy(nb);
@@ -4884,20 +4756,31 @@ function findKing(board,col){
   return null;
 }
 
-function isInCheck(board,col){
-  const king=findKing(board,col); if(!king) return false;
-  const opp=col==='w'?'b':'w';
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-    if(board[r][c]?.col===opp){
-      const ms=getChessMoves(board,r,c);
-      if(ms.some(m=>m.to[0]===king[0]&&m.to[1]===king[1]))return true;
-    }
-  }
+const _N_D=[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const _K_D=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const _DIAG=[[-1,-1],[-1,1],[1,-1],[1,1]], _ORTH=[[-1,0],[1,0],[0,-1],[0,1]];
+// A casa (r,c) é atacada por peças da cor "by"? Olha direto as casas de ataque (sem gerar lances,
+// sem recursão: a versão antiga gerava os lances do rei inimigo, incluindo o roque, que chamava
+// isInCheck de novo e entrava em loop infinito quando os dois reis podiam rocar).
+function isSquareAttacked(board,r,c,by){
+  const pr=by==='w'?r+1:r-1;
+  for(const dc of[-1,1]){const x=board[pr]?.[c+dc];if(x&&x.col===by&&x.t==='P')return true;}
+  for(const[dr,dc]of _N_D){const x=board[r+dr]?.[c+dc];if(x&&x.col===by&&x.t==='N')return true;}
+  for(const[dr,dc]of _K_D){const x=board[r+dr]?.[c+dc];if(x&&x.col===by&&x.t==='K')return true;}
+  for(const[dr,dc]of _DIAG){let nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<8&&nc>=0&&nc<8){const x=board[nr][nc];if(x){if(x.col===by&&(x.t==='B'||x.t==='Q'))return true;break;}nr+=dr;nc+=dc;}}
+  for(const[dr,dc]of _ORTH){let nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<8&&nc>=0&&nc<8){const x=board[nr][nc];if(x){if(x.col===by&&(x.t==='R'||x.t==='Q'))return true;break;}nr+=dr;nc+=dc;}}
   return false;
 }
 
+function isInCheck(board,col){
+  const king=findKing(board,col); if(!king) return false;
+  return isSquareAttacked(board,king[0],king[1],col==='w'?'b':'w');
+}
+
 function applyChessMove(board,mv,promo='Q'){
-  const nb=board.map(r=>r.map(c=>c?{...c}:null));
+  const nb=board.map(r=>r.slice());   // peças não são alteradas no lugar, então podem ser compartilhadas
   const p={...nb[mv.from[0]][mv.from[1]]};
   nb[mv.from[0]][mv.from[1]]=null;
   if(mv.ep&&mv.capAt)nb[mv.capAt[0]][mv.capAt[1]]=null;
@@ -4943,24 +4826,31 @@ function evalChess(board){
   return s;
 }
 
+let _chessDeadline=0,_chessAbort=false,_chessNodes=0;
+function chessOrder(board,moves){
+  // capturas valiosas por peças baratas primeiro (melhora muito a poda alfa-beta)
+  for(const m of moves){
+    const cap=board[m.to[0]][m.to[1]],mover=board[m.from[0]][m.from[1]];
+    m._o=(cap?(PIECE_VALUE[cap.t]||0)*10-(PIECE_VALUE[mover.t]||0)/10:0)+(m.promo?800:0)+(m.ep?1000:0);
+  }
+  moves.sort((a,b)=>b._o-a._o);
+}
+
 function minimaxChess(board,depth,alpha,beta,maximizing,ep,castling){
   if(depth===0)return evalChess(board);
+  if((++_chessNodes&255)===0&&Date.now()>_chessDeadline)_chessAbort=true;
+  if(_chessAbort)return 0;
   const col=maximizing?'w':'b';
   const moves=getAllChessMoves(board,col,ep,castling);
-  if(!moves.length)return isInCheck(board,col)?(maximizing?-50000:50000):0;
-  // Ordena capturas primeiro
-  moves.sort((a,b)=>{
-    const va=board[a.to[0]][a.to[1]]?PIECE_VALUE[board[a.to[0]][a.to[1]].t]||0:0;
-    const vb=board[b.to[0]][b.to[1]]?PIECE_VALUE[board[b.to[0]][b.to[1]].t]||0:0;
-    return vb-va;
-  });
+  if(!moves.length)return isInCheck(board,col)?(maximizing?-50000-depth:50000+depth):0;
+  chessOrder(board,moves);
   if(maximizing){
     let best=-Infinity;
     for(const mv of moves){
       const nb=applyChessMove(board,mv);
       const ep2=mv.double?[mv.to[0]+(mv.from[0]===6?1:-1),mv.to[1]]:null;
       best=Math.max(best,minimaxChess(nb,depth-1,alpha,beta,false,ep2,castling));
-      alpha=Math.max(alpha,best); if(beta<=alpha)break;
+      alpha=Math.max(alpha,best); if(beta<=alpha||_chessAbort)break;
     }
     return best;
   } else {
@@ -4969,26 +4859,39 @@ function minimaxChess(board,depth,alpha,beta,maximizing,ep,castling){
       const nb=applyChessMove(board,mv);
       const ep2=mv.double?[mv.to[0]+(mv.from[0]===1?1:-1),mv.to[1]]:null;
       best=Math.min(best,minimaxChess(nb,depth-1,alpha,beta,true,ep2,castling));
-      beta=Math.min(beta,best); if(beta<=alpha)break;
+      beta=Math.min(beta,best); if(beta<=alpha||_chessAbort)break;
     }
     return best;
   }
 }
 
-function bestChessMove(board,col,ep,castling){
+// Aprofundamento iterativo com limite de tempo: joga o melhor lance da maior profundidade que terminou
+function bestChessMove(board,col,ep,castling,maxMs=1200){
   const moves=getAllChessMoves(board,col,ep,castling);
   if(!moves.length)return null;
-  // Embaralha para variedade
+  const clean=m=>{const{_o,...r}=m;return r;};
+  if(moves.length===1)return clean(moves[0]);
   for(let i=moves.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[moves[i],moves[j]]=[moves[j],moves[i]];}
   const max=col==='w';
-  let best=max?-Infinity:Infinity, bestMv=moves[0];
-  for(const mv of moves){
-    const nb=applyChessMove(board,mv);
-    const ep2=mv.double?[mv.to[0]+(mv.from[0]===(col==='w'?6:1)?1:-1),mv.to[1]]:null;
-    const s=minimaxChess(nb,3,-Infinity,Infinity,!max,ep2,castling);
-    if(max?s>best:s<best){best=s;bestMv=mv;}
+  _chessDeadline=Date.now()+maxMs;_chessAbort=false;_chessNodes=0;
+  let bestMv=moves[0];
+  for(let depth=1;depth<=4;depth++){
+    chessOrder(moves.length?board:board,moves);
+    if(depth>1){const k=moves.indexOf(bestMv);if(k>0){moves.splice(k,1);moves.unshift(bestMv);}}
+    let alpha=-Infinity,beta=Infinity,bestScore=max?-Infinity:Infinity,iterBest=null;
+    for(const mv of moves){
+      const nb=applyChessMove(board,mv);
+      const ep2=mv.double?[mv.to[0]+(mv.from[0]===(col==='w'?6:1)?1:-1),mv.to[1]]:null;
+      const s=minimaxChess(nb,depth-1,alpha,beta,!max,ep2,castling);
+      if(_chessAbort)break;
+      if(max?s>bestScore:s<bestScore){bestScore=s;iterBest=mv;}
+      if(max)alpha=Math.max(alpha,bestScore);else beta=Math.min(beta,bestScore);
+    }
+    if(_chessAbort)break;            // iteração incompleta: descarta
+    if(iterBest)bestMv=iterBest;
+    if(Math.abs(bestScore)>=49000)break;   // mate encontrado
   }
-  return bestMv;
+  return clean(bestMv);
 }
 
 
@@ -5016,7 +4919,7 @@ function Dama({chips,onChange,log,mode}){
   const selRef=useRef(null);
   const chainRef=useRef(null);
 
-  const syncBoard=(b)=>{ SFX.move(); boardRef.current=b; setBoard(b); };
+  const syncBoard=(b)=>{ boardRef.current=b; setBoard(b); };
   const syncSel=(v)=>{ selRef.current=v; setSel(v); };
   const syncLegal=(v)=>{ legalRef.current=v; setLegal(v); };
   const syncChain=(v)=>{ chainRef.current=v; setChain(v); };
@@ -5306,7 +5209,7 @@ function Xadrez({chips,onChange,log,mode}){
     return{nb,ep2,nc2};
   };
 
-  const afterMove=(nb,ep2,nc2,nextCol)=>{SFX.move();
+  const afterMove=(nb,ep2,nc2,nextCol)=>{
     setBoard(nb); setCastling(nc2); setEnPassant(ep2); setMoveCount(n=>n+1);
     const oMoves=getAllChessMoves(nb,nextCol,ep2,nc2);
     if(!oMoves.length){
@@ -5326,7 +5229,9 @@ function Xadrez({chips,onChange,log,mode}){
       setStatus(chk?'⚠️ Xeque! IA pensando...':'⏳ IA pensando...');
       setTurn('b'); setAiThinking(true);
       setTimeout(()=>{
-        const aiMv=bestChessMove(nb,'b',ep2,nc2);
+        let aiMv=null;
+        try{aiMv=bestChessMove(nb,'b',ep2,nc2);}
+        catch(e){console.error('IA xadrez:',e);const lm=getAllChessMoves(nb,'b',ep2,nc2);aiMv=lm.length?lm[Math.floor(Math.random()*lm.length)]:null;}
         if(!aiMv){setStatus('½ Empate!');setOver(true);setAiThinking(false);return;}
         const{nb:nb2,ep2:ep3,nc2:nc3}=doMove(nb,aiMv,ep2,nc2);
         setBoard(nb2); setCastling(nc3); setEnPassant(ep3); setLastMove(aiMv); setMoveCount(n=>n+1);
@@ -5339,7 +5244,7 @@ function Xadrez({chips,onChange,log,mode}){
           setTurn('w');
         }
         setAiThinking(false);
-      },600);
+      },150);
     } else {
       setStatus(isInCheck(nb,'w')?'⚠️ Você está em xeque!':'Sua vez ⬜');
       setTurn('w');
@@ -5720,7 +5625,7 @@ function Poker({chips,onChange,log,mode}){
   function redraw(){setTick(function(t){return t+1;});}
   function ok(g){return g.ap===3&&g.pbr===g.abr;}
 
-  function deal(dealer,ps,as){SFX.shuffle();setTimeout(()=>SFX.deal(4),300);
+  function deal(dealer,ps,as){
     var d=pkMakeDeck();
     var pSB=dealer==='player';
     var pB=pSB?SB:BB,aB=pSB?BB:SB;
@@ -5738,7 +5643,7 @@ function Poker({chips,onChange,log,mode}){
     setScreen('playing');
   }
 
-  function advStreet(){SFX.card();
+  function advStreet(){
     var g=G.current;
     var nd=[...g.deck],nc=[...g.comm],next;
     if(g.street==='preflop'){nd.pop();nc.push(nd.pop(),nd.pop(),nd.pop());next='flop';}
@@ -5787,20 +5692,20 @@ function Poker({chips,onChange,log,mode}){
   }
 
   // ── Ações do jogador ──
-  function pFold(){SFX.click();
+  function pFold(){
     var g=G.current;
     G.current={...g,as:g.as+g.pot,street:'showdown',acting:null,result:{winner:'ai',reason:'Você desistiu.',ph:null,ah:null,nps:g.ps,nas:g.as+g.pot}};
     log('♠ Poker — fold');redraw();
   }
 
-  function pCheck(){SFX.tick();
+  function pCheck(){
     var g=G.current;
     var ng={...g,ap:g.ap|1};
     if(ok(ng)){G.current={...ng,acting:null};redraw();setTimeout(advStreet,500);}
     else{G.current={...ng,acting:'ai'};redraw();setTimeout(runAI,800);}
   }
 
-  function pCall(){SFX.chip();
+  function pCall(){
     var g=G.current;
     var pay=Math.min(g.cb-g.pbr,g.ps);
     var ng={...g,ps:g.ps-pay,pot:g.pot+pay,pbr:g.pbr+pay,ap:g.ap|1};
@@ -5808,7 +5713,7 @@ function Poker({chips,onChange,log,mode}){
     else{G.current={...ng,acting:'ai'};redraw();setTimeout(runAI,800);} // BB option pré-flop
   }
 
-  function pAggress(total){SFX.chip();
+  function pAggress(total){
     var g=G.current;
     var minTotal=canCheck2(g)?BB:(g.cb+Math.max(BB,1));
     var t=Math.max(minTotal,total);
@@ -6086,7 +5991,7 @@ function Go({chips,onChange,log,mode}){
     setDeadStones([]);
   }
 
-  function placeStone(r,c){SFX.stone();
+  function placeStone(r,c){
     if(phase!=='play'||turn!=='B'||thinking)return;
     if(!goLegal(board,r,c,'B',prevBoard,N)){setMsg('Movimento ilegal!');return;}
     var nb=copyBoard(board);
@@ -6130,7 +6035,7 @@ function Go({chips,onChange,log,mode}){
     },600+Math.random()*400);
   }
 
-  function pass(){SFX.tick();
+  function pass(){
     if(phase!=='play'||turn!=='B'||thinking)return;
     var newPass=passCount+1;
     if(newPass>=2){enterScoring(board);return;}
@@ -6772,7 +6677,7 @@ function GoOnline({socket,room,userData,onGameOver}){
 }
 
 
-function DonateModal({onClose,userName}){
+function DonateModal({onClose,userName,onMural}){
   const [step,setStep]=React.useState("form");           // form | pay | done
   const [mural,setMural]=React.useState(null);
   const [form,setForm]=React.useState({name:userName||"",amount:"10",message:"",showAmount:false});
@@ -6786,17 +6691,26 @@ function DonateModal({onClose,userName}){
   // Depois de gerar o Pix, consulta o servidor a cada 4s até o pagamento ser detectado (máx. 15 min)
   React.useEffect(()=>{
     if(step!=="pay"||!qr)return;
-    let stop=false;const t0=Date.now();
-    const iv=setInterval(async()=>{
-      if(stop||Date.now()-t0>15*60*1000){clearInterval(iv);return;}
+    let stop=false,timer=null;const t0=Date.now();
+    const check=async()=>{
+      if(stop)return;
       try{
         const t=await auth.currentUser.getIdToken();
         const r=await fetch(`${BACKEND_URL}/api/donations/${qr.id}/status`,{headers:{Authorization:"Bearer "+t}});
         const j=await r.json();
-        if(j.status==="confirmed"){stop=true;clearInterval(iv);setStep("done");SFX.win(10);setTimeout(loadMural,800);}
+        if(j.status==="confirmed"&&!stop){stop=true;clearTimeout(timer);setStep("done");setTimeout(loadMural,800);}
       }catch{}
-    },4000);
-    return()=>{stop=true;clearInterval(iv);};
+    };
+    // 4s nos primeiros 10 min, depois 15s, até 2h (o Pix vale 24h)
+    const loop=()=>{
+      if(stop||Date.now()-t0>2*60*60*1000)return;
+      timer=setTimeout(async()=>{await check();loop();},Date.now()-t0<10*60*1000?4000:15000);
+    };
+    // Ao voltar do app do banco o navegador pode ter pausado os timers: confere na hora
+    const onVis=()=>{if(document.visibilityState==="visible")check();};
+    document.addEventListener("visibilitychange",onVis);window.addEventListener("focus",onVis);
+    loop();
+    return()=>{stop=true;clearTimeout(timer);document.removeEventListener("visibilitychange",onVis);window.removeEventListener("focus",onVis);};
   },[step,qr]);
   const copy=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),2000);}catch{window.prompt("Copie:",txt);}};
   const pickPhoto=(e)=>{
@@ -6826,8 +6740,7 @@ function DonateModal({onClose,userName}){
     }catch{setErr("Servidor acordando, tente de novo em 1 minuto.");}
     setLoading(false);
   };
-  const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:DONATE_GOAL.atual;
-  const pct=Math.min(100,Math.round((atual/DONATE_GOAL.meta)*100));
+  const atual=mural&&typeof mural.totalMes==="number"?mural.totalMes:0;
   const inp={width:"100%",boxSizing:"border-box",padding:"10px",marginBottom:6,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:8,color:"#fff",fontSize:13,outline:"none"};
   const lab={color:"rgba(255,255,255,.5)",fontSize:11,margin:"8px 0 3px"};
   const btn={width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:8};
@@ -6839,13 +6752,8 @@ function DonateModal({onClose,userName}){
         <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.6,marginBottom:12}}>
           O jogo é grátis e as fichas são virtuais. Sua doação voluntária ajuda a manter o servidor do multiplayer e os jogos tradicionais no ar.
         </div>
-        <div style={{background:"rgba(255,255,255,.04)",borderRadius:10,padding:10,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:6}}>
-            <span>Meta: {DONATE_GOAL.desc}</span><span>R$ {atual.toFixed(0)} / R$ {DONATE_GOAL.meta}</span>
-          </div>
-          <div style={{height:6,background:"rgba(255,255,255,.08)",borderRadius:3,overflow:"hidden"}}>
-            <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#e74c8b,#f1c40f)"}}/>
-          </div>
+        <div style={{background:"rgba(255,255,255,.04)",borderRadius:10,padding:"8px 10px",marginBottom:12,color:"rgba(255,255,255,.6)",fontSize:12}}>
+          💖 Arrecadado este mês: <b style={{color:"#f1c40f"}}>R$ {atual.toFixed(2).replace(".",",")}</b>
         </div>
 
         {step==="form"&&(
@@ -6895,22 +6803,92 @@ function DonateModal({onClose,userName}){
           <div style={{marginBottom:12,padding:14,background:"rgba(46,204,113,.08)",border:"1px solid rgba(46,204,113,.3)",borderRadius:10}}>
             <div style={{fontSize:32}}>🎉</div>
             <div style={{color:"#2ecc71",fontWeight:900,fontSize:15,margin:"4px 0"}}>Doação recebida!</div>
-            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.5}}>Muito obrigado por apoiar o projeto! ❤️ Você já aparece no mural abaixo.</div>
+            <div style={{color:"rgba(255,255,255,.6)",fontSize:12,lineHeight:1.5}}>Muito obrigado por apoiar o projeto! ❤️ Você já aparece no mural de apoiadores.</div>
           </div>
         )}
 
-        <div style={{textAlign:"left",marginBottom:12}}>
-          <div style={{color:"#e74c8b",fontSize:12,fontWeight:800,marginBottom:6}}>💖 MURAL DE APOIADORES</div>
-          {!mural?<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Carregando...</div>
-            :mural.apoiadores&&mural.apoiadores.length?mural.apoiadores.slice(0,15).map((a,i)=>(
-              <div key={i} style={{padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.05)",fontSize:12,color:"#ddd"}}>
-                {a.avatarUrl?<img alt="" src={BACKEND_URL+a.avatarUrl} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",verticalAlign:"middle",marginRight:6}}/>:"❤️ "}<b>{a.name}</b>{a.amount?<span style={{color:"#f1c40f"}}> · R$ {Number(a.amount).toFixed(2).replace(".",",")}</span>:null}
-                {a.message?<div style={{color:"rgba(255,255,255,.4)",fontSize:11,marginLeft:20}}>{a.message}</div>:null}
-              </div>))
-            :<div style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Seja o primeiro a apoiar!</div>}
-        </div>
+        {onMural&&<button onClick={onMural} style={{width:"100%",padding:"10px",marginBottom:8,background:"rgba(231,76,139,.08)",border:"1px solid rgba(231,76,139,.35)",borderRadius:10,color:"#e74c8b",fontSize:12,fontWeight:800,cursor:"pointer"}}>💖 VER MURAL DE APOIADORES</button>}
         <button onClick={onClose} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,color:"#777",fontSize:12,cursor:"pointer"}}>FECHAR</button>
       </div>
+    </div>
+  );
+}
+
+function MuralPage({onDonate}){
+  const PAGE=20;
+  const [d,setD]=React.useState(null);          // {totalMes,total,top}
+  const [items,setItems]=React.useState([]);
+  const [hasMore,setHasMore]=React.useState(false);
+  const [more,setMore]=React.useState(false);
+  const [fail,setFail]=React.useState(false);
+  const brl=v=>Number(v).toFixed(2).replace(".",",");
+  const fetchPage=(offset)=>fetch(`${BACKEND_URL}/api/donations/public?offset=${offset}&limit=${PAGE}`).then(r=>{if(!r.ok)throw new Error("http");return r.json();});
+  const load=()=>{
+    setFail(false);
+    fetchPage(0).then(j=>{setD(j);setItems(j.apoiadores||[]);setHasMore(!!j.hasMore);}).catch(()=>setFail(true));
+  };
+  React.useEffect(()=>{load();},[]);
+  const loadMore=()=>{
+    if(more)return;
+    setMore(true);
+    fetchPage(items.length).then(j=>{
+      setItems(prev=>{const seen=new Set(prev.map(x=>x.id));return prev.concat((j.apoiadores||[]).filter(x=>!seen.has(x.id)));});
+      setHasMore(!!j.hasMore);
+    }).catch(()=>{}).finally(()=>setMore(false));
+  };
+  const foto=(a,sz)=>a.avatarUrl
+    ?<img alt="" src={BACKEND_URL+a.avatarUrl} style={{width:sz,height:sz,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+    :<div style={{width:sz,height:sz,borderRadius:"50%",background:"rgba(231,76,139,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.45,flexShrink:0}}>❤️</div>;
+  const top=d&&d.top?d.top:[];
+  return(
+    <div style={{padding:"16px 12px",maxWidth:500,margin:"0 auto",animation:"fadeIn .4s ease"}}>
+      <div style={{textAlign:"center",marginBottom:14}}>
+        <div style={{fontSize:38}}>💖</div>
+        <div style={{color:"#f1c40f",fontSize:18,fontWeight:900,fontFamily:"'Cinzel',Georgia,serif",letterSpacing:1}}>MURAL DE APOIADORES</div>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:4,lineHeight:1.5}}>Obrigado a quem ajuda a manter o servidor no ar!</div>
+      </div>
+      <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",borderRadius:12,padding:12,marginBottom:12,textAlign:"center"}}>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Arrecadado este mês</div>
+        <div style={{color:"#f1c40f",fontSize:22,fontWeight:900}}>R$ {brl(d&&typeof d.totalMes==="number"?d.totalMes:0)}</div>
+        {d&&d.total>0&&<div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginTop:2}}>{d.total} {d.total===1?"apoio":"apoios"} no total</div>}
+      </div>
+      <button onClick={onDonate} style={{width:"100%",padding:"13px",background:"linear-gradient(135deg,#e74c8b,#b0306a)",border:"none",borderRadius:10,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",marginBottom:14}}>❤️ APOIAR O PROJETO</button>
+      {top.length>0&&(
+        <div style={{background:"linear-gradient(135deg,rgba(241,196,15,.08),rgba(231,76,139,.06))",border:"1px solid rgba(241,196,15,.3)",borderRadius:12,padding:12,marginBottom:14}}>
+          <div style={{color:"#f1c40f",fontSize:12,fontWeight:900,letterSpacing:1,marginBottom:6}}>🏆 MAIORES APOIADORES</div>
+          {top.map((a,i)=>(
+            <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,.06)":"none"}}>
+              <span style={{width:26,textAlign:"center",fontSize:i<3?20:13,color:"#f1c40f",fontWeight:900}}>{["🥇","🥈","🥉","4º","5º"][i]}</span>
+              {foto(a,32)}
+              <span style={{flex:1,minWidth:0,color:"#fff",fontSize:13,fontWeight:800,wordBreak:"break-word"}}>{a.name}</span>
+              <span style={{color:"#f1c40f",fontSize:13,fontWeight:800}}>R$ {brl(a.amount)}</span>
+            </div>))}
+          <div style={{color:"rgba(255,255,255,.3)",fontSize:10,marginTop:6}}>Aparecem aqui só quem escolheu mostrar o valor e informou um nome.</div>
+        </div>
+      )}
+      {fail?(
+        <div style={{textAlign:"center",color:"rgba(255,255,255,.5)",fontSize:12,lineHeight:1.6}}>
+          Não consegui carregar o mural agora (o servidor pode estar acordando).
+          <button onClick={load} style={{display:"block",margin:"8px auto 0",padding:"8px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,.15)",background:"transparent",color:"#ddd",fontSize:12,cursor:"pointer"}}>Tentar de novo</button>
+        </div>
+      ):!d?(
+        <div style={{textAlign:"center",color:"rgba(255,255,255,.3)",fontSize:12}}>Carregando...</div>
+      ):items.length?(
+        <div>
+          <div style={{color:"rgba(255,255,255,.35)",fontSize:11,marginBottom:6}}>Mais recentes</div>
+          {items.map(a=>(
+            <div key={a.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",marginBottom:6,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.06)",borderRadius:10}}>
+              {foto(a,40)}
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{color:"#fff",fontSize:14,fontWeight:800,wordBreak:"break-word"}}>{a.name}{a.amount?<span style={{color:"#f1c40f",fontWeight:700}}> · R$ {brl(a.amount)}</span>:null}</div>
+                {a.message?<div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:2,wordBreak:"break-word"}}>{a.message}</div>:null}
+              </div>
+            </div>))}
+          {hasMore&&<button onClick={loadMore} disabled={more} style={{width:"100%",padding:"12px",marginTop:4,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.15)",borderRadius:10,color:"#ddd",fontWeight:800,fontSize:13,cursor:"pointer"}}>{more?"Carregando...":"Ver mais"}</button>}
+        </div>
+      ):(
+        <div style={{textAlign:"center",color:"rgba(255,255,255,.4)",fontSize:13,padding:"20px 0"}}>Seja o primeiro a apoiar! ❤️</div>
+      )}
     </div>
   );
 }
@@ -6934,7 +6912,7 @@ function App(){
     if(window.AdMobHelper) await window.AdMobHelper.showInterstitial();
   },[]);
 
-  const log=useCallback(m=>{SFX.fromLog(m);setFeed(f=>[m,...f.slice(0,29)]);},[]);
+  const log=useCallback(m=>setFeed(f=>[m,...f.slice(0,29)]),[]);
 
   useEffect(()=>{
     return auth.onAuthStateChanged(async u=>{
@@ -7037,7 +7015,6 @@ function App(){
       });
       s.on('chips_credited',({chips,message})=>{showToast(message);log(message);});
       s.on('error',({message})=>showToast(message,'error'));
-      SFX.attach(s,authUser&&authUser.uid);
       setSocket(s);
     }
     connect(token);
@@ -7055,7 +7032,6 @@ function App(){
 
   // onChange — sempre salva no Firestore (funciona nos dois modos)
   const onChange=useCallback(async delta=>{
-    if(delta>0)SFX.win(delta);else if(delta<0)SFX.chip();
     setUserData(d=>{
       if(!d) return d;
       const current = Math.max(0, d.chips||0);
@@ -7105,7 +7081,7 @@ function App(){
       if(r.ok){
         const n = j.chips||50;
         setUserData(d=>{const u={...d,chips:(d.chips||0)+n};localStorage.setItem('cassino_user_'+d.uid,JSON.stringify(u));return u;});
-        SFX.win(10);showToast('🎁 +'+n+' fichas grátis!','success');
+        showToast('🎁 +'+n+' fichas grátis!','success');
       }else if(r.status===429){
         const h=Math.max(1,Math.ceil((j.waitMs||0)/3600000));
         showToast('⏳ Próximas fichas grátis em cerca de '+h+'h','error');
@@ -7191,6 +7167,7 @@ function App(){
     {k:"singleplayer",i:"&#x1F916;",l:"Single"},
     {k:"lobby",i:"&#x1F30D;",l:"Multi"},
         {k:'shop_btn',i:'&#x1F4FA;',l:'Fichas'},
+    {k:'mural',i:'&#x1F496;',l:'Mural'},
   ];
 
   return(
@@ -7339,6 +7316,7 @@ function App(){
           </div>
         )}
         {GAMES[screen]}
+        {screen==='mural'&&<MuralPage onDonate={()=>setShowDonate(true)}/>}
         {screen==='lobby'&&<OnlineLobby socket={socket} chips={displayChips} userData={userData} onChange={onChange} onRefreshUser={setUserData}/>}
       </div>
 
@@ -7389,7 +7367,7 @@ function App(){
       </div>
     </div>
   )}
-  {showDonate&&<DonateModal userName={userData?.name} onClose={()=>setShowDonate(false)}/>}
+  {showDonate&&<DonateModal userName={userData?.name} onClose={()=>setShowDonate(false)} onMural={()=>{setShowDonate(false);setGameMode('offline');setScreen('mural');}}/>}
   {showProfile&&<ProfileScreen user={authUser} userData={userData} onSave={d=>setUserData(u=>({...u,...d}))} onClose={()=>setShowProfile(false)}/>}
       {showAbout&&<AboutScreen onClose={()=>setShowAbout(false)}/>}
     </div>

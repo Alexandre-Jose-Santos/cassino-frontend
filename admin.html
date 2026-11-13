@@ -41,6 +41,7 @@ async function load(st){
       const r=document.createElement('div');r.className='r';
       if(st==='pending'){r.append(btn('Confirmar','',()=>act(d.id,'confirm')),btn('Rejeitar','no',()=>act(d.id,'reject')))}
       if(d.avatar){if(!d.avatarOk)r.append(btn('Aprovar foto','',()=>act(d.id,'avatar',{approve:true})));r.append(btn('Remover foto','no',()=>act(d.id,'avatar',{approve:false})))}
+      r.append(btn('Apagar','no',()=>{if(confirm('Apagar esta doação de vez? Não dá para desfazer.'))act(d.id,'delete')}));
       if(r.children.length)c.append(r);
       box.append(c);
     });
