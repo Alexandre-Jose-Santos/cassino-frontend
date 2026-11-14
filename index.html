@@ -419,6 +419,75 @@ const PIP={1:[[50,50]],2:[[28,25],[72,75]],3:[[28,25],[50,50],[72,75]],4:[[28,25
 const CHIP_COLORS={1:"#e8e8e8",5:"#c0392b",10:"#2471a3",25:"#1e8449",50:"#7d3c98",100:"#ca6f1e",200:"#148f77",500:"#111"};
 // Fichas são virtuais: não têm valor em dinheiro, não são compradas nem sacadas.
 
+// ── SONS (sintetizados com Web Audio: sem arquivos de áudio, funcionam offline) ──
+const SFX=(()=>{
+  let ctx=null,master=null,muted=false;const last={};
+  try{muted=localStorage.getItem('cassino_sfx_muted')==='1';}catch(e){}
+  const AC=window.AudioContext||window.webkitAudioContext;
+  const ensure=()=>{
+    if(!AC)return null;
+    if(!ctx){ctx=new AC();master=ctx.createGain();master.gain.value=0.55;master.connect(ctx.destination);}
+    if(ctx.state==='suspended')ctx.resume().catch(()=>{});
+    return ctx;
+  };
+  const tone=(f,t,dur,type,vol,f2)=>{
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type=type||'sine';o.frequency.setValueAtTime(f,t);
+    if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);
+    g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+0.006);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+0.03);
+  };
+  const noise=(t,dur,vol,freq,q,type)=>{
+    const n=Math.max(1,Math.floor(ctx.sampleRate*dur)),buf=ctx.createBuffer(1,n,ctx.sampleRate),d=buf.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+    const s=ctx.createBufferSource();s.buffer=buf;
+    const f=ctx.createBiquadFilter();f.type=type||'bandpass';f.frequency.value=freq;f.Q.value=q||1;
+    const g=ctx.createGain();g.gain.value=vol;
+    s.connect(f);f.connect(g);g.connect(master);s.start(t);
+  };
+  const S={
+    click:t=>tone(950,t,0.04,'triangle',0.07),
+    move:t=>{tone(230,t,0.09,'sine',0.38,120);noise(t,0.04,0.14,1300,1.5);},                                   // peça apoiada na madeira
+    capture:t=>{tone(190,t,0.13,'sine',0.5,80);noise(t,0.07,0.28,900,1);tone(340,t+0.06,0.1,'triangle',0.22,200);},
+    card:t=>noise(t,0.09,0.24,3600,0.8,'highpass'),                                                           // carta deslizando
+    chip:t=>{tone(1900,t,0.07,'sine',0.2);tone(2700,t+0.035,0.1,'sine',0.14);},
+    dice:t=>{for(let i=0;i<6;i++)noise(t+i*0.055,0.035,0.2,1800+Math.random()*1500,2);},
+    check:t=>{tone(660,t,0.12,'square',0.12);tone(880,t+0.13,0.16,'square',0.12);},
+    turn:t=>{tone(784,t,0.1,'sine',0.15);tone(1175,t+0.09,0.16,'sine',0.12);},
+    error:t=>tone(150,t,0.18,'sawtooth',0.16,100),
+    win:t=>{[523,659,784,1047].forEach((f,i)=>tone(f,t+i*0.11,0.24,'triangle',0.26));tone(1047,t+0.46,0.55,'sine',0.2);},
+    lose:t=>{[392,349,311,262].forEach((f,i)=>tone(f,t+i*0.17,0.32,'sawtooth',0.12));},
+    draw:t=>{tone(440,t,0.2,'triangle',0.2);tone(440,t+0.24,0.32,'triangle',0.2);},
+  };
+  return {
+    get muted(){return muted;},
+    setMuted(m){muted=!!m;try{localStorage.setItem('cassino_sfx_muted',m?'1':'0');}catch(e){}},
+    unlock(){try{ensure();}catch(e){}},
+    play(name){
+      if(muted||!S[name])return;
+      const now=Date.now();if(now-(last[name]||0)<40)return;last[name]=now;   // evita rajada do mesmo som
+      try{
+        const c=ensure();if(!c)return;
+        if(c.state==='running')S[name](c.currentTime+0.005);
+        else c.resume().then(()=>{if(c.state==='running')S[name](c.currentTime+0.005);}).catch(()=>{});   // áudio ainda bloqueado: toca assim que liberar
+      }catch(e){}
+    },
+  };
+})();
+// O navegador só libera áudio depois do 1º toque: destrava e dá um "tique" discreto nos botões
+// No Android o áudio só é liberado por toque concluído (pointerup/touchend/click), não por pointerdown
+['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>SFX.unlock(),{capture:true,passive:true}));
+document.addEventListener('pointerdown',e=>{
+  const el=e.target&&e.target.closest?e.target.closest('button,[role=button],a'):null;
+  if(el)SFX.play('click');
+},{capture:true,passive:true});
+
+function useSfxOnChange(dep,fn){const first=React.useRef(true);React.useEffect(()=>{if(first.current){first.current=false;return;}fn();},[dep]);}
+function useSfxDelta(val,name,dir){const prev=React.useRef(val);React.useEffect(()=>{const p=prev.current;prev.current=val;if(dir>0?val>p:val<p)SFX.play(name);},[val]);}
+function useSfxResult(result){const prev=React.useRef(result);React.useEffect(()=>{if(result&&!prev.current){const w=result.outcome==='win'||result.win===true||result.won===true;const d=result.outcome==='tie'||result.draw===true;SFX.play(d?'draw':(w?'win':'lose'));}prev.current=result;},[result]);}
+function pieceCount(b){let n=0;if(!b)return 0;for(const r of b)for(const c of r)if(c)n++;return n;}
+function useSfxBoard(board){const ref=React.useRef(pieceCount(board));useSfxOnChange(board,()=>{const n=pieceCount(board),p=ref.current;ref.current=n;if(n>p)return;SFX.play(n<p?'capture':'move');});}
+
 // ── DOAÇÃO (Pix gerado pelo Asaas no servidor; nada a configurar aqui além da meta) ──
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
@@ -1019,6 +1088,9 @@ function Pife({chips,onChange,log,mode}){
   const [deck,setDeck]=useState([]),[ ph,setPh]=useState([]),[ ai,setAi]=useState([]),[ disc,setDisc]=useState([]),[ phase,setPhase]=useState("idle"),[ msg,setMsg]=useState(""),[ newCardIdx,setNewCardIdx]=useState(null);
   const [aiName]=useState(()=>AI_NAMES[Math.floor(Math.random()*AI_NAMES.length)]);
   const [aiAction,setAiAction]=useState(null); // {type:'deck'|'disc', card}
+  useSfxDelta(ph.length,'card',1);
+  useSfxDelta(ai.length,'card',1);
+  useSfxDelta(disc.length,'card',1);
   const flashNew=idx=>{setNewCardIdx(idx);setTimeout(()=>setNewCardIdx(null),1800);};
   // Arrastar cartas
   const [dragIdx,setDragIdx]=useState(null);
@@ -1039,7 +1111,7 @@ function Pife({chips,onChange,log,mode}){
     if(phase!=="meld")return;
     const c=ph[idx],nh=ph.filter((_,i)=>i!==idx);
     setPh(nh);setDisc(d=>[...d,c]);setNewCardIdx(null);
-    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");log(`🃏 Pife +${config.bet}`);return;}
+    if(groupHand(nh).dead.length===0){setPhase("over");setMsg("🎉 PIFE! Você ganhou!");SFX.play('win');log(`🃏 Pife +${config.bet}`);return;}
     setPhase("draw");setMsg("Vez da IA...");
     setTimeout(()=>{
       let a=[...ai],d=[...deck],ds=[...disc,c];
@@ -1063,7 +1135,7 @@ function Pife({chips,onChange,log,mode}){
       const{dead}=groupHand(a);let i2=dead.length?dead.reduce((m,i)=>cVal(a[i].r)>cVal(a[m].r)?i:m,dead[0]):a.length-1;
       const dc=a[i2];a=a.filter((_,i)=>i!==i2);ds=[...ds,dc];
       setDeck(d);setAi(a);setDisc(ds);
-      if(groupHand(a).dead.length===0){setPhase("over");setMsg(`😔 ${aiName} declarou Pife!`);log("🃏 Pife IA ganhou");return;}
+      if(groupHand(a).dead.length===0){setPhase("over");setMsg(`😔 ${aiName} declarou Pife!`);SFX.play("lose");log("🃏 Pife IA ganhou");return;}
       setPhase("draw");setMsg("Sua vez: compre do monte ou do descarte.");
     },1000);
   };
@@ -1275,6 +1347,9 @@ function Dominoes({chips,onChange,log,mode}){
   const [ph,setPh]=useState([]),[ ais,setAis]=useState([]),[ chain,setChain]=useState([]),[ by,setBy]=useState([]),[ turn,setTurn]=useState("p"),[ phase,setPhase]=useState("idle"),[ bet,setBet]=useState(0),[ msg,setMsg]=useState("");
   const [rules,setRules]=useState({duasPontas:1,bateDe4:1});
   const [lastWin,setLastWin]=useState(null);
+  useSfxDelta(chain.length,'move',1);
+  useSfxDelta(by.length,'card',-1);
+  useSfxOnChange(phase,()=>{if(phase==='over')SFX.play(/😔/.test(msg)?'lose':/🎉/.test(msg)?'win':'draw');});
 
   const canPlay=(t,ch)=>{if(!ch.length)return true;const l=ch[0].dA,r=ch[ch.length-1].dB;return t.a===l||t.b===l||t.a===r||t.b===r;};
   const addToChain=(t,ch)=>{const nc=[...ch];if(!nc.length){nc.push({dA:t.a,dB:t.b,id:t.id});return nc;}const l=nc[0].dA,r=nc[nc.length-1].dB;if(t.a===r)nc.push({dA:t.a,dB:t.b,id:t.id});else if(t.b===r)nc.push({dA:t.b,dB:t.a,id:t.id});else if(t.a===l)nc.unshift({dA:t.b,dB:t.a,id:t.id});else nc.unshift({dA:t.a,dB:t.b,id:t.id});return nc;};
@@ -1634,6 +1709,9 @@ function DominoOnline({socket,room,userData,onGameOver}){
     return nc;
   };
 
+  useSfxDelta(chain.length,'move',1);
+  useSfxDelta(stockCount,'card',-1);
+  useSfxResult(result);
   useEffect(()=>{
     if(!socket||initialized)return;
     setInitialized(true);
@@ -2083,6 +2161,10 @@ function PifeOnline({socket,room,userData,onGameOver}){
     return check(cards,0);
   };
 
+  useSfxDelta(hand.length,'card',1);
+  useSfxDelta(oppCount,'card',1);
+  useSfxDelta(Array.isArray(discard)?discard.length:0,'card',1);
+  useSfxResult(result);
   useEffect(()=>{
     if(!socket||initialized)return;
     setInitialized(true);
@@ -2482,6 +2564,8 @@ function DamaOnline({socket,room,userData,onGameOver}){
   const syncLegal=(v)=>{legalRef.current=v;setLegal(v);};
   const syncChain=(v)=>{chainRef.current=v;setChain(v);};
 
+  useSfxBoard(board);
+  useSfxResult(result);
   useEffect(()=>{
     socket.emit('game_action',{roomId:room.id,action:'dama_init',data:{}});
     const h=({action,data})=>{
@@ -2791,6 +2875,8 @@ function XadrezOnline({socket,room,userData,onGameOver}){
   const [lastMove,setLastMove]=useState(null);
   const [promoModal,setPromoModal]=useState(null);
 
+  useSfxBoard(board);
+  useSfxResult(result);
   useEffect(()=>{
     // Emite init para o servidor atribuir cores
     socket.emit('game_action',{roomId:room.id,action:'xadrez_init',data:{}});
@@ -2996,6 +3082,10 @@ function PokerOnline({socket,room,userData,onChange,onGameOver}){
 
   var stageLabel={'pre':'PRE-FLOP','flop':'FLOP','turn':'TURN','river':'RIVER','showdown':'SHOWDOWN'};
 
+  useSfxDelta(comm.length,'card',1);
+  useSfxDelta(hand.length,'card',1);
+  useSfxDelta(pot,'chip',1);
+  useSfxResult(result);
   useEffect(function(){
     if(!socket)return;
     function onAct(evt){
@@ -4912,6 +5002,8 @@ function Dama({chips,onChange,log,mode}){
   const [started,setStarted]=useState(false);
   const [lastMove,setLastMove]=useState(null);
   const [chain,setChain]=useState(null);   // [r,c] peça em cadeia de captura
+  useSfxBoard(board);
+  useSfxOnChange(over,()=>{if(over)SFX.play(/Você ganhou/.test(status)?'win':'lose');});
 
   // Refs para evitar stale closure
   const boardRef=useRef(null);
@@ -5173,6 +5265,10 @@ function Xadrez({chips,onChange,log,mode}){
   const [lastMove,setLastMove]=useState(null);
   const [captured,setCaptured]=useState({w:[],b:[]});
   const [moveCount,setMoveCount]=useState(0);
+  const _xCap=React.useRef(0);
+  useSfxOnChange(moveCount,()=>{const n=captured.w.length+captured.b.length;if(moveCount===0){_xCap.current=0;return;}SFX.play(n>_xCap.current?'capture':'move');_xCap.current=n;});
+  useSfxOnChange(status,()=>{if(!over&&/⚠️/.test(status))SFX.play('check');});
+  useSfxOnChange(over,()=>{if(over)SFX.play(/Você venceu/.test(status)?'win':/IA venceu/.test(status)?'lose':'draw');});
 
   const CELL=44;
 
@@ -5623,6 +5719,14 @@ function Poker({chips,onChange,log,mode}){
   var [raiseVal,setRaiseVal]=useState(BB*2);
   var [screen,setScreen]=useState('idle');
   function redraw(){setTick(function(t){return t+1;});}
+  var _pkS=useRef({pot:0,comm:0,hand:0});
+  useEffect(function(){
+    var g=G.current,p=_pkS.current;
+    if(g.hand!==p.hand){if(g.hand>0)SFX.play('card');}
+    else if(g.comm.length>p.comm)SFX.play('card');
+    if(g.pot>p.pot)SFX.play('chip');
+    p.pot=g.pot;p.comm=g.comm.length;p.hand=g.hand;
+  });
   function ok(g){return g.ap===3&&g.pbr===g.abr;}
 
   function deal(dealer,ps,as){
@@ -5685,6 +5789,7 @@ function Poker({chips,onChange,log,mode}){
     else if(cmp<0){winner='ai';reason='IA: '+pkHN(aV)+(sameRankHands?' vence'+kickerDesc(g.ph,g.ah,g.comm,false):' vence '+pkHN(pV));nps=g.ps;nas=g.as+g.pot;}
     else{winner='tie';reason='Empate! '+pkHN(pV)+' — kickers iguais';var h2=Math.floor(g.pot/2);nps=g.ps+h2;nas=g.as+(g.pot-h2);}
     G.current={...g,ps:nps,as:nas,street:'showdown',acting:null,result:{winner:winner,reason:reason,ph:pkHN(pV),ah:pkHN(aV),nps:nps,nas:nas}};
+    SFX.play(winner==='player'?'win':winner==='ai'?'lose':'draw');
     if(winner==='player')log('♠ Poker — vitória: '+pkHN(pV));
     else if(winner==='ai')log('♠ Poker — derrota');
     else log('♠ Poker — empate');
@@ -5695,7 +5800,7 @@ function Poker({chips,onChange,log,mode}){
   function pFold(){
     var g=G.current;
     G.current={...g,as:g.as+g.pot,street:'showdown',acting:null,result:{winner:'ai',reason:'Você desistiu.',ph:null,ah:null,nps:g.ps,nas:g.as+g.pot}};
-    log('♠ Poker — fold');redraw();
+    SFX.play('lose');log('♠ Poker — fold');redraw();
   }
 
   function pCheck(){
@@ -5738,7 +5843,7 @@ function Poker({chips,onChange,log,mode}){
 
     if(action==='fold'){
       G.current={...g,ps:g.ps+g.pot,street:'showdown',acting:null,result:{winner:'player',reason:'IA desistiu.',ph:null,ah:null,nps:g.ps+g.pot,nas:g.as}};
-      log('♠ Poker — IA foldou');redraw();return;
+      SFX.play('win');log('♠ Poker — IA foldou');redraw();return;
     }
 
     var nas=g.as,npot=g.pot,nabr=g.abr,ncb=g.cb,nap=g.ap;
@@ -5972,6 +6077,9 @@ function Go({chips,onChange,log,mode}){
   var [hoverCell,setHoverCell]=useState(null);
   var [scroll,setScroll]=useState({x:0,y:0});
   var [zoom,setZoom]=useState(1);
+  var _gCap=React.useRef(0);
+  useSfxOnChange(board,function(){var c=Object.values(caps||{}).reduce(function(a,b){return a+(+b||0)},0);SFX.play(c>_gCap.current?'capture':'move');_gCap.current=c;});
+  useSfxResult(result);
   var CELL=28*zoom;
 
   var STAR_POINTS=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
@@ -6417,6 +6525,9 @@ function GoOnline({socket,room,userData,onGameOver}){
   var deadSet=new Set(deadStones);
   var STAR_POINTS=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
 
+  var _gCapO=React.useRef(0);
+  useSfxOnChange(board,function(){var c=Object.values(caps||{}).reduce(function(a,b){return a+(+b||0)},0);SFX.play(c>_gCapO.current?'capture':'move');_gCapO.current=c;});
+  useSfxResult(result);
   useEffect(function(){
     if(!socket||initialized)return;
     setInitialized(true);
@@ -7027,6 +7138,7 @@ function App(){
   const FREE_CHIPS_PER_AD = 5; // 5 fichas por anúncio
   const [showAdModal, setShowAdModal] = useState(false);
   const [showDonate, setShowDonate] = useState(false);
+  const [,setSfxTick]=useState(0);
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
 
@@ -7179,6 +7291,7 @@ function App(){
       {/* Header */}
       <div style={{position:"sticky",top:0,zIndex:200,background:"rgba(4,4,4,.97)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(241,196,15,.22)",height:56,display:"flex",alignItems:"center",padding:"0 12px",gap:10}}>
         <div style={{flex:1,fontWeight:900,fontSize:18,color:"#f1c40f",letterSpacing:".06em",cursor:"pointer"}} onClick={()=>setScreen('home')}>🎰 CASSINO AR</div>
+        <button aria-label="Som" onClick={()=>{const m=!SFX.muted;SFX.setMuted(m);if(!m)SFX.play('chip');setSfxTick(t=>t+1);}} style={{background:"transparent",border:"1px solid rgba(241,196,15,.25)",borderRadius:8,color:"#f1c40f",width:34,height:34,fontSize:16,cursor:"pointer",flexShrink:0}}>{SFX.muted?"🔇":"🔊"}</button>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div onClick={()=>setShowAdModal(true)} style={{cursor:"pointer",textAlign:"right"}}>
             <div style={{color:"#f1c40f",fontWeight:900,fontSize:15}}>{chips.toLocaleString()}</div>
