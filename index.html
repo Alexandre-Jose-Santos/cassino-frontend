@@ -4571,17 +4571,16 @@ function initCheckers(){
 function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
 
 // Movimentos de UMA peça em (r,c)
-// Regras: peão anda 1 casa para frente, mas CAPTURA em qualquer direção (inclusive para trás);
-// dama desliza (flying king). A captura NÃO é obrigatória; começou a capturar, a cadeia continua.
 function getPieceMoves(board,r,c){
   const p=board[r][c]; if(!p) return {moves:[],caps:[]};
-  const ALL=[[-1,-1],[-1,1],[1,-1],[1,1]];
-  const fwd=p.color==='w'?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];
+  const dirs=[];
+  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
+  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
   const moves=[]; const caps=[];
 
   if(p.king){
     // DAMA: desliza por toda a diagonal (flying king)
-    for(const[dr,dc]of ALL){
+    for(const[dr,dc]of dirs){
       let nr=r+dr,nc=c+dc;
       while(nr>=0&&nr<8&&nc>=0&&nc<8){
         if(!board[nr][nc]){
@@ -4605,40 +4604,41 @@ function getPieceMoves(board,r,c){
       }
     }
   } else {
-    // Peão — anda 1 casa para frente
-    for(const[dr,dc]of fwd){
+    // Peão normal — 1 casa
+    for(const[dr,dc]of dirs){
       const nr=r+dr,nc=c+dc;
       if(nr<0||nr>7||nc<0||nc>7) continue;
-      if(!board[nr][nc]) moves.push({from:[r,c],to:[nr,nc],caps:[]});
-    }
-    // Peão — captura nas 4 diagonais (para frente e para trás)
-    for(const[dr,dc]of ALL){
-      const nr=r+dr,nc=c+dc,jr=r+2*dr,jc=c+2*dc;
-      if(jr<0||jr>7||jc<0||jc>7) continue;
-      if(board[nr][nc]&&board[nr][nc].color!==p.color&&!board[jr][jc]){
-        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
+      if(!board[nr][nc]){
+        moves.push({from:[r,c],to:[nr,nc],caps:[]});
+      } else if(board[nr][nc].color!==p.color){
+        const jr=r+2*dr,jc=c+2*dc;
+        if(jr>=0&&jr<8&&jc>=0&&jc<8&&!board[jr][jc]){
+          caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
+        }
       }
     }
   }
   return {moves,caps};
 }
 
-// Todos os movimentos legais de uma cor (captura é opcional)
+// Todos os movimentos legais de uma cor (captura obrigatória)
 function getAllMoves(board,color){
-  const all=[];
+  const allCaps=[]; const allMoves=[];
   for(let r=0;r<8;r++) for(let c=0;c<8;c++){
     if(board[r][c]?.color!==color) continue;
     const {moves,caps}=getPieceMoves(board,r,c);
-    all.push(...caps,...moves);
+    allCaps.push(...caps);
+    allMoves.push(...moves);
   }
-  return all;
+  return allCaps.length>0 ? allCaps : allMoves;
 }
 
-// Movimentos legais de UMA peça (capturas e passos simples)
+// Movimentos legais de UMA peça respeitando captura obrigatória global
 function getLegalMovesFor(board,r,c){
-  if(!board[r][c]) return [];
-  const {moves,caps}=getPieceMoves(board,r,c);
-  return [...caps,...moves];
+  const color=board[r][c]?.color; if(!color) return [];
+  const allCaps=getAllMoves(board,color).filter(m=>m.caps.length>0);
+  if(allCaps.length>0) return allCaps.filter(m=>m.from[0]===r&&m.from[1]===c);
+  return getPieceMoves(board,r,c).moves;
 }
 
 // Capturas disponíveis a partir de (r,c) — para cadeia
@@ -4659,7 +4659,8 @@ function applyMove(board,mv){
 }
 
 // ── IA da Dama ─────────────────────────────────────────
-// Joga de pretas. Cada "lance" da busca é um TURNO inteiro (passo simples ou cadeia completa de capturas),
+// Joga de pretas, com as regras originais (peão captura só para frente; captura obrigatória).
+// Cada "lance" da busca é um TURNO inteiro (passo simples ou cadeia completa de capturas),
 // com aprofundamento iterativo, poda alfa-beta, ordenação de lances e busca de capturas no fim (quiescência).
 const DAMA_AI_MS=1500;   // tempo máximo por jogada: aumente para a IA ficar mais forte, diminua para ficar mais rápida
 const _DD=[[-1,-1],[-1,1],[1,-1],[1,1]];
@@ -4677,7 +4678,8 @@ function fromCompact(a){
 // capturas de uma peça no tabuleiro compacto: [[casaDestino,casaCapturada],...]
 function _caps(a,r,c,v){
   const out=[], col=v>0?1:-1, king=Math.abs(v)===2;
-  for(const[dr,dc]of _DD){
+  const dirs=king?_DD:(col>0?[[-1,-1],[-1,1]]:[[1,-1],[1,1]]);
+  for(const[dr,dc]of dirs){
     if(king){
       let nr=r+dr,nc=c+dc;
       while(nr>=0&&nr<8&&nc>=0&&nc<8&&a[nr*8+nc]===0){nr+=dr;nc+=dc;}
@@ -4711,9 +4713,12 @@ function genTurns(a,color,capsOnly){
   const out=[];
   for(let i=0;i<64;i++){
     const v=a[i]; if(!v||v*color<0) continue;
+    _chain(a,i,i>>3,i&7,v,[],out);
+  }
+  if(out.length||capsOnly) return out;      // captura obrigatória: havendo captura, só ela é jogável
+  for(let i=0;i<64;i++){
+    const v=a[i]; if(!v||v*color<0) continue;
     const r=i>>3,c=i&7;
-    _chain(a,i,r,c,v,[],out);
-    if(capsOnly) continue;
     const king=Math.abs(v)===2;
     const dirs=king?_DD:(color>0?[[-1,-1],[-1,1]]:[[1,-1],[1,1]]);
     for(const[dr,dc]of dirs){
