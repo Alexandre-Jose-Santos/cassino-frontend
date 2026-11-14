@@ -4571,16 +4571,17 @@ function initCheckers(){
 function cloneBoard(b){return b.map(r=>r.map(c=>c?{...c}:null));}
 
 // Movimentos de UMA peça em (r,c)
+// Regras: peão anda 1 casa para frente, mas CAPTURA em qualquer direção (inclusive para trás);
+// dama desliza (flying king). A captura NÃO é obrigatória; começou a capturar, a cadeia continua.
 function getPieceMoves(board,r,c){
   const p=board[r][c]; if(!p) return {moves:[],caps:[]};
-  const dirs=[];
-  if(p.color==='w'||p.king) dirs.push([-1,-1],[-1,1]);
-  if(p.color==='b'||p.king) dirs.push([1,-1],[1,1]);
+  const ALL=[[-1,-1],[-1,1],[1,-1],[1,1]];
+  const fwd=p.color==='w'?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];
   const moves=[]; const caps=[];
 
   if(p.king){
     // DAMA: desliza por toda a diagonal (flying king)
-    for(const[dr,dc]of dirs){
+    for(const[dr,dc]of ALL){
       let nr=r+dr,nc=c+dc;
       while(nr>=0&&nr<8&&nc>=0&&nc<8){
         if(!board[nr][nc]){
@@ -4604,41 +4605,40 @@ function getPieceMoves(board,r,c){
       }
     }
   } else {
-    // Peão normal — 1 casa
-    for(const[dr,dc]of dirs){
+    // Peão — anda 1 casa para frente
+    for(const[dr,dc]of fwd){
       const nr=r+dr,nc=c+dc;
       if(nr<0||nr>7||nc<0||nc>7) continue;
-      if(!board[nr][nc]){
-        moves.push({from:[r,c],to:[nr,nc],caps:[]});
-      } else if(board[nr][nc].color!==p.color){
-        const jr=r+2*dr,jc=c+2*dc;
-        if(jr>=0&&jr<8&&jc>=0&&jc<8&&!board[jr][jc]){
-          caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
-        }
+      if(!board[nr][nc]) moves.push({from:[r,c],to:[nr,nc],caps:[]});
+    }
+    // Peão — captura nas 4 diagonais (para frente e para trás)
+    for(const[dr,dc]of ALL){
+      const nr=r+dr,nc=c+dc,jr=r+2*dr,jc=c+2*dc;
+      if(jr<0||jr>7||jc<0||jc>7) continue;
+      if(board[nr][nc]&&board[nr][nc].color!==p.color&&!board[jr][jc]){
+        caps.push({from:[r,c],to:[jr,jc],caps:[[nr,nc]]});
       }
     }
   }
   return {moves,caps};
 }
 
-// Todos os movimentos legais de uma cor (captura obrigatória)
+// Todos os movimentos legais de uma cor (captura é opcional)
 function getAllMoves(board,color){
-  const allCaps=[]; const allMoves=[];
+  const all=[];
   for(let r=0;r<8;r++) for(let c=0;c<8;c++){
     if(board[r][c]?.color!==color) continue;
     const {moves,caps}=getPieceMoves(board,r,c);
-    allCaps.push(...caps);
-    allMoves.push(...moves);
+    all.push(...caps,...moves);
   }
-  return allCaps.length>0 ? allCaps : allMoves;
+  return all;
 }
 
-// Movimentos legais de UMA peça respeitando captura obrigatória global
+// Movimentos legais de UMA peça (capturas e passos simples)
 function getLegalMovesFor(board,r,c){
-  const color=board[r][c]?.color; if(!color) return [];
-  const allCaps=getAllMoves(board,color).filter(m=>m.caps.length>0);
-  if(allCaps.length>0) return allCaps.filter(m=>m.from[0]===r&&m.from[1]===c);
-  return getPieceMoves(board,r,c).moves;
+  if(!board[r][c]) return [];
+  const {moves,caps}=getPieceMoves(board,r,c);
+  return [...caps,...moves];
 }
 
 // Capturas disponíveis a partir de (r,c) — para cadeia
@@ -4658,64 +4658,157 @@ function applyMove(board,mv){
   return nb;
 }
 
-// Avaliação posicional (do ponto de vista das pretas = IA)
-function evalCheckers(board){
-  let score=0;
-  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
-    const p=board[r][c]; if(!p) continue;
-    let v=p.king?500:100;
-    if(!p.king){
-      // Bônus por avançar
-      if(p.color==='b') v+=r*8;       // pretas avançam para baixo (r cresce)
-      else              v+=(7-r)*8;   // brancas avançam para cima (r decresce)
-    }
-    // Bônus leve por estar no centro
-    const distCenter=Math.abs(c-3.5)+Math.abs(r-3.5);
-    v+=Math.max(0,4-distCenter)*3;
-    score+=p.color==='b'?v:-v;
-  }
-  return score;
+// ── IA da Dama ─────────────────────────────────────────
+// Joga de pretas. Cada "lance" da busca é um TURNO inteiro (passo simples ou cadeia completa de capturas),
+// com aprofundamento iterativo, poda alfa-beta, ordenação de lances e busca de capturas no fim (quiescência).
+const DAMA_AI_MS=1500;   // tempo máximo por jogada: aumente para a IA ficar mais forte, diminua para ficar mais rápida
+const _DD=[[-1,-1],[-1,1],[1,-1],[1,1]];
+// tabuleiro compacto: 64 casas; 0 vazio, 1/2 = peão/dama branca, -1/-2 = peão/dama preta
+function toCompact(board){
+  const a=new Int8Array(64);
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){const p=board[r][c]; if(p) a[r*8+c]=(p.color==='w'?1:-1)*(p.king?2:1);}
+  return a;
 }
-
-function minimaxCheckers(board,depth,alpha,beta,maximizing){
-  const color=maximizing?'b':'w';
-  const moves=getAllMoves(board,color);
-  if(!moves.length) return maximizing?-9999:9999;
-  if(depth===0) return evalCheckers(board);
-  if(maximizing){
-    let best=-Infinity;
-    for(const mv of moves){
-      best=Math.max(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,false));
-      alpha=Math.max(alpha,best); if(beta<=alpha) break;
+function fromCompact(a){
+  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
+  for(let i=0;i<64;i++){const v=a[i]; if(v) b[i>>3][i&7]={color:v>0?'w':'b',king:Math.abs(v)===2};}
+  return b;
+}
+// capturas de uma peça no tabuleiro compacto: [[casaDestino,casaCapturada],...]
+function _caps(a,r,c,v){
+  const out=[], col=v>0?1:-1, king=Math.abs(v)===2;
+  for(const[dr,dc]of _DD){
+    if(king){
+      let nr=r+dr,nc=c+dc;
+      while(nr>=0&&nr<8&&nc>=0&&nc<8&&a[nr*8+nc]===0){nr+=dr;nc+=dc;}
+      if(nr<0||nr>7||nc<0||nc>7) continue;
+      if(a[nr*8+nc]*col>0) continue;                       // própria peça bloqueia
+      let lr=nr+dr,lc=nc+dc;
+      while(lr>=0&&lr<8&&lc>=0&&lc<8&&a[lr*8+lc]===0){out.push([lr*8+lc,nr*8+nc]);lr+=dr;lc+=dc;}
+    } else {
+      const jr=r+2*dr,jc=c+2*dc; if(jr<0||jr>7||jc<0||jc>7) continue;
+      const t=a[(r+dr)*8+(c+dc)];
+      if(t*col<0&&a[jr*8+jc]===0) out.push([jr*8+jc,(r+dr)*8+(c+dc)]);
     }
+  }
+  return out;
+}
+// cadeia de capturas: só emite quando não há mais captura (a cadeia é obrigatória até o fim)
+function _chain(a,from,r,c,v,caps,out){
+  const list=_caps(a,r,c,v), here=r*8+c;
+  if(!list.length){ if(caps.length) out.push({from,to:here,caps:caps.slice(),board:a.slice()}); return; }
+  for(const[to,cap]of list){
+    const cv=a[cap]; a[cap]=0; a[here]=0;
+    const tr=to>>3; let nv=v;
+    if(v===1&&tr===0) nv=2; else if(v===-1&&tr===7) nv=-2;   // promoção imediata, como no jogo
+    a[to]=nv; caps.push(cap);
+    _chain(a,from,tr,to&7,nv,caps,out);
+    caps.pop(); a[to]=0; a[cap]=cv; a[here]=v;
+  }
+}
+// todos os turnos legais de uma cor (1 = brancas, -1 = pretas)
+function genTurns(a,color,capsOnly){
+  const out=[];
+  for(let i=0;i<64;i++){
+    const v=a[i]; if(!v||v*color<0) continue;
+    const r=i>>3,c=i&7;
+    _chain(a,i,r,c,v,[],out);
+    if(capsOnly) continue;
+    const king=Math.abs(v)===2;
+    const dirs=king?_DD:(color>0?[[-1,-1],[-1,1]]:[[1,-1],[1,1]]);
+    for(const[dr,dc]of dirs){
+      let nr=r+dr,nc=c+dc;
+      while(nr>=0&&nr<8&&nc>=0&&nc<8&&a[nr*8+nc]===0){
+        const b=a.slice(); b[i]=0; let nv=v;
+        if(v===1&&nr===0) nv=2; else if(v===-1&&nr===7) nv=-2;
+        b[nr*8+nc]=nv;
+        out.push({from:i,to:nr*8+nc,caps:[],board:b});
+        if(!king) break;
+        nr+=dr; nc+=dc;
+      }
+    }
+  }
+  return out;
+}
+// avaliação do ponto de vista das pretas (positivo = bom para a IA)
+function evalDama(a){
+  let s=0;
+  for(let i=0;i<64;i++){
+    const v=a[i]; if(!v) continue;
+    const r=i>>3,c=i&7; let x;
+    if(v===1||v===-1){
+      const adv=v===-1?r:7-r;                    // casas avançadas: 0..7
+      x=100+adv*5+(adv>=5?adv*4:0);              // incentiva chegar perto da promoção
+      if((v===-1&&r===0)||(v===1&&r===7)) x+=8;  // guarda da última linha
+      if(c===0||c===7) x+=3;                     // borda: mais difícil de capturar
+      else if(c>=2&&c<=5&&r>=2&&r<=5) x+=3;      // centro
+    } else {
+      x=330+Math.max(0,5-(Math.abs(c-3.5)+Math.abs(r-3.5)))*3;
+    }
+    s+=v<0?x:-x;
+  }
+  return s;
+}
+let _dDeadline=0,_dAbort=false,_dNodes=0;
+function _dOrder(m){ m.sort((x,y)=>y.caps.length-x.caps.length); }
+// só capturas: evita avaliar no meio de uma troca
+function _dQuiet(a,color,alpha,beta,qd){
+  const stand=evalDama(a);
+  if(qd>=6) return stand;
+  const caps=genTurns(a,color,true);
+  if(!caps.length) return stand;
+  _dOrder(caps);
+  if(color===-1){
+    let best=stand; if(best>=beta) return best; if(best>alpha) alpha=best;
+    for(const m of caps){const v=_dQuiet(m.board,1,alpha,beta,qd+1); if(v>best) best=v; if(best>alpha) alpha=best; if(alpha>=beta) break;}
+    return best;
+  } else {
+    let best=stand; if(best<=alpha) return best; if(best<beta) beta=best;
+    for(const m of caps){const v=_dQuiet(m.board,-1,alpha,beta,qd+1); if(v<best) best=v; if(best<beta) beta=best; if(alpha>=beta) break;}
+    return best;
+  }
+}
+function _dSearch(a,color,depth,alpha,beta,ply){
+  if((++_dNodes&255)===0&&Date.now()>_dDeadline) _dAbort=true;
+  if(_dAbort) return 0;
+  if(depth<=0) return _dQuiet(a,color,alpha,beta,0);
+  const moves=genTurns(a,color,false);
+  if(!moves.length) return color===-1?-100000+ply:100000-ply;   // quem não pode mover perde
+  _dOrder(moves);
+  if(color===-1){
+    let best=-Infinity;
+    for(const m of moves){const v=_dSearch(m.board,1,depth-1,alpha,beta,ply+1); if(_dAbort) return 0; if(v>best) best=v; if(best>alpha) alpha=best; if(alpha>=beta) break;}
     return best;
   } else {
     let best=Infinity;
-    for(const mv of moves){
-      best=Math.min(best,minimaxCheckers(applyMove(board,mv),depth-1,alpha,beta,true));
-      beta=Math.min(beta,best); if(beta<=alpha) break;
-    }
+    for(const m of moves){const v=_dSearch(m.board,-1,depth-1,alpha,beta,ply+1); if(_dAbort) return 0; if(v<best) best=v; if(best<beta) beta=best; if(alpha>=beta) break;}
     return best;
   }
 }
-
-function bestCheckerMove(board){
-  // IA sempre joga de pretas
-  const moves=getAllMoves(board,'b');
+// Retorna {board, move} (tabuleiro final do turno inteiro, inclusive cadeia) ou null se não houver lances
+function bestCheckerTurn(board,maxMs){
+  const a=toCompact(board), moves=genTurns(a,-1,false);
   if(!moves.length) return null;
-  // Embaralha para variedade
-  for(let i=moves.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [moves[i],moves[j]]=[moves[j],moves[i]];
+  const out=m=>({board:fromCompact(m.board),move:{from:[m.from>>3,m.from&7],to:[m.to>>3,m.to&7],caps:m.caps.map(x=>[x>>3,x&7])}});
+  if(moves.length===1) return out(moves[0]);
+  for(let i=moves.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [moves[i],moves[j]]=[moves[j],moves[i]];}
+  _dDeadline=Date.now()+(maxMs||DAMA_AI_MS); _dAbort=false; _dNodes=0;
+  let best=moves[0];
+  for(let depth=1;depth<=16;depth++){
+    _dOrder(moves);
+    const k=moves.indexOf(best); if(k>0){moves.splice(k,1); moves.unshift(best);}
+    let alpha=-Infinity, bs=-Infinity, ib=null;
+    for(const m of moves){
+      const v=_dSearch(m.board,1,depth-1,alpha,Infinity,1);
+      if(_dAbort) break;
+      if(v>bs){bs=v; ib=m;} if(bs>alpha) alpha=bs;
+    }
+    if(_dAbort) break;
+    if(ib) best=ib;
+    if(bs>90000) break;               // vitória forçada encontrada
   }
-  let best=-Infinity, bestMv=moves[0];
-  for(const mv of moves){
-    const s=minimaxCheckers(applyMove(board,mv),5,-Infinity,Infinity,false);
-    if(s>best){best=s;bestMv=mv;}
-  }
-  return bestMv;
+  return out(best);
 }
-
 
 
 // ══════════════════════════════════════════════════════
@@ -5040,15 +5133,12 @@ function Dama({chips,onChange,log,mode}){
     setTurn('b'); setStatus('⏳ IA pensando...'); setAiThinking(true);
     setTimeout(()=>{
       const b2=boardRef.current||b;
-      const mv=bestCheckerMove(b2);
-      if(!mv){ endGame(true); setAiThinking(false); return; }
-      // Executa movimento + cadeia de capturas da IA automaticamente
-      let curr=applyMove(b2,mv), last=mv;
-      while(last.caps.length>0){
-        const fu=getCapsFrom(curr,last.to[0],last.to[1]);
-        if(!fu.length) break;
-        last=fu[0]; curr=applyMove(curr,last);
-      }
+      let res=null;
+      try{ res=bestCheckerTurn(b2); }
+      catch(e){ console.error('IA dama:',e); const ms=getAllMoves(b2,'b'); if(ms.length){ const m=ms[Math.floor(Math.random()*ms.length)]; let c2=applyMove(b2,m),l2=m; while(l2.caps.length>0){const fu=getCapsFrom(c2,l2.to[0],l2.to[1]); if(!fu.length)break; l2=fu[0]; c2=applyMove(c2,l2);} res={board:c2,move:l2}; } }
+      if(!res){ endGame(true); setAiThinking(false); return; }
+      // A IA já devolve o turno inteiro (inclusive a cadeia de capturas escolhida por ela)
+      const curr=res.board, last=res.move;
       syncBoard(curr); setLastMove(last);
       if(!getAllMoves(curr,'w').length){ endGame(false); setAiThinking(false); return; }
       // Verifica empate por bloqueio (brancas sem movimentos)
