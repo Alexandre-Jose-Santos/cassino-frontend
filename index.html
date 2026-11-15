@@ -488,6 +488,346 @@ function useSfxResult(result){const prev=React.useRef(result);React.useEffect(()
 function pieceCount(b){let n=0;if(!b)return 0;for(const r of b)for(const c of r)if(c)n++;return n;}
 function useSfxBoard(board){const ref=React.useRef(pieceCount(board));useSfxOnChange(board,()=>{const n=pieceCount(board),p=ref.current;ref.current=n;if(n>p)return;SFX.play(n<p?'capture':'move');});}
 
+// ── NÍVEL DA IA (vale para todos os jogos contra a IA; fica salvo no aparelho) ──
+const AI_LEVELS=['facil','medio','dificil'];
+const AILevel=(()=>{
+  let lv='dificil';
+  try{const v=localStorage.getItem('cassino_ai_level');if(AI_LEVELS.includes(v))lv=v;}catch(e){}
+  return {get(){return lv;},set(v){if(AI_LEVELS.includes(v)){lv=v;try{localStorage.setItem('cassino_ai_level',v);}catch(e){}}}};
+})();
+
+// ── IA do Pife por nível ──
+// quanto a carta c "combina" com o resto da mão: mesmo valor (trinca em formação) e vizinhas do mesmo naipe (sequência)
+function pifePotential(c,h,skip){
+  let p=0;const ri=RANKS.indexOf(c.r);
+  h.forEach((o,i)=>{
+    if(i===skip)return;
+    const d=Math.abs(RANKS.indexOf(o.r)-ri);
+    if(o.r===c.r&&o.s!==c.s)p+=2;
+    else if(o.s===c.s&&d===1)p+=2;
+    else if(o.s===c.s&&d===2)p+=1;
+  });
+  return p;
+}
+// pega a carta do descarte (true) ou do monte (false)?
+function pifeAIWantsDisc(a,top,lvl){
+  if(!top)return false;
+  const helps=groupHand([...a,top]).dead.length<groupHand(a).dead.length;   // o descarte encaixa cartas em jogos
+  if(lvl==='facil')return helps&&Math.random()<0.6;                        // às vezes ignora a jogada boa
+  return helps;
+}
+// qual carta descartar (índice) da mão de 10 cartas
+function pifeAIDiscardIdx(a,lvl){
+  if(lvl==='facil'&&Math.random()<0.35)return Math.floor(Math.random()*a.length);
+  if(lvl!=='facil'){                                                       // médio e difícil: bate se algum descarte fecha a mão
+    for(let i=0;i<a.length;i++){if(groupHand(a.filter((_,k)=>k!==i)).dead.length===0)return i;}
+  }
+  const {dead}=groupHand(a);
+  if(!dead.length)return a.length-1;
+  if(lvl==='dificil'){                                                      // difícil: descarta a que menos combina com a mão
+    let best=dead[0],bp=Infinity,bv=-1;
+    for(const i of dead){const p=pifePotential(a[i],a,i),v=cVal(a[i].r);if(p<bp||(p===bp&&v>bv)){best=i;bp=p;bv=v;}}
+    return best;
+  }
+  return dead.reduce((m,i)=>cVal(a[i].r)>cVal(a[m].r)?i:m,dead[0]);        // fácil/médio: a de maior valor fora de jogos
+}
+
+// ── IA do Dominó por nível ──
+// resultados possíveis de encaixar a peça t na cadeia ch (uma ponta ou a outra)
+function domOptions(t,ch){
+  if(!ch.length)return [[{dA:t.a,dB:t.b,id:t.id}]];
+  const l=ch[0].dA,r=ch[ch.length-1].dB,out=[];
+  if(t.a===r)out.push([...ch,{dA:t.a,dB:t.b,id:t.id}]); else if(t.b===r)out.push([...ch,{dA:t.b,dB:t.a,id:t.id}]);
+  if(t.a===l)out.push([{dA:t.b,dB:t.a,id:t.id},...ch]); else if(t.b===l)out.push([{dA:t.a,dB:t.b,id:t.id},...ch]);
+  return out;
+}
+// escolhe a peça e a ponta; devolve {t,nc} (nc = cadeia depois da jogada) ou null se não houver peça jogável
+function dominoAIPick(hand,ch,lvl,canPlay,addToChain){
+  const playable=hand.filter(t=>canPlay(t,ch));
+  if(!playable.length)return null;
+  if(lvl==='facil'){                                                    // fácil: peça leve ou aleatória (acumula pontos na mão)
+    const t=Math.random()<0.5?playable[Math.floor(Math.random()*playable.length)]
+      :playable.reduce((m,x)=>(x.a+x.b)<(m.a+m.b)?x:m,playable[0]);
+    return {t,nc:addToChain(t,ch)};
+  }
+  if(lvl!=='dificil'){                                                  // médio: joga a peça mais pesada (livra-se dos pontos)
+    const t=playable.reduce((m,x)=>(x.a+x.b+(x.a===x.b?1:0))>(m.a+m.b+(m.a===m.b?1:0))?x:m,playable[0]);
+    return {t,nc:addToChain(t,ch)};
+  }
+  // difícil: joga peças pesadas e duplas cedo, mantém peças que combinam com as pontas e evita ficar sem jogada
+  let best=null,bs=-Infinity;
+  for(const t of playable){
+    const rest=hand.filter(x=>x.id!==t.id);
+    for(const nc of domOptions(t,ch)){
+      const L=nc[0].dA,R=nc[nc.length-1].dB;
+      const cnt=n=>rest.filter(x=>x.a===n||x.b===n).length;
+      let sc=(t.a+t.b)+(t.a===t.b?4:0)+3*(cnt(L)+cnt(R));
+      if(!cnt(L)&&!cnt(R))sc-=6;
+      if(L===R)sc+=2;
+      if(sc>bs){bs=sc;best={t,nc};}
+    }
+  }
+  return best;
+}
+
+// ── IA do Pôquer por nível ──
+// força da mão de 0 a 1 (aproximada). hole = 2 cartas da IA, comm = cartas da mesa
+function pkStrength(hole,comm,draws){
+  var r1=pkRI(hole[0].r),r2=pkRI(hole[1].r),hi=Math.max(r1,r2),lo=Math.min(r1,r2);
+  if(!comm.length){
+    if(r1===r2)return 0.55+0.35*(hi/12);
+    var s=0.45*(hi/12)+0.2*(lo/12);
+    if(hole[0].s===hole[1].s)s+=0.06;
+    if(hi-lo<=2)s+=0.04;
+    return Math.min(0.78,s);
+  }
+  var v=pkEval7(hole.concat(comm)),s2;
+  var inHole=function(ri){return ri===r1||ri===r2;};
+  if(v.rank<0)s2=0.12+0.10*(hi/12);
+  else if(v.rank===0)s2=inHole(v.tb[0])?0.38+0.22*(v.tb[0]/12):0.22;
+  else if(v.rank===1)s2=0.70;
+  else if(v.rank===2)s2=0.80;
+  else if(v.rank===3)s2=0.86;
+  else if(v.rank===4)s2=0.90;
+  else if(v.rank===5)s2=0.95;
+  else s2=0.99;
+  if(draws&&comm.length<5&&v.rank<3){                      // projeto de flush ou de sequência
+    var all=hole.concat(comm),bySuit={};
+    all.forEach(function(c){bySuit[c.s]=(bySuit[c.s]||0)+1;});
+    var fd=hole.some(function(c){return bySuit[c.s]>=4;});
+    var rs=[...new Set(all.map(function(c){return pkRI(c.r);}))].sort(function(a,b){return a-b;});
+    var oesd=false;for(var i=0;i+3<rs.length;i++){if(rs[i+3]-rs[i]===3)oesd=true;}
+    if(fd)s2=Math.max(s2,0.48);else if(oesd)s2=Math.max(s2,0.42);
+  }
+  return s2;
+}
+// decide a ação da IA. Devolve {act:'fold'|'check'|'call'|'bet'|'raise', size?}
+function pkDecide(lvl,hole,comm,pot,toCall,stack,BB){
+  var r=Math.random(),facing=toCall>0;
+  if(lvl==='facil'){                                      // fácil: comportamento aleatório (como era antes)
+    if(!facing)return{act:r<0.45?'check':'bet'};
+    return{act:r<0.10?'fold':r<0.25?'raise':'call'};
+  }
+  var hard=lvl==='dificil';
+  var s=pkStrength(hole,comm,hard);
+  var odds=facing?toCall/(pot+toCall):0;
+  if(!facing){
+    if(s>=0.72)return r<(hard?0.85:0.8)?{act:'bet',size:hard?Math.max(BB,Math.round(pot*0.6/BB)*BB):BB}:{act:'check'};
+    if(s>=0.45)return r<(hard?0.6:0.5)?{act:'bet',size:hard?Math.max(BB,Math.round(pot*0.4/BB)*BB):BB}:{act:'check'};
+    if(hard&&comm.length>=3&&r<0.16)return{act:'bet',size:Math.max(BB,Math.round(pot*0.5/BB)*BB)};   // blefe ocasional
+    return{act:'check'};
+  }
+  if(s>=0.75)return r<0.6?{act:'raise'}:{act:'call'};
+  if(hard){
+    if(s>=0.5)return odds<=0.5||s>=0.6?(r<0.25?{act:'raise'}:{act:'call'}):{act:'fold'};
+    if(s>=0.38&&odds<=s*0.6)return{act:'call'};
+    if(comm.length>=3&&comm.length<5&&r<0.12)return{act:'raise'};                             // semiblefe
+    return{act:'fold'};
+  }
+  if(s>=0.5)return r<0.2?{act:'raise'}:{act:'call'};
+  if(s>=0.3)return odds<0.35?{act:'call'}:(r<0.4?{act:'call'}:{act:'fold'});
+  return r<0.2?{act:'call'}:{act:'fold'};
+}
+
+// ── GO: regras (grupos, captura, legalidade com suicídio e ko, contagem) e IA por nível ──
+function goNb(r,c,N){const o=[];if(r>0)o.push([r-1,c]);if(r<N-1)o.push([r+1,c]);if(c>0)o.push([r,c-1]);if(c<N-1)o.push([r,c+1]);return o;}
+// grupo de pedras ligadas em (r,c): {stones:[[r,c]...], libs:[[r,c]...]}
+function goGroup(b,r,c,N){
+  const col=b[r][c]; if(!col) return {stones:[],libs:[]};
+  const seen=new Set([r*N+c]),stack=[[r,c]],stones=[],libs=new Set();
+  while(stack.length){
+    const p=stack.pop(); stones.push(p);
+    for(const q of goNb(p[0],p[1],N)){
+      const v=b[q[0]][q[1]];
+      if(v===null) libs.add(q[0]*N+q[1]);
+      else if(v===col&&!seen.has(q[0]*N+q[1])){seen.add(q[0]*N+q[1]);stack.push(q);}
+    }
+  }
+  return {stones,libs:[...libs].map(k=>[Math.floor(k/N),k%N])};
+}
+// depois de colocar a pedra em (r,c) (já no tabuleiro b): remove os grupos adversários sem liberdades; devolve as pedras capturadas
+function goCapture(b,r,c,N){
+  const col=b[r][c],opp=col==='B'?'W':'B',cap=[];
+  for(const q of goNb(r,c,N)){
+    if(b[q[0]][q[1]]!==opp) continue;
+    const g=goGroup(b,q[0],q[1],N);
+    if(!g.libs.length) for(const s of g.stones){b[s[0]][s[1]]=null;cap.push(s);}
+  }
+  return cap;
+}
+// jogada legal? casa vazia, sem suicídio e sem ko (não pode recriar a posição anterior "prev")
+function goLegal(b,r,c,color,prev,N){
+  if(r<0||c<0||r>=N||c>=N||b[r][c]) return false;
+  const nb=b.map(row=>row.slice()); nb[r][c]=color;
+  goCapture(nb,r,c,N);
+  if(!goGroup(nb,r,c,N).libs.length) return false;
+  if(prev){
+    let same=true;
+    for(let i=0;i<N&&same;i++) for(let j=0;j<N;j++) if(nb[i][j]!==prev[i][j]){same=false;break;}
+    if(same) return false;
+  }
+  return true;
+}
+// pontuação. method 'territory' = japonesa (território + prisioneiros), outro = chinesa (pedras + território). Branco recebe o komi.
+function goScore(b,N,komi,method,caps){
+  let sB=0,sW=0,tB=0,tW=0; const seen=new Set();
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const v=b[r][c];
+    if(v==='B') sB++; else if(v==='W') sW++;
+    else if(!seen.has(r*N+c)){
+      let size=0,tb=false,tw=false; const st=[[r,c]]; seen.add(r*N+c);
+      while(st.length){
+        const p=st.pop(); size++;
+        for(const q of goNb(p[0],p[1],N)){
+          const x=b[q[0]][q[1]];
+          if(x==='B') tb=true; else if(x==='W') tw=true;
+          else if(!seen.has(q[0]*N+q[1])){seen.add(q[0]*N+q[1]);st.push(q);}
+        }
+      }
+      if(tb&&!tw) tB+=size; else if(tw&&!tb) tW+=size;
+    }
+  }
+  const jp=method==='territory';
+  const black=jp?tB+((caps&&caps.B)||0):sB+tB;
+  const white=(jp?tW+((caps&&caps.W)||0):sW+tW)+(komi||0);
+  return {black,white,terrB:tB,terrW:tW,stonesB:sB,stonesW:sW};
+}
+
+// ── IA ──
+function goIsEye(b,r,c,color,N){
+  for(const q of goNb(r,c,N)) if(b[q[0]][q[1]]!==color) return false;
+  let bad=0;
+  for(const d of [[-1,-1],[-1,1],[1,-1],[1,1]]){const y=r+d[0],x=c+d[1]; if(y<0||x<0||y>=N||x>=N) continue; if(b[y][x]!==color) bad++;}
+  const edge=(r===0||c===0||r===N-1||c===N-1);
+  return edge?bad===0:bad<=1;
+}
+// influência: pontos mais próximos das pedras da cor menos os mais próximos do adversário (BFS multi-origem, alcance 5)
+function goInfluence(b,color,N){
+  const dist=new Int8Array(N*N).fill(-1),own=new Int8Array(N*N); let q=[];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(b[r][c]){const k=r*N+c;dist[k]=0;own[k]=b[r][c]===color?1:-1;q.push(k);}
+  let score=0,d=0;
+  while(q.length&&d<5){
+    const nq=[]; d++;
+    for(const k of q){
+      const r=(k/N)|0,c=k%N;
+      for(const p of goNb(r,c,N)){
+        const kk=p[0]*N+p[1];
+        if(dist[kk]===-1){dist[kk]=d;own[kk]=own[k];nq.push(kk);score+=own[k];}
+        else if(dist[kk]===d&&own[kk]!==own[k]&&own[kk]!==0){own[kk]=0;score-=own[k]===1?-1:1;}   // empate: neutro
+      }
+    }
+    q=nq;
+  }
+  return score;
+}
+function goHeur(b,r,c,color,N,prev,stones,noise){
+  const opp=color==='B'?'W':'B';
+  const nb=b.map(row=>row.slice()); nb[r][c]=color;
+  // grupos próprios em atari antes da jogada (adjacentes)
+  let save=0; const seenG=new Set();
+  for(const q of goNb(r,c,N)){
+    if(b[q[0]][q[1]]===color&&!seenG.has(q[0]*N+q[1])){
+      const g=goGroup(b,q[0],q[1],N); g.stones.forEach(s=>seenG.add(s[0]*N+s[1]));
+      if(g.libs.length===1) save+=g.stones.length;
+    }
+  }
+  const cap=goCapture(nb,r,c,N);
+  const mine=goGroup(nb,r,c,N);
+  let s=0;
+  s+=cap.length*12;
+  if(mine.libs.length===1&&!cap.length) s-=18+3*mine.stones.length;       // auto-atari
+  else if(mine.libs.length===2) s-=1;
+  else s+=Math.min(mine.libs.length,6)*0.4;
+  if(save&&mine.libs.length>=2) s+=9+3*save;                              // salva grupo em atari
+  const seenE=new Set();
+  for(const q of goNb(r,c,N)){
+    if(nb[q[0]][q[1]]===opp&&!seenE.has(q[0]*N+q[1])){
+      const g=goGroup(nb,q[0],q[1],N); g.stones.forEach(x=>seenE.add(x[0]*N+x[1]));
+      if(g.libs.length===1&&mine.libs.length>1) s+=7+2*g.stones.length;     // ameaça (atari)
+      else if(g.libs.length===2) s+=1.5;
+    }
+  }
+  if(goIsEye(b,r,c,color,N)&&!cap.length) s-=40;                          // não preenche o próprio olho
+  const dEdge=Math.min(r,c,N-1-r,N-1-c);
+  if(stones<N*N*0.2){                                                     // abertura: linhas 3 e 4, perto de pedras
+    s+=(dEdge===2||dEdge===3)?3:(dEdge===1?-1:(dEdge===0?-4:0.5));
+  }
+  s+=noise*(Math.random()-0.5);
+  return {s,inf:0};
+}
+// partida aleatória rápida até o fim (sem ko); devolve pretas - brancas (chinês, com komi)
+function goPlayout(b0,toMove,N,komi){
+  const b=b0.map(row=>row.slice()); let turn=toMove,passes=0;
+  const maxMoves=Math.floor(N*N*1.2);
+  for(let m=0;m<maxMoves&&passes<2;m++){
+    let done=false;
+    for(let tries=0;tries<12&&!done;tries++){
+      const r=(Math.random()*N)|0,c=(Math.random()*N)|0;
+      if(b[r][c]||goIsEye(b,r,c,turn,N)) continue;
+      b[r][c]=turn;
+      const cap=goCapture(b,r,c,N);
+      if(goGroup(b,r,c,N).libs.length){done=true;}
+      else{b[r][c]=null;const o=turn==='B'?'W':'B';for(const s of cap)b[s[0]][s[1]]=o;}
+    }
+    if(done)passes=0;else passes++;
+    turn=turn==='B'?'W':'B';
+  }
+  const sc=goScore(b,N,komi,'area',null);
+  return sc.black-sc.white;
+}
+// níveis: fácil = quase aleatória; médio = heurística; difícil = heurística + influência + resposta do adversário
+const GO_LEVELS={facil:{top:0,noise:0,pass:0.25,ms:0},medio:{top:0,noise:2.5,pass:0,ms:0},dificil:{top:8,noise:0.8,pass:0,ms:1000}};
+function goAI(b,color,N,caps,prev,level){
+  const cfg=GO_LEVELS[level]||GO_LEVELS.dificil, opp=color==='B'?'W':'B';
+  let stones=0; for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(b[r][c]) stones++;
+  const cands=[];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(!b[r][c]&&goLegal(b,r,c,color,prev,N)) cands.push([r,c]);
+  if(!cands.length) return null;
+  if(level==='facil'){
+    // fácil: joga perto das pedras, sem preencher o próprio olho; no fim do jogo costuma passar
+    if(stones>=N*N*0.3&&Math.random()<cfg.pass) return null;
+    const near=cands.filter(p=>!goIsEye(b,p[0],p[1],color,N)&&(stones===0||(()=>{for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const y=p[0]+dy,x=p[1]+dx;if(y>=0&&x>=0&&y<N&&x<N&&b[y][x])return true;}return false;})()));
+    const pool=near.length?near:cands.filter(p=>!goIsEye(b,p[0],p[1],color,N));
+    if(!pool.length) return null;
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+  const scored=cands.map(p=>({p,s:goHeur(b,p[0],p[1],color,N,prev,stones,cfg.noise).s}));
+  scored.sort((x,y)=>y.s-x.s);
+  let best=scored[0];
+  const base=goInfluence(b,color,N);
+  if(cfg.top>0){
+    // difícil: sorteia partidas até o fim a partir de cada uma das melhores jogadas e escolhe a de maior taxa de vitória
+    const sign=color==='B'?1:-1, komi=6.5, deadline=Date.now()+cfg.ms;
+    const top=scored.slice(0,cfg.top).map(c=>{const nb=b.map(row=>row.slice());nb[c.p[0]][c.p[1]]=color;goCapture(nb,c.p[0],c.p[1],N);return {c,nb,wins:0,n:0};});
+    let round=0;
+    while(Date.now()<deadline&&round<400){
+      for(const t of top){
+        if(Date.now()>=deadline) break;
+        const v=goPlayout(t.nb,opp,N,komi)*sign;
+        t.n++; t.wins+=v>0?1:(v===0?0.5:0);
+      }
+      round++;
+    }
+    let bestV=-Infinity;
+    for(const t of top){
+      const wr=t.n?t.wins/t.n:0.5;
+      const v=wr*30+t.c.s*0.8;                  // taxa de vitória (0..30) + pontuação da heurística
+      if(v>bestV){bestV=v;best=t.c;}
+    }
+  } else {
+    // médio: pequena preferência por jogadas que aumentam a influência
+    let bestV=-Infinity;
+    for(const cand of scored.slice(0,12)){
+      const nb=b.map(row=>row.slice()); nb[cand.p[0]][cand.p[1]]=color; goCapture(nb,cand.p[0],cand.p[1],N);
+      const v=cand.s+0.4*(goInfluence(nb,color,N)-base);
+      if(v>bestV){bestV=v;best=cand;}
+    }
+  }
+  // passa quando nenhuma jogada vale a pena (fim de jogo)
+  if(stones>=N*N*0.45&&best.s<3.5) return null;
+  return best.p;
+}
+
 // ── DOAÇÃO (Pix gerado pelo Asaas no servidor; nada a configurar aqui além da meta) ──
 
 function mkDeck(n=1){const d=[];for(let i=0;i<n;i++)for(const s of SUITS)for(const r of RANKS)d.push({s,r,id:`${r}${s}${i}${Math.random()}`});return d.sort(()=>Math.random()-.5);}
@@ -1116,13 +1456,10 @@ function Pife({chips,onChange,log,mode}){
     setTimeout(()=>{
       let a=[...ai],d=[...deck],ds=[...disc,c];
       if(!d.length){setPhase("over");setMsg("Monte esgotado. Empate!");return;}
-      // IA decide: pegar descarte se ajuda, senão pegar do monte
-      const topDisc=ds[ds.length-1];
-      const testWithDisc=[...a,topDisc];
-      const deadWithDisc=groupHand(testWithDisc).dead.length;
-      const deadNow=groupHand(a).dead.length;
+      // IA decide (conforme o nível): pegar descarte se ajuda, senão pegar do monte
+      const lvl=AILevel.get();
       let drawnCard,fromDisc=false;
-      if(deadWithDisc<deadNow&&ds.length){
+      if(ds.length&&pifeAIWantsDisc(a,ds[ds.length-1],lvl)){
         // IA pega do descarte
         drawnCard=ds.pop();fromDisc=true;
       } else {
@@ -1132,7 +1469,7 @@ function Pife({chips,onChange,log,mode}){
       a=[...a,drawnCard];
       setAiAction({type:fromDisc?'disc':'deck',name:aiName});
       setTimeout(()=>setAiAction(null),2500);
-      const{dead}=groupHand(a);let i2=dead.length?dead.reduce((m,i)=>cVal(a[i].r)>cVal(a[m].r)?i:m,dead[0]):a.length-1;
+      const i2=pifeAIDiscardIdx(a,lvl);
       const dc=a[i2];a=a.filter((_,i)=>i!==i2);ds=[...ds,dc];
       setDeck(d);setAi(a);setDisc(ds);
       if(groupHand(a).dead.length===0){setPhase("over");setMsg(`😔 ${aiName} declarou Pife!`);SFX.play("lose");log("🃏 Pife IA ganhou");return;}
@@ -1401,10 +1738,10 @@ function Dominoes({chips,onChange,log,mode}){
   const aiTurn=(ch,idx,cb)=>{
     const a=[...ais];
     const hand=a[idx]||[];
-    const playable=hand.filter(t=>canPlay(t,ch));
-    if(playable.length){
-      const t=playable[0];
-      const nc=addToChain(t,ch);
+    const pick=dominoAIPick(hand,ch,AILevel.get(),canPlay,addToChain);
+    if(pick){
+      const t=pick.t;
+      const nc=pick.nc;
       a[idx]=hand.filter(x=>x.id!==t.id);
       setChain(nc);
       if(a[idx].length===0){setPhase("over");setMsg(`😔 IA ${idx+1} venceu!`);cb(a);return;}
@@ -1424,10 +1761,10 @@ function Dominoes({chips,onChange,log,mode}){
     setTimeout(()=>{
       const newAis=[...currentAis];
       const hand=newAis[idx]||[];
-      const playable=hand.filter(t=>canPlay(t,ch));
+      const pick=dominoAIPick(hand,ch,AILevel.get(),canPlay,addToChain);
       let newCh=ch;
-      if(playable.length){
-        const t=playable[0];newCh=addToChain(t,ch);
+      if(pick){
+        const t=pick.t;newCh=pick.nc;
         newAis[idx]=hand.filter(x=>x.id!==t.id);
         setChain(newCh);setAis(newAis);
         if(newAis[idx].length===0){setPhase("over");setMsg(`😔 IA ${idx+1} venceu!`);return;}
@@ -4662,7 +4999,12 @@ function applyMove(board,mv){
 // Joga de pretas, com as regras originais (peão captura só para frente; captura obrigatória).
 // Cada "lance" da busca é um TURNO inteiro (passo simples ou cadeia completa de capturas),
 // com aprofundamento iterativo, poda alfa-beta, ordenação de lances e busca de capturas no fim (quiescência).
-const DAMA_AI_MS=1500;   // tempo máximo por jogada: aumente para a IA ficar mais forte, diminua para ficar mais rápida
+// Níveis da IA: tempo máximo por jogada, profundidade máxima (em turnos) e chance de jogar um lance aleatório
+const DAMA_LEVELS={
+  facil:  {ms:300,  maxDepth:2,  blunder:0.30},
+  medio:  {ms:600,  maxDepth:5,  blunder:0.06},
+  dificil:{ms:1500, maxDepth:16, blunder:0},
+};
 const _DD=[[-1,-1],[-1,1],[1,-1],[1,1]];
 // tabuleiro compacto: 64 casas; 0 vazio, 1/2 = peão/dama branca, -1/-2 = peão/dama preta
 function toCompact(board){
@@ -4791,15 +5133,17 @@ function _dSearch(a,color,depth,alpha,beta,ply){
   }
 }
 // Retorna {board, move} (tabuleiro final do turno inteiro, inclusive cadeia) ou null se não houver lances
-function bestCheckerTurn(board,maxMs){
+function bestCheckerTurn(board,level){
+  const cfg=DAMA_LEVELS[level]||DAMA_LEVELS.dificil, maxMs=cfg.ms;
   const a=toCompact(board), moves=genTurns(a,-1,false);
   if(!moves.length) return null;
   const out=m=>({board:fromCompact(m.board),move:{from:[m.from>>3,m.from&7],to:[m.to>>3,m.to&7],caps:m.caps.map(x=>[x>>3,x&7])}});
   if(moves.length===1) return out(moves[0]);
+  if(cfg.blunder&&Math.random()<cfg.blunder) return out(moves[Math.floor(Math.random()*moves.length)]);   // erro proposital (níveis baixos)
   for(let i=moves.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [moves[i],moves[j]]=[moves[j],moves[i]];}
-  _dDeadline=Date.now()+(maxMs||DAMA_AI_MS); _dAbort=false; _dNodes=0;
+  _dDeadline=Date.now()+maxMs; _dAbort=false; _dNodes=0;
   let best=moves[0];
-  for(let depth=1;depth<=16;depth++){
+  for(let depth=1;depth<=cfg.maxDepth;depth++){
     _dOrder(moves);
     const k=moves.indexOf(best); if(k>0){moves.splice(k,1); moves.unshift(best);}
     let alpha=-Infinity, bs=-Infinity, ib=null;
@@ -5054,16 +5398,24 @@ function minimaxChess(board,depth,alpha,beta,maximizing,ep,castling){
 }
 
 // Aprofundamento iterativo com limite de tempo: joga o melhor lance da maior profundidade que terminou
-function bestChessMove(board,col,ep,castling,maxMs=1200){
+// Níveis da IA do xadrez: profundidade máxima (jogadas à frente), tempo máximo e chance de lance aleatório
+const CHESS_LEVELS={
+  facil:  {ms:600,  maxDepth:2, blunder:0.20},
+  medio:  {ms:900,  maxDepth:3, blunder:0.04},
+  dificil:{ms:1200, maxDepth:4, blunder:0},
+};
+function bestChessMove(board,col,ep,castling,level){
+  const cfg=CHESS_LEVELS[level]||CHESS_LEVELS.dificil, maxMs=cfg.ms;
   const moves=getAllChessMoves(board,col,ep,castling);
   if(!moves.length)return null;
   const clean=m=>{const{_o,...r}=m;return r;};
   if(moves.length===1)return clean(moves[0]);
+  if(cfg.blunder&&Math.random()<cfg.blunder)return clean(moves[Math.floor(Math.random()*moves.length)]);   // erro proposital (níveis baixos)
   for(let i=moves.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[moves[i],moves[j]]=[moves[j],moves[i]];}
   const max=col==='w';
   _chessDeadline=Date.now()+maxMs;_chessAbort=false;_chessNodes=0;
   let bestMv=moves[0];
-  for(let depth=1;depth<=4;depth++){
+  for(let depth=1;depth<=cfg.maxDepth;depth++){
     chessOrder(moves.length?board:board,moves);
     if(depth>1){const k=moves.indexOf(bestMv);if(k>0){moves.splice(k,1);moves.unshift(bestMv);}}
     let alpha=-Infinity,beta=Infinity,bestScore=max?-Infinity:Infinity,iterBest=null;
@@ -5139,7 +5491,7 @@ function Dama({chips,onChange,log,mode}){
     setTimeout(()=>{
       const b2=boardRef.current||b;
       let res=null;
-      try{ res=bestCheckerTurn(b2); }
+      try{ res=bestCheckerTurn(b2,AILevel.get()); }
       catch(e){ console.error('IA dama:',e); const ms=getAllMoves(b2,'b'); if(ms.length){ const m=ms[Math.floor(Math.random()*ms.length)]; let c2=applyMove(b2,m),l2=m; while(l2.caps.length>0){const fu=getCapsFrom(c2,l2.to[0],l2.to[1]); if(!fu.length)break; l2=fu[0]; c2=applyMove(c2,l2);} res={board:c2,move:l2}; } }
       if(!res){ endGame(true); setAiThinking(false); return; }
       // A IA já devolve o turno inteiro (inclusive a cadeia de capturas escolhida por ela)
@@ -5421,7 +5773,7 @@ function Xadrez({chips,onChange,log,mode}){
       setTurn('b'); setAiThinking(true);
       setTimeout(()=>{
         let aiMv=null;
-        try{aiMv=bestChessMove(nb,'b',ep2,nc2);}
+        try{aiMv=bestChessMove(nb,'b',ep2,nc2,AILevel.get());}
         catch(e){console.error('IA xadrez:',e);const lm=getAllChessMoves(nb,'b',ep2,nc2);aiMv=lm.length?lm[Math.floor(Math.random()*lm.length)]:null;}
         if(!aiMv){setStatus('½ Empate!');setOver(true);setAiThinking(false);return;}
         const{nb:nb2,ep2:ep3,nc2:nc3}=doMove(nb,aiMv,ep2,nc2);
@@ -5931,10 +6283,8 @@ function Poker({chips,onChange,log,mode}){
     var g=G.current;
     if(g.acting!=='ai'||g.street==='showdown')return;
     var toCall=Math.max(0,g.cb-g.abr);
-    var r=Math.random();
-    var action;
-    if(toCall<=0){action=r<0.45?'check':'bet';}
-    else{action=r<0.10?'fold':r<0.25?'raise':'call';}
+    var dec=pkDecide(AILevel.get(),g.ah,g.comm,g.pot,toCall,g.as,BB);   // decisão conforme o nível
+    var action=dec.act;
 
     if(action==='fold'){
       G.current={...g,ps:g.ps+g.pot,street:'showdown',acting:null,result:{winner:'player',reason:'IA desistiu.',ph:null,ah:null,nps:g.ps+g.pot,nas:g.as}};
@@ -5949,7 +6299,7 @@ function Poker({chips,onChange,log,mode}){
       var pay=Math.min(toCall,g.as);
       nas=g.as-pay;npot=g.pot+pay;nabr=g.abr+pay;nap=g.ap|2;
     } else if(action==='bet'){
-      var ba=Math.min(BB,g.as);
+      var ba=Math.min(dec.size||BB,g.as);
       nas=g.as-ba;npot=g.pot+ba;nabr=g.abr+ba;ncb=nabr;nap=2;
     } else if(action==='raise'){
       var minR=(g.cb||BB)+BB;
@@ -6212,7 +6562,7 @@ function Go({chips,onChange,log,mode}){
     var boardSnap=copyBoard(nb);
     var prevSnap=copyBoard(board);
     setTimeout(function(){
-      var aiMove=goAI(boardSnap,'W',N,{B:caps.B,W:caps.W+captured.length});
+      var aiMove=goAI(boardSnap,'W',N,{B:caps.B,W:caps.W+captured.length},prevSnap,AILevel.get());
       if(!aiMove){
         // AI passes
         setPassCount(function(p){
@@ -6249,7 +6599,7 @@ function Go({chips,onChange,log,mode}){
     var boardSnap=copyBoard(board);
     setTimeout(function(){
       // AI also passes sometimes, or plays
-      var aiMove=goAI(boardSnap,'W',N,caps);
+      var aiMove=goAI(boardSnap,'W',N,caps,prevBoard,AILevel.get());
       if(!aiMove||Math.random()<0.15){
         setPassCount(function(p){
           if(p+1>=2){enterScoring(boardSnap);return p+1;}
@@ -6276,7 +6626,7 @@ function Go({chips,onChange,log,mode}){
   function enterScoring(b){
     setPhase('scoring');
     setMsg('Marque as pedras mortas e confirme a pontuação');
-    var sc=goScore(b,N,komi,countMethod);
+    var sc=goScore(b,N,komi,countMethod,caps);
     setScorePreview(sc);
   }
 
@@ -6308,7 +6658,7 @@ function Go({chips,onChange,log,mode}){
         b[i][j]=null;
       }
     }
-    var sc=goScore(b,N,komi,countMethod);
+    var sc=goScore(b,N,komi,countMethod,{B:caps.B+extraCaps.B,W:caps.W+extraCaps.W});
     var won=sc.black>sc.white;
     var diff=Math.abs(sc.black-sc.white);
     /* sem aposta */
@@ -6677,7 +7027,7 @@ function GoOnline({socket,room,userData,onGameOver}){
       if(action==='go_scoring'){
         setPhase('scoring');
         setMsg('Marque as pedras mortas e confirme');
-        setBoard(function(b){var sc=goScore(b,N,komi,countMethod);setScorePreview(sc);return b;});
+        setBoard(function(b){var sc=goScore(b,N,komi,countMethod,caps);setScorePreview(sc);return b;});
       }
       if(action==='go_win'){
         var won=data.winnerId===userData?.uid;
@@ -7234,6 +7584,7 @@ function App(){
   const [showAdModal, setShowAdModal] = useState(false);
   const [showDonate, setShowDonate] = useState(false);
   const [,setSfxTick]=useState(0);
+  const [aiLevel,setAiLevel]=useState(AILevel.get());
   const [adWatching, setAdWatching] = useState(false);
   const [adTimer, setAdTimer] = useState(0);
 
@@ -7466,6 +7817,11 @@ function App(){
                   <span style={{color:"rgba(52,152,219,.5)",fontSize:9,letterSpacing:4,fontFamily:"'Rajdhani',sans-serif",fontWeight:700}}>ESCOLHA O JOGO</span>
                   <div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(52,152,219,.3),transparent)"}}/>
                 </div>
+                <div style={{display:"flex",gap:6,marginBottom:6}}>
+                  {[['facil','😊','Fácil'],['medio','🙂','Médio'],['dificil','😈','Difícil']].map(([k,e,l])=>(
+                    <button key={k} onClick={()=>{AILevel.set(k);setAiLevel(k);}} style={{flex:1,padding:"9px 4px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:800,background:aiLevel===k?"rgba(52,152,219,.22)":"rgba(255,255,255,.04)",border:"1px solid "+(aiLevel===k?"rgba(52,152,219,.7)":"rgba(255,255,255,.1)"),color:aiLevel===k?"#5dade2":"#888"}}>{e} {l}</button>))}
+                </div>
+                <div style={{textAlign:"center",color:"rgba(255,255,255,.3)",fontSize:10,marginBottom:12}}>Dificuldade da IA, vale para todos os jogos contra a IA</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
                   <div onClick={()=>setScreen('pife')} style={{background:"linear-gradient(145deg,#060f1a,#050505)",border:"1px solid #2471a344",borderRadius:16,padding:"14px 12px",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#2471a399"} onMouseLeave={e=>e.currentTarget.style.borderColor="#2471a344"}>
                     <div style={{fontSize:24,marginBottom:4}}>&#x1F0CF;</div>
